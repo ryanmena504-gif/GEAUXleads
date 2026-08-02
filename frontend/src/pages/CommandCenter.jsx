@@ -23,6 +23,20 @@ import { Link } from "react-router-dom";
 
 const missionCount = (grouped, mission) => (grouped?.[mission] || []).length;
 
+const ListSkeleton = ({ rows = 3, testId }) => (
+  <div className="bh-surface rounded overflow-hidden" data-testid={testId}>
+    {Array.from({ length: rows }).map((_, i) => (
+      <div
+        key={i}
+        className="flex items-center gap-3 px-4 py-4 border-b bh-hairline last:border-b-0"
+      >
+        <div className="h-3 w-3/5 rounded bg-white/[0.06] animate-pulse" />
+        <div className="ml-auto h-3 w-12 rounded bg-white/[0.04] animate-pulse" />
+      </div>
+    ))}
+  </div>
+);
+
 const CommandCenter = () => {
   const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
@@ -31,21 +45,36 @@ const CommandCenter = () => {
   const [top, setTop] = useState([]);
   const [recent, setRecent] = useState([]);
   const [activeMission, setActiveMission] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
       api.summary(),
       api.missions(),
       api.pipeline(),
       api.top(6),
       api.recent(6),
-    ]).then(([s, m, p, t, r]) => {
-      setSummary(s);
-      setMissions(m);
-      setPipeline(p);
-      setTop(t);
-      setRecent(r);
-    });
+    ])
+      .then(([s, m, p, t, r]) => {
+        if (cancelled) return;
+        setSummary(s);
+        setMissions(m);
+        setPipeline(p);
+        setTop(t);
+        setRecent(r);
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Could not reach the intelligence API.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const missionList = useMemo(() => {
@@ -57,6 +86,21 @@ const CommandCenter = () => {
     }
     return missions[activeMission] || [];
   }, [missions, activeMission]);
+
+  // A total summed over only some records is a different claim from a complete
+  // one, so say which it is rather than letting the number imply completeness.
+  const pipelineHint = useMemo(() => {
+    if (!summary) return "";
+    const cov = summary.pipeline_value_coverage;
+    const active = summary.active_count ?? 0;
+    if (!cov || cov.records_missing_value === 0) {
+      return `Across ${active} active`;
+    }
+    if (cov.records_with_value === 0) {
+      return `No estimate on any of ${active} active`;
+    }
+    return `${cov.records_with_value} of ${active} active have an estimate`;
+  }, [summary]);
 
   const goFilter = (params) => {
     const q = new URLSearchParams(params).toString();
@@ -74,6 +118,15 @@ const CommandCenter = () => {
         {/* Next Best Action — dominant top section */}
         <NextBestAction />
 
+        {loadError && (
+          <div
+            data-testid="dashboard-load-error"
+            className="bh-surface rounded-md border-t-2 border-t-red-500/60 p-4 text-sm text-red-200"
+          >
+            {loadError} Figures below are not current.
+          </div>
+        )}
+
         {/* Metric row */}
         <section
           data-testid="metric-strip"
@@ -85,6 +138,7 @@ const CommandCenter = () => {
             value={summary?.new_opportunities ?? "—"}
             hint="Fresh signals to triage"
             icon={Zap}
+            loading={loading}
             onClick={() => goFilter({ status: "New" })}
           />
           <MetricCard
@@ -94,6 +148,7 @@ const CommandCenter = () => {
             hint="Call, text, or visit today"
             icon={Flame}
             accent
+            loading={loading}
             onClick={() => goFilter({ daily_mission: "Call Today" })}
           />
           <MetricCard
@@ -102,6 +157,7 @@ const CommandCenter = () => {
             value={summary?.ready_to_contact ?? "—"}
             hint="Complete profile, high intent"
             icon={PhoneCall}
+            loading={loading}
             onClick={() => goFilter({ status: "Ready" })}
           />
           <MetricCard
@@ -110,14 +166,19 @@ const CommandCenter = () => {
             value={summary?.needs_research ?? "—"}
             hint="Enrich before outreach"
             icon={SearchCode}
+            loading={loading}
             onClick={() => goFilter({ status: "Needs research" })}
           />
           <MetricCard
             testId="metric-pipeline"
             label="Pipeline Value"
-            value={fmtMoney(summary?.total_pipeline_value ?? 0)}
-            hint={`Across ${summary?.active_count ?? 0} active`}
+            /* No `?? 0`: a null total means no active record carries an
+               estimate. Rendering "$0" would state a falsehood about the
+               pipeline; fmtMoney renders null as an em dash. */
+            value={fmtMoney(summary?.total_pipeline_value)}
+            hint={pipelineHint}
             icon={Landmark}
+            loading={loading}
             onClick={() => navigate("/opportunities")}
           />
         </section>
@@ -178,8 +239,13 @@ const CommandCenter = () => {
           </div>
 
           <div className="space-y-2 bh-fade-in">
-            {missionList.length === 0 ? (
-              <div className="bh-surface rounded p-8 text-center text-neutral-500 text-sm">
+            {loading ? (
+              <ListSkeleton rows={4} testId="missions-loading" />
+            ) : missionList.length === 0 ? (
+              <div
+                data-testid="missions-empty"
+                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
+              >
                 No missions in this bucket.
               </div>
             ) : (
@@ -209,6 +275,16 @@ const CommandCenter = () => {
                 View all
               </Link>
             </div>
+            {loading ? (
+              <ListSkeleton rows={4} testId="top-loading" />
+            ) : top.length === 0 ? (
+              <div
+                data-testid="top-empty"
+                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
+              >
+                No active opportunities.
+              </div>
+            ) : (
             <div className="bh-surface rounded overflow-hidden">
               {top.map((o, i) => (
                 <Link
@@ -252,6 +328,7 @@ const CommandCenter = () => {
                 </Link>
               ))}
             </div>
+            )}
           </div>
 
           <div>
@@ -268,6 +345,16 @@ const CommandCenter = () => {
                 <Radar size={12} className="text-amber-400" /> Live
               </div>
             </div>
+            {loading ? (
+              <ListSkeleton rows={4} testId="recent-loading" />
+            ) : recent.length === 0 ? (
+              <div
+                data-testid="recent-empty"
+                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
+              >
+                No discoveries yet.
+              </div>
+            ) : (
             <div className="bh-surface rounded overflow-hidden">
               {recent.map((o) => (
                 <Link
@@ -302,6 +389,7 @@ const CommandCenter = () => {
                 </Link>
               ))}
             </div>
+            )}
           </div>
         </section>
 
@@ -317,6 +405,7 @@ const CommandCenter = () => {
           </div>
           <StatusPipeline
             stages={pipeline}
+            loading={loading}
             onSelect={(s) => goFilter({ status: s })}
           />
         </section>

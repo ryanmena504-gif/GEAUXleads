@@ -9,8 +9,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
 
+from services.audit import get_audit_log
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
-from services.leads_service import get_leads_service, reset_leads_service
+from services.leads_service import OutreachBlocked, get_leads_service, reset_leads_service
 
 
 ROOT_DIR = Path(__file__).parent
@@ -105,6 +106,18 @@ async def recent(limit: int = 10):
 async def top(limit: int = 10):
     svc = get_opportunity_service()
     return svc.top(limit=limit)
+
+
+@api_router.get("/opportunities/duplicates")
+async def opportunity_duplicates():
+    """Duplicate groups and which record was elected canonical.
+
+    Declared before /opportunities/{opp_id} so the literal path wins the match.
+    """
+    svc = get_opportunity_service()
+    if not hasattr(svc, "duplicates_report"):
+        return {"backend": svc.backend_name, "duplicate_groups": 0, "groups": []}
+    return svc.duplicates_report()
 
 
 @api_router.get("/opportunities/{opp_id}")
@@ -203,12 +216,42 @@ async def cache_refresh():
 # ---------- Leads / Next Best Action ----------
 
 class LeadAction(BaseModel):
-    action: str  # approve | hold | skip | do_not_contact
+    action: str  # approve | revert_approval | hold | skip | do_not_contact
     confirm: Optional[bool] = False
+    # Supplied by the client so a double-click or a retried request approves
+    # once. Derived server-side (action + lead + UTC day) when omitted.
+    idempotency_key: Optional[str] = None
+    actor: Optional[str] = None
+    reason: Optional[str] = None
+    # Warning codes the operator explicitly saw and accepted in the confirm
+    # dialog. Recorded on the audit event; warnings never gate the write.
+    acknowledged_warnings: Optional[List[str]] = None
 
 
 class LeadMessageUpdate(BaseModel):
     message: str
+    actor: Optional[str] = None
+
+
+def _require_leads_service():
+    svc = get_leads_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Leads service not available")
+    return svc
+
+
+def _blocked_response(exc: OutreachBlocked) -> JSONResponse:
+    """409 rather than 400: the request was well-formed, the record's current
+    state is what forbids it. Carries the structured verdict so the UI can list
+    every blocker instead of showing one opaque error."""
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Lead is not eligible for outreach.",
+            "error": "outreach_blocked",
+            "eligibility": exc.result.to_dict(),
+        },
+    )
 
 
 @api_router.get("/leads/next-best-action")
@@ -230,37 +273,100 @@ async def leads_next_best_action():
     return {"lead": lead, "queue": svc.queue_stats()}
 
 
+@api_router.get("/leads/duplicates")
+async def leads_duplicates():
+    svc = _require_leads_service()
+    return svc.duplicates_report()
+
+
+@api_router.get("/leads/{lead_id}/eligibility")
+async def leads_eligibility(lead_id: str):
+    """Read-only policy verdict. The UI uses this to disable and explain the
+    approve control; the server re-evaluates on write regardless."""
+    svc = _require_leads_service()
+    result = svc.eligibility_for_id(lead_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
+    return result.to_dict()
+
+
+@api_router.get("/leads/{lead_id}/readiness")
+async def leads_readiness(lead_id: str):
+    """Missing fields and risk derived from live field values. Any AI-generated
+    prose is returned under `advisory_*` keys and never drives eligibility."""
+    svc = _require_leads_service()
+    report = svc.readiness(lead_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
+    return report
+
+
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
-    svc = get_leads_service()
-    if not svc:
-        raise HTTPException(status_code=503, detail="Leads service not available")
+    svc = _require_leads_service()
     if svc.get(lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     action = (body.action or "").lower()
     if action == "approve":
-        return svc.approve(lead_id)
+        if not body.confirm:
+            raise HTTPException(
+                status_code=400,
+                detail="Confirmation required for Approve — the operator must "
+                       "acknowledge the recipient and any warnings.",
+            )
+        try:
+            return svc.approve(lead_id,
+                               idempotency_key=body.idempotency_key,
+                               actor=body.actor,
+                               acknowledged_warnings=body.acknowledged_warnings)
+        except OutreachBlocked as exc:
+            return _blocked_response(exc)
+    if action == "revert_approval":
+        return svc.revert_approval(lead_id, actor=body.actor, reason=body.reason)
     if action == "hold":
-        return svc.hold(lead_id)
+        return svc.hold(lead_id, actor=body.actor)
     if action == "skip":
-        return svc.skip(lead_id)
+        return svc.skip(lead_id, actor=body.actor)
     if action == "do_not_contact":
         if not body.confirm:
             raise HTTPException(status_code=400,
                                 detail="Confirmation required for Do Not Contact")
-        return svc.do_not_contact(lead_id)
+        return svc.do_not_contact(lead_id, actor=body.actor)
     raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
 
 
 @api_router.patch("/leads/{lead_id}/message")
 async def leads_update_message(lead_id: str, body: LeadMessageUpdate):
-    svc = get_leads_service()
-    if not svc:
-        raise HTTPException(status_code=503, detail="Leads service not available")
-    updated = svc.update_message(lead_id, body.message)
+    svc = _require_leads_service()
+    updated = svc.update_message(lead_id, body.message, actor=body.actor)
     if not updated:
         raise HTTPException(status_code=404, detail="Message update failed")
     return updated
+
+
+# ---------- Audit & ingestion diagnostics ----------
+
+@api_router.get("/audit/events")
+async def audit_events(limit: int = 50, entity_id: Optional[str] = None,
+                       action: Optional[str] = None):
+    """Recent decisions from the in-process sink.
+
+    Empty after a restart — the durable record is the structured `audit ...`
+    log line. See docs/INTEGRATIONS.md for swapping in a persistent sink.
+    """
+    events = get_audit_log().recent(limit=limit, entity_id=entity_id, action=action)
+    return {"events": events, "count": len(events), "durable": False}
+
+
+@api_router.get("/diagnostics/ingestion")
+async def ingestion_diagnostics_report():
+    svc = get_opportunity_service()
+    if not hasattr(svc, "ingestion_report"):
+        return {
+            "backend": svc.backend_name,
+            "note": "Ingestion diagnostics require the live Airtable backend.",
+        }
+    return svc.ingestion_report()
 
 
 @api_router.post("/admin/reload")

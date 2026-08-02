@@ -13,34 +13,15 @@ from datetime import datetime, timezone
 from copy import deepcopy
 
 from data.sample_opportunities import SAMPLE_OPPORTUNITIES
+from services import aggregations, dedupe
 from services.airtable_service import build_airtable_service_from_env
 
 log = logging.getLogger("bloodhound.service")
 
-
-PIPELINE_STATUSES = [
-    "New",
-    "Needs research",
-    "Ready",
-    "Conversation started",
-    "Estimate requested",
-    "Estimate sent",
-    "Won",
-    "Lost",
-    "Disqualified",
-]
-
-ACTIONABLE_MISSIONS = [
-    "Call Today",
-    "Send Text",
-    "Send Email",
-    "Research First",
-    "Visit Property",
-    "Prepare Estimate",
-    "Ask for Referral",
-    "Follow Up",
-    "Wait",
-]
+# Owned by services.aggregations so the sample and Airtable backends cannot
+# drift apart again. Re-exported for existing importers.
+PIPELINE_STATUSES = aggregations.PIPELINE_STATUSES
+ACTIONABLE_MISSIONS = aggregations.ACTIONABLE_MISSIONS
 
 
 class SampleOpportunityService:
@@ -50,6 +31,9 @@ class SampleOpportunityService:
         self._data: Dict[str, Dict[str, Any]] = {
             o["id"]: deepcopy(o) for o in SAMPLE_OPPORTUNITIES
         }
+        # Same dedupe pass the live backend runs, so duplicate suppression is
+        # exercised on sample data too rather than only in production.
+        self._duplicate_index = dedupe.annotate(list(self._data.values()))
 
     def cache_status(self) -> Dict[str, Any]:
         # Sample data lives in-process forever; report as fresh.
@@ -82,90 +66,31 @@ class SampleOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None) -> List[Dict[str, Any]]:
-        results = self.all()
-        if source:
-            results = [o for o in results if o.get("source") == source]
-        if status:
-            results = [o for o in results if o.get("status") == status]
-        if priority_band:
-            results = [o for o in results if o.get("priority_band") == priority_band]
-        if daily_mission:
-            results = [o for o in results if o.get("daily_mission") == daily_mission]
-        if project_type:
-            results = [o for o in results if o.get("project_type") == project_type]
-        if min_score is not None:
-            results = [o for o in results if (o.get("priority_score") or 0) >= float(min_score)]
-        if q:
-            ql = q.lower()
-            def match(o):
-                blob = " ".join([
-                    str(o.get("name", "")),
-                    str(o.get("project_address", "")),
-                    str(o.get("decision_maker", "")),
-                    str(o.get("permit_number", "")),
-                    str(o.get("project_type", "")),
-                ]).lower()
-                return ql in blob
-            results = [o for o in results if match(o)]
-        # sort by score desc
-        results.sort(key=lambda o: o.get("priority_score", 0), reverse=True)
-        return results
+             q=None, include_duplicates: bool = False) -> List[Dict[str, Any]]:
+        return aggregations.filter_records(
+            self.all(), source=source, status=status,
+            priority_band=priority_band, daily_mission=daily_mission,
+            project_type=project_type, min_score=min_score, q=q,
+            include_duplicates=include_duplicates,
+        )
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:
-        active = [o for o in self.all() if o.get("status") not in ("Won", "Lost", "Disqualified")]
-        active.sort(key=lambda o: o.get("priority_score", 0), reverse=True)
-        return active[:limit]
+        return aggregations.top(self.all(), limit=limit)
 
     def recent(self, limit: int = 10) -> List[Dict[str, Any]]:
-        items = list(self.all())
-        items.sort(key=lambda o: o.get("created_time", ""), reverse=True)
-        return items[:limit]
+        return aggregations.recent(self.all(), limit=limit)
 
     def summary(self) -> Dict[str, Any]:
-        all_ops = self.all()
-        active = [o for o in all_ops if o.get("status") not in ("Won", "Lost", "Disqualified")]
-        immediate = [o for o in active if o.get("daily_mission") in
-                     ("Call Today", "Send Text", "Visit Property")]
-        ready = [o for o in active if o.get("status") == "Ready"]
-        needs_research = [o for o in active if o.get("status") == "Needs research"
-                          or o.get("daily_mission") == "Research First"]
-        new_ops = [o for o in all_ops if o.get("status") == "New"]
-        pipeline_value = sum([(o.get("estimated_value") or 0) for o in active])
-        return {
-            "new_opportunities": len(new_ops),
-            "immediate_action": len(immediate),
-            "ready_to_contact": len(ready),
-            "needs_research": len(needs_research),
-            "total_pipeline_value": pipeline_value,
-            "active_count": len(active),
-            "total_count": len(all_ops),
-        }
+        return aggregations.summary(self.all())
 
     def group_by_mission(self) -> Dict[str, List[Dict[str, Any]]]:
-        groups: Dict[str, List[Dict[str, Any]]] = {m: [] for m in ACTIONABLE_MISSIONS}
-        for o in self.all():
-            if o.get("status") in ("Won", "Lost", "Disqualified"):
-                continue
-            mission = o.get("daily_mission")
-            if mission in groups:
-                groups[mission].append(o)
-        for m in groups:
-            groups[m].sort(key=lambda o: o.get("priority_score", 0), reverse=True)
-        return groups
+        return aggregations.group_by_mission(self.all())
 
     def pipeline_counts(self) -> List[Dict[str, Any]]:
-        counts = {s: 0 for s in PIPELINE_STATUSES}
-        values = {s: 0.0 for s in PIPELINE_STATUSES}
-        for o in self.all():
-            s = o.get("status")
-            if s in counts:
-                counts[s] += 1
-                values[s] += (o.get("estimated_value") or 0)
-        return [
-            {"status": s, "count": counts[s], "value": values[s]}
-            for s in PIPELINE_STATUSES
-        ]
+        return aggregations.pipeline_counts(self.all())
+
+    def duplicates_report(self) -> Dict[str, Any]:
+        return dedupe.duplicate_report(self._duplicate_index)
 
     # ---------- writes ----------
     def update_status(self, opp_id: str, status: str) -> Optional[Dict[str, Any]]:

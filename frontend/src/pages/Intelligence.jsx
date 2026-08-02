@@ -1,5 +1,6 @@
 import React from "react";
 import TopHeader from "@/components/TopHeader";
+import PreviewNotice from "@/components/PreviewNotice";
 import { Radar, TrendingUp, Map, LineChart } from "lucide-react";
 
 const Tile = ({ icon: Icon, title, body }) => (
@@ -57,30 +58,31 @@ const Intelligence = () => (
         />
       </section>
 
-      <section className="bh-surface rounded p-6">
-        <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-          Preview / New Orleans this week
-        </div>
-        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { l: "Permits filed", v: "184", d: "+12% vs last week" },
-            { l: "Residential", v: "128", d: "70% share" },
-            { l: "Median value", v: "$78K", d: "up from $65K" },
-            { l: "Owner-filed %", v: "41%", d: "highest since Nov" },
-          ].map((s) => (
-            <div key={s.l}>
-              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                {s.l}
+      <section className="bh-surface rounded p-6" data-testid="intelligence-mock">
+        {/* Placeholder values rather than plausible ones: a market figure that
+            looks real is indistinguishable from a live one at a glance. */}
+        <PreviewNotice detail="The market metrics below are not yet computed. Labels show what this panel will report once the permit feed is aggregated.">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              "Permits filed",
+              "Residential share",
+              "Median value",
+              "Owner-filed %",
+            ].map((label) => (
+              <div key={label}>
+                <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  {label}
+                </div>
+                <div className="mt-1 font-display text-3xl font-bold text-neutral-700 tabular-nums">
+                  —
+                </div>
+                <div className="mono text-[10px] text-neutral-600 mt-0.5">
+                  Not yet measured
+                </div>
               </div>
-              <div className="mt-1 font-display text-3xl font-bold text-neutral-100 tabular-nums">
-                {s.v}
-              </div>
-              <div className="mono text-[10px] text-emerald-400 mt-0.5">
-                {s.d}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </PreviewNotice>
       </section>
     </div>
   </>

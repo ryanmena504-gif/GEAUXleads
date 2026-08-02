@@ -27,8 +27,8 @@ const PAGES = [
   { to: "/", label: "Command Center", icon: LayoutDashboard, hint: "Dashboard" },
   { to: "/opportunities", label: "Opportunities", icon: Crosshair, hint: "All records" },
   { to: "/missions", label: "Today's Missions", icon: Target, hint: "Daily plan" },
-  { to: "/relationships", label: "Relationships", icon: Network, hint: "Intro paths" },
-  { to: "/intelligence", label: "Intelligence", icon: Radar, hint: "Trends" },
+  { to: "/relationships", label: "Relationships", icon: Network, hint: "Preview — no live data" },
+  { to: "/intelligence", label: "Intelligence", icon: Radar, hint: "Preview — no live data" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Configuration" },
 ];
 
