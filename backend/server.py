@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import get_leads_service, reset_leads_service
+from services.airtable_service import AirtableWriteError
 
 
 ROOT_DIR = Path(__file__).parent
@@ -146,11 +147,19 @@ async def add_activity(opp_id: str, body: ActivityEntry):
 @api_router.patch("/opportunities/{opp_id}/fields")
 async def update_fields(opp_id: str, body: FieldUpdate):
     svc = get_opportunity_service()
-    payload = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    # Accept empty-string values as explicit "clear" intent.
+    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
-        raise HTTPException(status_code=400, detail="No editable fields provided")
+        # Silent-ignore: nothing to write, just return current DTO.
+        current = svc.get(opp_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return current
     if hasattr(svc, "update_fields"):
-        updated = svc.update_fields(opp_id, payload)
+        try:
+            updated = svc.update_fields(opp_id, payload)
+        except AirtableWriteError as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
     else:
         # Sample backend: apply supported keys one-by-one
         updated = svc.get(opp_id)

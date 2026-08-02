@@ -29,6 +29,15 @@ from pyairtable import Api
 log = logging.getLogger("bloodhound.airtable")
 
 
+class AirtableWriteError(Exception):
+    """Raised when Airtable rejects a write. Carries the HTTP status code from
+    the upstream response so the API layer can pass it through unchanged."""
+
+    def __init__(self, message: str, status_code: int = 422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 # =============================================================================
 # CENTRAL FIELD MAP — projects the LIVE `Leads` Airtable table into the
 # dashboard's Opportunity DTO. The dashboard was originally built for an
@@ -914,11 +923,31 @@ class AirtableOpportunityService:
         allowed = self._writable_airtable_fields(updates_by_snake)
         if not allowed:
             return self.get(opp_id)
+        # Coerce empty strings to None so the caller can CLEAR a date / select
+        # field instead of Airtable rejecting the empty value.
+        allowed = {k: (None if v == "" else v) for k, v in allowed.items()}
         try:
-            self._table.update(opp_id, allowed)
-        except Exception:
+            # typecast=True lets Airtable auto-add new single-select options when
+            # the PAT is base-editor. Falls back to normal 422 otherwise.
+            self._table.update(opp_id, allowed, typecast=True)
+        except Exception as e:
             log.exception("Airtable: update failed for %s", opp_id)
-            raise
+            status = 422
+            detail = str(e)
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                status = getattr(resp, "status_code", status) or status
+                try:
+                    body = resp.json()
+                    if isinstance(body, dict) and "error" in body:
+                        err = body["error"]
+                        if isinstance(err, dict):
+                            detail = err.get("message") or err.get("type") or detail
+                        else:
+                            detail = str(err)
+                except Exception:
+                    pass
+            raise AirtableWriteError(detail, status_code=status) from e
         # Force cache refresh so subsequent reads pick up formula recomputation.
         self._refresh_cache(force=True)
         return self.get(opp_id)

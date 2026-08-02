@@ -186,7 +186,7 @@ const OpportunityDetail = () => {
                 <MapPin size={14} className="text-neutral-500" />
                 {opp.project_address}
               </div>
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 min-w-0">
                 <div>
                   <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
                     Priority

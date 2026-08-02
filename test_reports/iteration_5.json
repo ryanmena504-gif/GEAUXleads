@@ -1,0 +1,40 @@
+{
+  "summary": "Targeted RETEST of iteration_4 failures (PATCH /api/opportunities/{id}/fields + Opportunity Detail meta-grid layout). BACKEND: All 6 PATCH scenarios pass against rec1j1S6sVvAu0ofb — (1) empty body {} -> 200 + DTO, (2) unknown-only body {\"foo\":\"bar\"} -> 200 + DTO (silent-ignore), (3) next_follow_up cleared via '' -> 200 with next_follow_up=None (verified in DTO after set-then-clear), (4) status='Ready' -> 200 (Airtable typecast=True auto-added the option), (5) ryans_decision='Investigating' -> 200 written to Hunt status via WRITE_ALIAS, (6) outcome='Wrong Fit' -> 200 written to Rejection reason. All finally-block restores executed. SMOKE: /api/health = {ok:true, backend:'airtable', count:92} (note: count dropped from 113->92 externally in Airtable — not a bug, just data change; test file hardcoded 113 flags this — updated expectation not applied since request said don't retest read-path). /api/leads/next-best-action returns populated lead (Maggiore Salvatore J Jr) with next_action and queue={total:92, eligible:21}. FRONTEND: The 4-column meta-grid layout fix DID NOT WORK at desktop 1440px. Labels 'PRIORITY', 'EST. VALUE', 'SOURCE', 'PROJECT TYPE' still visually overlap horizontally (Priority.x=297, Est.value.x=333, Project type.x=407 — packed into ~110px width). Root cause: Hero uses `grid lg:grid-cols-[1fr_auto]` where the right 'Recommended Action' panel (`min-w-[260px]` but no max, containing long unconstrained paragraph text) expands to max-content and squeezes the left 1fr column down to ~150px. The `min-w-0` added to the meta-grid does not propagate — the LEFT COLUMN <div> (OpportunityDetail.jsx line 174) is missing `min-w-0`, and the right panel needs a fixed/max width to yield space. Tablet (768px) renders correctly as 2 rows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/health, /api/cache-status, /api/leads/next-best-action", "issue": "Live Airtable lead count dropped from 113 to 92 between iterations (external Airtable data change, not a code regression). Test file hardcodes 113 — expectations should be softened to a range or read from a config."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/opportunities/rec1j1S6sVvAu0ofb — Hero meta grid (OpportunityDetail.jsx ~L173-226)", "issues": ["4-column meta grid still overlaps at desktop 1440px. Measured x-positions of PRIORITY/EST.VALUE/PROJECT TYPE labels: 297/333/407 — crammed into ~110px of horizontal space because the parent left column of the `grid lg:grid-cols-[1fr_auto]` gets squeezed to ~150px by the 'Recommended action' panel (right column, `min-w-[260px]`, long paragraph text). H1 'AT Tulane Chabad' wraps into 3 lines confirming column squeeze. Fix: (a) add `min-w-0` to the LEFT <div> at OpportunityDetail.jsx L174; (b) constrain the right panel with a fixed width e.g. `lg:w-[320px] shrink-0` instead of relying on `auto`, OR change grid template to `lg:grid-cols-[minmax(0,1fr)_320px]`. Tablet 768px works correctly (2 cols, 2 rows)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/opportunities_leads_test.py",
+    "/app/test_reports/pytest/patch_retest_results.xml"
+  ],
+  "action_items": [
+    "Frontend: Fix OpportunityDetail.jsx hero grid squeeze. Add `min-w-0` to the left column <div> (line 174) AND give the 'Recommended action' panel a fixed width (e.g. change `lg:grid-cols-[1fr_auto]` to `lg:grid-cols-[minmax(0,1fr)_320px]` and drop `min-w-[260px]`). This will unblock the 4-column meta grid at 1440px+.",
+    "Backend tests: relax the hardcoded count assertion (113) in TestHealth / TestLeadsRegression to a range (e.g. 80 <= count <= 200) so external Airtable data churn doesn't flake the suite."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_fields endpoint now correctly catches AirtableWriteError and re-raises as HTTPException — good.",
+    "airtable_service.update_fields correctly coerces '' -> None so date fields can be cleared, uses typecast=True to auto-add missing single-select options, and translates HTTPError to AirtableWriteError with upstream status_code preserved. Solid.",
+    "typecast=True has a side-effect: any typo in the dashboard's status vocabulary will silently add a new option to Airtable's Status single-select, polluting the base. Consider server-side validation against known status values before delegating to Airtable typecast.",
+    "OpportunityDetail.jsx L173 grid template `lg:grid-cols-[1fr_auto]` combined with an unconstrained right panel is fragile — auto columns take max-content which unpredictably squeezes 1fr siblings. Prefer explicit widths."
+  ],
+  "updated_files": [
+    "/app/backend/tests/opportunities_leads_test.py"
+  ],
+  "success_rate": {"backend": "100% of retested PATCH scenarios (6/6)", "frontend": "0% — meta-grid overlap regression still present at desktop"},
+  "test_credentials": "N/A (no auth). Airtable creds in /app/backend/.env.",
+  "seed_data_creation": "Test writes on rec1j1S6sVvAu0ofb (AT Tulane Chabad) fully restored in finally blocks. Final state: next_follow_up=None, status/hunt_status/outcome restored to their pre-test values. Note: because typecast=True is active, Airtable may now contain 'Ready' as a Status select option, 'Investigating' as a Hunt status option, and 'Wrong Fit' as a Rejection reason option — these were auto-added by pyairtable and are persistent even though the record values were restored.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend PATCH endpoint is fully fixed and verified (all 6 scenarios pass — see /app/test_reports/pytest/patch_retest_results.xml). Only remaining defect is the frontend meta-grid overlap at desktop >=1024px in OpportunityDetail.jsx — the min-w-0 added to the grid alone is insufficient; the parent left column needs min-w-0 AND the right panel needs a fixed width. Do NOT re-run leads_service destructive flows or opportunity read tests without reason. Airtable count is 92 now, not 113.",
+  "rca of the issue": "Frontend design bug still present: The hero uses CSS Grid template `1fr auto`. In CSS Grid, `auto` tracks size to max-content unless min-width is set on the item. The right-side 'Recommended action' panel contains a long unwrapped paragraph, causing max-content to be ~600px. The 1fr track then only receives leftover space (~150px at 1440 viewport minus sidebar), which forces the meta-grid inside it to render 4 columns in a tiny width, causing labels to visually overlap. Fix: use fixed track width for right panel (e.g. `minmax(0,1fr) 320px`) plus `min-w-0` on the left column div."
+}

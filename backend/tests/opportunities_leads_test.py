@@ -125,59 +125,92 @@ class TestOpportunities:
         assert isinstance(d["activity_timeline"], list)
 
 
-# ---- PATCH tests ----
-class TestPatchFields:
-    # Use a boring lead (skeleton row) to minimise data pollution
-    @pytest.fixture(scope="class")
-    def target_id(self, client):
-        # pick a lead that has an empty next_follow_up so we can restore safely
-        data = client.get(f"{BASE_URL}/api/opportunities").json()
-        for o in data:
-            if not o.get("next_follow_up"):
-                return o["id"]
-        return data[0]["id"]
+# ---- PATCH tests (retest of iteration_4 failures) ----
+TARGET_ID = "rec1j1S6sVvAu0ofb"  # AT Tulane Chabad — restore state in each test
 
-    def test_next_follow_up_persists_and_restore(self, client, target_id):
-        # Set
-        r = client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                         json={"next_follow_up": "2026-09-01"})
+
+class TestPatchFields:
+    def test_empty_body_returns_current_dto(self, client):
+        """Spec: PATCH with {} returns 200 + current DTO (was 400)."""
+        r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields", json={})
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d.get("next_follow_up", "").startswith("2026-09-01")
+        assert d.get("id") == TARGET_ID
+        assert "status" in d and "daily_mission" in d
+
+    def test_unknown_only_body_silent_ignore(self, client):
+        """Spec: PATCH with unknown-only fields returns 200 + current DTO (was 400)."""
+        r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                         json={"foo": "bar"})
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d.get("id") == TARGET_ID
+
+    def test_next_follow_up_clear_via_empty_string(self, client):
+        """Spec: PATCH {\"next_follow_up\":\"\"} clears Airtable field, returns 200 (was 500)."""
+        # first ensure it has some value we can clear (or leave existing)
+        set_r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                             json={"next_follow_up": "2026-09-01"})
+        assert set_r.status_code == 200, set_r.text
         time.sleep(1)
-        # Restore by writing an empty string (null gets stripped by exclude_none)
-        r2 = client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                          json={"next_follow_up": ""})
-        # Accept either 200 (cleared) or 400 (backend strips empty) — flag if 500
-        assert r2.status_code in (200, 400), f"got {r2.status_code}: {r2.text}"
+        # Now clear
+        r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                        json={"next_follow_up": ""})
+        assert r.status_code == 200, f"expected 200 on clear, got {r.status_code}: {r.text}"
+        d = r.json()
+        assert d.get("next_follow_up") in (None, ""), f"next_follow_up not cleared: {d.get('next_follow_up')}"
 
-    def test_status_ready_persists(self, client, target_id):
-        """Spec: PATCH status=Ready should persist. If Airtable single-select
-        lacks 'Ready' option, backend should return graceful 4xx, NOT 500."""
-        r = client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                         json={"status": "Ready"})
-        assert r.status_code != 500, f"500 on status=Ready: {r.text[:200]}"
-        if r.status_code == 200:
-            # Restore
+    def test_status_ready_persists_via_typecast(self, client):
+        """Spec: PATCH status=Ready persists (typecast=True) or gracefully 4xx (not 500)."""
+        # Grab original status to restore
+        current = client.get(f"{BASE_URL}/api/opportunities/{TARGET_ID}").json()
+        original_status_raw = current.get("status_raw")
+        try:
+            r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                             json={"status": "Ready"})
+            assert r.status_code != 500, f"500 on status=Ready: {r.text[:300]}"
+            assert r.status_code == 200, f"expected 200 with typecast, got {r.status_code}: {r.text[:300]}"
+            d = r.json()
+            # value written to Status field (dashboard remap may show as 'Ready')
+            assert d.get("status_raw") == "Ready" or d.get("status") == "Ready", \
+                f"status not persisted: status={d.get('status')} status_raw={d.get('status_raw')}"
+        finally:
             time.sleep(1)
-            client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                         json={"status": ""})
+            restore_val = original_status_raw if original_status_raw else "New"
+            client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                         json={"status": restore_val})
 
-    def test_ryans_decision_graceful(self, client, target_id):
-        """Hunt status may reject unknown select option — must be 4xx not 500."""
-        r = client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                         json={"ryans_decision": "Investigating"})
-        assert r.status_code != 500, f"500 on ryans_decision: {r.text[:200]}"
-        assert r.status_code < 500
+    def test_ryans_decision_investigating(self, client):
+        """Spec: PATCH ryans_decision writes to Hunt status via WRITE_ALIAS, returns 200."""
+        current = client.get(f"{BASE_URL}/api/opportunities/{TARGET_ID}").json()
+        original = current.get("hunt_status")
+        try:
+            r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                             json={"ryans_decision": "Investigating"})
+            assert r.status_code != 500, f"500: {r.text[:300]}"
+            assert r.status_code == 200, f"expected 200, got {r.status_code}: {r.text[:300]}"
+            d = r.json()
+            assert d.get("hunt_status") == "Investigating" or d.get("ryans_decision") == "Investigating"
+        finally:
+            time.sleep(1)
+            client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                         json={"ryans_decision": original if original else ""})
 
-    def test_unknown_field_ignored(self, client, target_id):
-        """Spec: unknown fields silently ignored, returns current DTO."""
-        r = client.patch(f"{BASE_URL}/api/opportunities/{target_id}/fields",
-                         json={"unknown_field": "x"})
-        assert r.status_code != 500
-        # Spec requires 200 with current DTO; current impl returns 400.
-        # Flag as failure for main agent.
-        assert r.status_code == 200, f"expected 200 with current DTO, got {r.status_code}: {r.text}"
+    def test_outcome_wrong_fit(self, client):
+        """Spec: PATCH outcome writes to Rejection reason, returns 200."""
+        current = client.get(f"{BASE_URL}/api/opportunities/{TARGET_ID}").json()
+        original = current.get("outcome")
+        try:
+            r = client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                             json={"outcome": "Wrong Fit"})
+            assert r.status_code != 500, f"500: {r.text[:300]}"
+            assert r.status_code == 200, f"expected 200, got {r.status_code}: {r.text[:300]}"
+            d = r.json()
+            assert d.get("outcome") == "Wrong Fit"
+        finally:
+            time.sleep(1)
+            client.patch(f"{BASE_URL}/api/opportunities/{TARGET_ID}/fields",
+                         json={"outcome": original if original else ""})
 
 
 # ---- leads regression ----
