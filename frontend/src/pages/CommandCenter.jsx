@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import MetricCard from "@/components/MetricCard";
@@ -10,6 +10,7 @@ import NextBestAction from "@/components/NextBestAction";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtRelative, sourceLabel } from "@/lib/formatters";
 import { MISSIONS } from "@/lib/constants";
+import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import {
   Zap,
   Flame,
@@ -32,7 +33,7 @@ const CommandCenter = () => {
   const [recent, setRecent] = useState([]);
   const [activeMission, setActiveMission] = useState("all");
 
-  useEffect(() => {
+  const loadAll = useCallback(() => {
     Promise.all([
       api.summary(),
       api.missions(),
@@ -47,6 +48,13 @@ const CommandCenter = () => {
       setRecent(r);
     });
   }, []);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  // Push-refresh whenever Airtable fires a webhook (opps + NBA both update).
+  useLiveUpdates(useCallback(() => loadAll(), [loadAll]));
 
   const missionList = useMemo(() => {
     if (!missions) return [];

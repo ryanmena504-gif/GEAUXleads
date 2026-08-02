@@ -1,9 +1,12 @@
-from fastapi import FastAPI, APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
+import json
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, List
@@ -13,12 +16,33 @@ from services.opportunity_service import get_opportunity_service, reset_opportun
 from services.leads_service import get_leads_service, reset_leads_service
 from services.airtable_service import AirtableWriteError
 from services.email_service import send_outreach_email, EmailSendError
+from services.webhook_service import (
+    init_webhook_manager,
+    shutdown_webhook_manager,
+    get_webhook_manager,
+)
 
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-app = FastAPI(title="Bloodhound Intelligence API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Startup: register the Airtable webhook (idempotent).
+    try:
+        await init_webhook_manager()
+    except Exception:
+        logging.getLogger("bloodhound").exception("Webhook init failed at startup")
+    yield
+    # Shutdown: best-effort webhook cleanup.
+    try:
+        await shutdown_webhook_manager()
+    except Exception:
+        pass
+
+
+app = FastAPI(title="Bloodhound Intelligence API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO,
@@ -316,6 +340,134 @@ async def reload_service():
     svc = get_opportunity_service()
     get_leads_service()
     return {"ok": True, "backend": svc.backend_name}
+
+
+# ============================================================================
+# Airtable webhook receiver + live SSE stream
+# ============================================================================
+
+async def _handle_ping_background():
+    """Fetch payloads, invalidate caches, broadcast to SSE subscribers."""
+    mgr = get_webhook_manager()
+    if not mgr:
+        return
+    try:
+        payloads = await mgr.fetch_payloads()
+    except Exception:
+        logger.exception("webhook: fetch_payloads failed")
+        return
+    if not payloads:
+        return
+    # Invalidate both service caches so the next read fetches fresh data.
+    opps = get_opportunity_service()
+    if hasattr(opps, "force_refresh"):
+        try:
+            await asyncio.to_thread(opps.force_refresh)
+        except Exception:
+            logger.exception("webhook: opps force_refresh failed")
+    leads = get_leads_service()
+    if leads and hasattr(leads, "_refresh_cache"):
+        try:
+            await asyncio.to_thread(leads._refresh_cache, True)
+        except Exception:
+            logger.exception("webhook: leads refresh failed")
+    # Summarise the change types for the client.
+    changed_records = set()
+    for p in payloads:
+        for _tbl_id, tbl in (p.get("changedTablesById") or {}).items():
+            for rid in (tbl.get("changedRecordsById") or {}):
+                changed_records.add(rid)
+            for rid in (tbl.get("createdRecordsById") or {}):
+                changed_records.add(rid)
+    await mgr.broadcast({
+        "type": "airtable_change",
+        "payload_count": len(payloads),
+        "changed_record_ids": sorted(changed_records),
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@app.post("/api/airtable/webhook")
+async def airtable_webhook_receiver(request: Request):
+    mgr = get_webhook_manager()
+    if not mgr:
+        raise HTTPException(status_code=503, detail="Webhook manager not initialized")
+    body = await request.body()
+    signature = request.headers.get("x-airtable-content-mac") or request.headers.get("X-Airtable-Content-MAC")
+    if not mgr.verify_signature(body, signature):
+        logger.warning("webhook: signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    # Airtable expects a fast 200. Do the heavy lift on the event loop.
+    asyncio.create_task(_handle_ping_background())
+    return {"ok": True}
+
+
+@api_router.get("/live/stream")
+async def live_stream(request: Request):
+    """SSE stream that emits an 'update' event whenever Airtable pings us."""
+    mgr = get_webhook_manager()
+    if not mgr:
+        raise HTTPException(status_code=503, detail="Live stream not available")
+
+    async def event_gen():
+        q = await mgr.subscribe()
+        try:
+            # Initial hello so the client's onopen fires reliably.
+            yield "event: ready\ndata: {}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    evt = await asyncio.wait_for(q.get(), timeout=25.0)
+                except asyncio.TimeoutError:
+                    # heartbeat keeps proxies from killing the connection
+                    yield ": heartbeat\n\n"
+                    continue
+                yield f"event: update\ndata: {json.dumps(evt)}\n\n"
+        finally:
+            await mgr.unsubscribe(q)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@api_router.get("/live/status")
+async def live_status():
+    mgr = get_webhook_manager()
+    if not mgr:
+        return {"registered": False}
+    return {
+        "registered": bool(mgr.webhook_id),
+        "webhook_id": mgr.webhook_id,
+        "table_id": mgr.table_id,
+        "notification_url": mgr.notification_url,
+        "cursor": mgr.cursor,
+        "subscribers": len(mgr._subscribers),
+    }
+
+
+@api_router.post("/live/reregister")
+async def live_reregister():
+    """Force a fresh webhook registration (rotates the mac secret)."""
+    from services.webhook_service import _manager as _cur, init_webhook_manager  # local import to reset singleton
+    try:
+        if _cur is not None:
+            await _cur.unregister()
+    except Exception:
+        pass
+    import services.webhook_service as ws
+    ws._manager = None
+    mgr = await init_webhook_manager()
+    if not mgr:
+        raise HTTPException(status_code=500, detail="Re-registration failed")
+    return {"ok": True, "webhook_id": mgr.webhook_id}
 
 
 app.include_router(api_router)
