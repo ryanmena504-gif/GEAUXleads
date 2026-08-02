@@ -37,6 +37,7 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Approval status": "approval_status",
     "Outreach status": "outreach_status",
     "Enrichment status": "enrichment_status",
+    "Hunt status": "hunt_status",
     "Estimated job value": "estimated_job_value",
     "contact confidence": "contact_confidence",
     "Contact name": "contact_name",

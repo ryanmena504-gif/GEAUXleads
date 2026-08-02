@@ -312,7 +312,9 @@ async def leads_update_message(lead_id: str, body: LeadMessageUpdate):
 @api_router.post("/admin/reload")
 async def reload_service():
     reset_opportunity_service()
+    reset_leads_service()
     svc = get_opportunity_service()
+    get_leads_service()
     return {"ok": True, "backend": svc.backend_name}
 
 
