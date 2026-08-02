@@ -1,0 +1,51 @@
+{
+  "summary": "Backend-only testing of the approve→send email wiring on POST /api/leads/{id}/action against lead rec1j1S6sVvAu0ofb using recipient delivered@resend.dev. 12/13 tests pass. Both SUCCESS paths (fallback template + caller-provided First message) work end-to-end — Resend returns a provider_id, Airtable checkboxes flip (Outreach sent=true, Message sent date populated, Outreach channel='Email', Approval status='Approved', Outreach status='Sent'), fallback body starts with 'Hi ', caller-supplied text is preserved untouched. Guardrails for missing contact email (422) and Status='Do Not Contact' (422) work. Regressions clean: hold/skip/do_not_contact-requires-confirm all pass; /api/health backend='airtable'; /api/opportunities returns leads; PATCH /api/opportunities/{id}/fields empty/unknown-only both 200; NBA queue returns a lead. ONE CRITICAL FUNCTIONAL BUG: the Hunt status='Rejected' guardrail does NOT fire — approve still returns 200 and the email is sent. Root cause: LEADS_FIELD_MAP in /app/backend/services/leads_service.py never maps the Airtable 'Hunt status' column to the DTO's 'hunt_status' key, so can_send() reads None and skips the check. 'Hunt status' is in EDITABLE_FIELDS (writable) but not readable.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/leads/{id}/action (approve) — Hunt status guardrail",
+        "issue": "Approve returns 200 and sends the email even when Airtable 'Hunt status' == 'Rejected'. Root cause: LEADS_FIELD_MAP is missing the entry '\"Hunt status\": \"hunt_status\"' so _record_to_dto never surfaces hunt_status → can_send() reads None → guardrail skipped. Reproduced: set Contact email='delivered@resend.dev' + Hunt status='Rejected' via pyairtable, POST /api/admin/reload, POST approve → expected 422, actual 200 with provider_id and full checkbox flip. Fix: add '\"Hunt status\": \"hunt_status\",' to LEADS_FIELD_MAP in leads_service.py.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/reload",
+        "issue": "Only resets the opportunity_service singleton; the LeadsAirtableService singleton is NOT reset. Its cache TTL is 45s — mutations made directly via pyairtable can lag up to 45s before /api/leads/... sees them. Tests currently work because can_send() calls self.get() which calls _refresh_cache() (TTL-guarded) but the very first hit after startup is fresh so we got lucky. Add reset_leads_service() invocation to /api/admin/reload for parity."
+      },
+      {
+        "endpoint": "leads_service._refresh_cache",
+        "issue": "Cache is TTL-based only; no `force` path exposed via HTTP. Any external Airtable write between two backend calls within 45s is invisible to guardrails until either a write goes through _safe_update (which force-refreshes) or the TTL expires. This makes external-write test scenarios fragile."
+      },
+      {
+        "endpoint": "leads_service.mark_sent",
+        "issue": "Comment says 'Order matters: mark sent BEFORE approval so it hides from queue immediately' — but the code then writes Approval status='Approved' AFTER Outreach sent=True (line 423-427). Order is fine functionally but the comment is misleading."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/leads_approve_email_test.py",
+    "/app/test_reports/pytest/leads_approve_email_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Add `\"Hunt status\": \"hunt_status\",` to LEADS_FIELD_MAP in /app/backend/services/leads_service.py (around line 60). Without this, the Rejected-hunt guardrail is dead code and rejected leads get emailed.",
+    "Optional: also add reset_leads_service() call to /api/admin/reload so cache invalidation is uniform across services.",
+    "Optional: expose a POST /api/admin/leads-reload OR unify /api/admin/reload to reset both services (currently a footgun for future testing agents)."
+  ],
+  "critical_code_review_comments": [
+    "leads_service.py:74 — 'Hunt status' is in EDITABLE_FIELDS but not in LEADS_FIELD_MAP → guardrail at line 367-371 (`if any(tok in hunt_l for tok in _DO_NOT_SEND_HUNT)`) is unreachable because hunt_l is always ''. This is the highest-impact latent bug in the file.",
+    "leads_service.py:373-377 — the 'Rejection reason' comment doesn't match the code (it checks outreach_status containing 'reject'). Comment or code should be aligned; also there is no explicit check on any `rejection_reason` field.",
+    "leads_service.py:_recipient (~line 346) — only accepts contact_email/email but doesn't validate format beyond '@' substring. Fine for now but worth a proper regex before scaling.",
+    "server.py:312-316 — /api/admin/reload only touches opportunity_service; leads_service is orphaned from reload. Add `reset_leads_service()` + `get_leads_service()` here.",
+    "email_service.py:59 — payload key is 'contact_email' for reply_to. Confirm with the Emergent proxy's spec that this is actually the reply-to field (it looks unusual — most providers use `reply_to`). If the proxy silently ignores unknown keys, reply-to may not be set on outbound emails despite the code intending it to be."
+  ],
+  "updated_files": ["/app/backend/tests/leads_approve_email_test.py"],
+  "success_rate": {"backend": "92% (12/13 tests) — 1 real code bug, hunt-status guardrail", "frontend": "not tested (backend-only run)"},
+  "test_credentials": "N/A (no auth). Airtable creds in backend/.env, Resend key in EMERGENT_EMAIL_KEY.",
+  "seed_data_creation": "All mutations on rec1j1S6sVvAu0ofb (TEST_LEAD) are wrapped in try/finally with _restore(). After the run, the lead was additionally hard-cleaned via pyairtable: Contact email, First message, Outreach sent, Message sent date, Outreach channel, Approval status, Outreach status, Status, Hunt status all set to None. Two real emails to delivered@resend.dev were sent (Resend noop test address) — provider_ids captured in test output.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only one bug outstanding: Hunt status guardrail. After the main agent adds the LEADS_FIELD_MAP entry AND touches /api/admin/reload to reset the leads singleton (or restarts backend), rerun `pytest backend/tests/leads_approve_email_test.py::TestGuardrails::test_hunt_status_rejected -v -o addopts=''` to verify. Do NOT run in parallel (xdist) — the whole suite hits a single Airtable lead so parallel workers race and can produce false failures on the custom-message success test. Always use `-o addopts=''` to disable the pytest.ini's `-n --dist loadscope`.",
+  "rca of the issue": "Hunt status guardrail dead-code path. leads_service.py declares '_DO_NOT_SEND_HUNT = (\"rejected\", \"closed\", \"disqualified\")' and can_send() checks `hunt_l = (lead.get(\"hunt_status\") or \"\").lower()`. However LEADS_FIELD_MAP (line 25-62) never maps 'Hunt status' → 'hunt_status', so _record_to_dto skips it and the DTO field is permanently None. Result: any Airtable value of Hunt status is invisible to the guardrail and rejected leads receive email. Reproduction: set Hunt status='Rejected' + Contact email='delivered@resend.dev', POST /api/leads/{id}/action {action:'approve'} → 200 + provider_id. Fix: one-line addition of `\"Hunt status\": \"hunt_status\",` to LEADS_FIELD_MAP."
+}
