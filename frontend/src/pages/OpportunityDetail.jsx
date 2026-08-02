@@ -170,8 +170,8 @@ const OpportunityDetail = () => {
           data-testid="opp-hero"
           className="bh-surface rounded-md p-5 lg:p-6 border-t border-t-amber-500/60"
         >
-          <div className="grid lg:grid-cols-[1fr_auto] gap-6 items-start">
-            <div>
+          <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="mono text-[10px] uppercase tracking-widest text-neutral-500">
                   {opp.opportunity_id}
@@ -227,7 +227,7 @@ const OpportunityDetail = () => {
             </div>
 
             {/* Primary action panel */}
-            <div className="bh-surface-2 rounded p-4 min-w-[260px]">
+            <div className="bh-surface-2 rounded p-4 min-w-0">
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
                 Recommended action
               </div>
