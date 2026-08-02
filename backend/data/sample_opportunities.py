@@ -557,7 +557,7 @@ SAMPLE_OPPORTUNITIES = [
         "construction_value": None,
         "estimated_value": 68000,
         "decision_maker": "Maya Delgado",
-        "phone": "504-555-0166",
+        "phone": "504-555-0173",
         "email": "maya.d@example.com",
         "company": None,
         "applicant": None,

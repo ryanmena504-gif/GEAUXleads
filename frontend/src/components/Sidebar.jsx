@@ -16,8 +16,8 @@ const nav = [
   { to: "/", label: "Command Center", icon: LayoutDashboard, code: "CC" },
   { to: "/opportunities", label: "Opportunities", icon: Crosshair, code: "OP" },
   { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
-  { to: "/relationships", label: "Relationships", icon: Network, code: "RE" },
-  { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN" },
+  { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },
+  { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN", preview: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, code: "SE" },
 ];
 
@@ -56,9 +56,19 @@ export const Sidebar = () => (
               />
               <item.icon size={15} strokeWidth={2} />
               <span className="flex-1">{item.label}</span>
-              <span className="mono text-[9px] text-neutral-600 tracking-widest">
-                {item.code}
-              </span>
+              {item.preview ? (
+                <span
+                  data-testid={`nav-preview-${item.code}`}
+                  title="Preview — this section shows no live data"
+                  className="mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400/70"
+                >
+                  Preview
+                </span>
+              ) : (
+                <span className="mono text-[9px] text-neutral-600 tracking-widest">
+                  {item.code}
+                </span>
+              )}
             </>
           )}
         </NavLink>

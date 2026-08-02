@@ -6,6 +6,7 @@ import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
+import PreviewNotice from "@/components/PreviewNotice";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import {
@@ -395,50 +396,48 @@ const OpportunityDetail = () => {
 
           {/* Right col: Relationships + Activity */}
           <div className="space-y-6">
-            <section className="bh-surface rounded-md p-5">
+            <section
+              className="bh-surface rounded-md p-5"
+              data-testid="detail-relationships-preview"
+            >
               <SectionHeading
                 code="Section / 04"
                 title="Relationships"
-                hint="Preview"
+                hint="Not built yet"
               />
-              <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
-                Who is the strongest relationship path to help win this opportunity?
-              </p>
-              <div className="space-y-2">
-                {[
-                  { icon: User, label: "Direct relationship", val: "No prior contact" },
-                  { icon: Network, label: "Mutual connection", val: "1 possible via Sarah Delatte" },
-                  { icon: Building2, label: "Referral source", val: "—" },
-                  { icon: Signal, label: "Relationship confidence", val: "Low" },
-                  { icon: Hammer, label: "Recommended intro path", val: "Warm intro via prior client" },
-                ].map((r, i) => (
-                  <div
-                    key={i}
-                    className="bh-surface-2 rounded p-3 flex items-center gap-3"
-                  >
-                    <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
-                      <r.icon size={14} className="text-neutral-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
-                        {r.label}
+              {/* This panel used to show invented values ("1 possible via
+                  Sarah Delatte", confidence "Low") next to real lead fields on
+                  the page an operator decides from. Only the field names are
+                  kept — no graph exists to populate them. */}
+              <PreviewNotice
+                testId="detail-relationships-notice"
+                detail="No relationship graph is computed yet. These are the fields this panel will report; none of them influence the priority score or outreach eligibility."
+              >
+                <div className="space-y-2">
+                  {[
+                    { icon: User, label: "Direct relationship" },
+                    { icon: Network, label: "Mutual connection" },
+                    { icon: Building2, label: "Referral source" },
+                    { icon: Signal, label: "Relationship confidence" },
+                    { icon: Hammer, label: "Recommended intro path" },
+                  ].map((r) => (
+                    <div
+                      key={r.label}
+                      className="bh-surface-2 rounded p-3 flex items-center gap-3"
+                    >
+                      <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
+                        <r.icon size={14} className="text-neutral-600" />
                       </div>
-                      <div className="text-sm text-neutral-200 truncate">
-                        {r.val}
+                      <div className="flex-1 min-w-0">
+                        <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+                          {r.label}
+                        </div>
+                        <div className="text-sm text-neutral-600">—</div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 border-t bh-hairline pt-3">
-                <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                  Coming next
+                  ))}
                 </div>
-                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                  Relationship graph will map contractors, past clients, and mutual
-                  connections to surface the strongest intro path.
-                </p>
-              </div>
+              </PreviewNotice>
             </section>
 
             <section className="bh-surface rounded-md p-5">

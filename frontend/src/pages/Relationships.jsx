@@ -1,5 +1,6 @@
 import React from "react";
 import TopHeader from "@/components/TopHeader";
+import PreviewNotice from "@/components/PreviewNotice";
 import { Network, Users, GitBranch, Handshake } from "lucide-react";
 
 const Card = ({ icon: Icon, title, body }) => (
@@ -61,31 +62,28 @@ const Relationships = () => (
         />
       </section>
 
-      <section className="bh-surface rounded p-6">
-        <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-          Preview / A single opportunity
-        </div>
-        <h3 className="mt-1 font-display text-xl font-bold text-neutral-100">
-          Garden District Historic Restoration
-        </h3>
-        <div className="mt-4 flex items-center gap-3 flex-wrap">
-          {["You", "Sarah Delatte", "Ashby Family"].map((n, i) => (
-            <React.Fragment key={n}>
-              <div className="bh-surface-2 rounded px-3 py-2 min-w-[140px]">
-                <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
-                  Node {i + 1}
+      <section className="bh-surface rounded p-6" data-testid="relationships-mock">
+        <PreviewNotice detail="Fictional names and a fictional intro path, shown to illustrate the intended layout. No relationship graph is computed yet.">
+          <h3 className="font-display text-xl font-bold text-neutral-400">
+            Example opportunity
+          </h3>
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            {["You", "Example contact", "Example owner"].map((n, i) => (
+              <React.Fragment key={n}>
+                <div className="bh-surface-2 rounded px-3 py-2 min-w-[140px]">
+                  <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+                    Node {i + 1}
+                  </div>
+                  <div className="text-sm text-neutral-400">{n}</div>
                 </div>
-                <div className="text-sm text-neutral-100">{n}</div>
-              </div>
-              {i < 2 && (
-                <div className="text-amber-400 mono text-xs">──▶</div>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-        <div className="mt-4 text-xs text-neutral-500">
-          Warm intro via Sarah Delatte · confidence <span className="text-emerald-400">High</span>
-        </div>
+                {i < 2 && <div className="text-amber-400/50 mono text-xs">──▶</div>}
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="mt-4 text-xs text-neutral-600">
+            Each path will carry a computed confidence once the graph is built.
+          </div>
+        </PreviewNotice>
       </section>
     </div>
   </>
