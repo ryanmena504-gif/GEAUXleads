@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import LaneBadge from "@/components/LaneBadge";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 
 const Stat = ({ label, value }) => (
@@ -177,6 +178,7 @@ export const NextBestAction = () => {
           <span className="font-display text-base sm:text-lg text-neutral-200 font-medium truncate max-w-full">
             {l.name || "Unnamed lead"}
           </span>
+          <LaneBadge lane={l.lane} />
           {l.opportunity_type && (
             <span className="mono text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border bh-hairline text-neutral-300">
               {l.opportunity_type}

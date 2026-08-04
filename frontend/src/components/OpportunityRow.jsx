@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
+import LaneBadge from "@/components/LaneBadge";
 import { fmtMoney, sourceLabel } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
 
@@ -49,6 +50,7 @@ export const OpportunityRow = ({ opp }) => (
         </div>
 
         <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+          <LaneBadge lane={opp.lane} />
           <MissionBadge mission={opp.daily_mission} size="sm" />
           <StatusBadge status={opp.status} />
           <span className="mono text-[10px] text-neutral-500 border bh-hairline rounded px-1.5 py-0.5">

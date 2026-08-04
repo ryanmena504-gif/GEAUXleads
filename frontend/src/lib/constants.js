@@ -24,6 +24,18 @@ export const STATUSES = [
 
 export const BANDS = ["A", "B", "C", "D"];
 
+export const LANES = [
+  { key: "market_capture", label: "Market Capture" },
+  { key: "partner", label: "Partner Pipeline" },
+  { key: "non_permit", label: "Non-Permit Signals" },
+];
+
+export const LANE_LABEL = {
+  market_capture: "Market Capture",
+  partner: "Partner Pipeline",
+  non_permit: "Non-Permit Signals",
+};
+
 export const SOURCES = [
   "permit",
   "website",

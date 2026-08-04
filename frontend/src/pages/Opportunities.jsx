@@ -6,7 +6,7 @@ import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import { api } from "@/lib/api";
-import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES } from "@/lib/constants";
+import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
 import { fmtMoney, sourceLabel } from "@/lib/formatters";
 import { LayoutGrid, Rows3, X } from "lucide-react";
 
@@ -50,6 +50,7 @@ const Opportunities = () => {
     priority_band: searchParams.get("priority_band") || undefined,
     daily_mission: searchParams.get("daily_mission") || undefined,
     project_type: searchParams.get("project_type") || undefined,
+    lane: searchParams.get("lane") || undefined,
     min_score: minScore || undefined,
     q: q || undefined,
   };
@@ -72,7 +73,7 @@ const Opportunities = () => {
 
   const activeFilterCount = useMemo(
     () =>
-      ["source", "status", "priority_band", "daily_mission", "project_type"].filter(
+      ["source", "status", "priority_band", "daily_mission", "project_type", "lane"].filter(
         (k) => searchParams.get(k),
       ).length + (minScore ? 1 : 0) + (q ? 1 : 0),
     [searchParams, minScore, q],
@@ -140,6 +141,18 @@ const Opportunities = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <FilterGroup title="Lane">
+              {LANES.map((l) => (
+                <FilterChip
+                  key={l.key}
+                  testId={`filter-lane-${l.key}`}
+                  label={l.label}
+                  active={filters.lane === l.key}
+                  onClick={() => setFilter("lane", l.key)}
+                />
+              ))}
+            </FilterGroup>
+
             <FilterGroup title="Source">
               {SOURCES.map((s) => (
                 <FilterChip

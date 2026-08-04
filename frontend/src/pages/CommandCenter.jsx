@@ -9,8 +9,9 @@ import MissionBadge from "@/components/MissionBadge";
 import NextBestAction from "@/components/NextBestAction";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtRelative, sourceLabel } from "@/lib/formatters";
-import { MISSIONS } from "@/lib/constants";
+import { LANES, LANE_LABEL, MISSIONS } from "@/lib/constants";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
+import LaneBadge from "@/components/LaneBadge";
 import {
   Zap,
   Flame,
@@ -32,6 +33,9 @@ const CommandCenter = () => {
   const [top, setTop] = useState([]);
   const [recent, setRecent] = useState([]);
   const [activeMission, setActiveMission] = useState("all");
+  const [lanes, setLanes] = useState([]);
+  const [topLane, setTopLane] = useState("all");
+  const [topByLane, setTopByLane] = useState({});
 
   const loadAll = useCallback(() => {
     Promise.all([
@@ -40,12 +44,16 @@ const CommandCenter = () => {
       api.pipeline(),
       api.top(6),
       api.recent(6),
-    ]).then(([s, m, p, t, r]) => {
+      api.laneBreakdown().catch(() => []),
+      api.topByLane(5).catch(() => ({})),
+    ]).then(([s, m, p, t, r, l, tbl]) => {
       setSummary(s);
       setMissions(m);
       setPipeline(p);
       setTop(t);
       setRecent(r);
+      setLanes(l);
+      setTopByLane(tbl || {});
     });
   }, []);
 
@@ -128,6 +136,51 @@ const CommandCenter = () => {
             icon={Landmark}
             onClick={() => navigate("/opportunities")}
           />
+        </section>
+
+        {/* Lane Breakdown — three parallel funnels */}
+        <section
+          data-testid="lane-breakdown"
+          className="grid grid-cols-1 md:grid-cols-3 gap-3"
+        >
+          {(lanes.length ? lanes : LANES.map((l) => ({
+              lane: l.key, label: l.label, total: 0, active: 0,
+              pipeline_value: 0, top_score: null,
+            }))).map((row) => (
+            <button
+              key={row.lane}
+              type="button"
+              data-testid={`lane-card-${row.lane}`}
+              onClick={() => goFilter({ lane: row.lane })}
+              className="bh-surface rounded p-4 text-left hover:bg-white/[0.03] transition-colors duration-150 border-t"
+              style={{
+                borderTopColor:
+                  row.lane === "partner" ? "rgba(16,185,129,0.6)"
+                  : row.lane === "non_permit" ? "rgba(56,189,248,0.6)"
+                  : "rgba(217,119,6,0.6)",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <LaneBadge lane={row.lane} />
+                {row.top_score != null && (
+                  <span className="mono text-[9px] uppercase tracking-widest text-neutral-500 ml-auto">
+                    Top score {Math.round(row.top_score)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <div className="font-display text-2xl font-bold text-neutral-100 tabular-nums">
+                  {row.active}
+                </div>
+                <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  active / {row.total} total
+                </div>
+              </div>
+              <div className="mt-1 mono text-[10px] uppercase tracking-widest text-neutral-500">
+                Pipeline · {fmtMoney(row.pipeline_value || 0)}
+              </div>
+            </button>
+          ))}
         </section>
 
         {/* Today's Missions (dominant) */}
@@ -217,8 +270,44 @@ const CommandCenter = () => {
                 View all
               </Link>
             </div>
+            <div className="flex gap-1.5 flex-wrap mb-3">
+              <button
+                onClick={() => setTopLane("all")}
+                data-testid="top-lane-all"
+                className={
+                  "mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded border transition-colors duration-150 " +
+                  (topLane === "all"
+                    ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                    : "bh-hairline text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.03]")
+                }
+              >
+                All lanes
+              </button>
+              {LANES.map((l) => {
+                const count = (topByLane[l.key] || []).length;
+                if (count === 0 && topLane !== l.key) return null;
+                return (
+                  <button
+                    key={l.key}
+                    onClick={() => setTopLane(l.key)}
+                    data-testid={`top-lane-${l.key}`}
+                    className={
+                      "mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded border transition-colors duration-150 " +
+                      (topLane === l.key
+                        ? "bg-white/[0.06] border-neutral-500 text-neutral-100"
+                        : "bh-hairline text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.03]")
+                    }
+                  >
+                    {l.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
             <div className="bh-surface rounded overflow-hidden">
-              {top.map((o, i) => (
+              {(topLane === "all"
+                ? top
+                : (topByLane[topLane] || [])
+              ).map((o, i) => (
                 <Link
                   key={o.id}
                   to={`/opportunities/${o.id}`}
@@ -229,8 +318,11 @@ const CommandCenter = () => {
                     {String(i + 1).padStart(2, "0")}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="truncate font-medium text-neutral-100">
-                      {o.name}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="truncate font-medium text-neutral-100">
+                        {o.name}
+                      </div>
+                      <LaneBadge lane={o.lane} />
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-neutral-500">
                       <span>{sourceLabel(o.source)}</span>
@@ -259,6 +351,11 @@ const CommandCenter = () => {
                   </div>
                 </Link>
               ))}
+              {(topLane !== "all" && (topByLane[topLane] || []).length === 0) && (
+                <div className="px-4 py-6 text-center text-neutral-500 text-sm">
+                  No records in this lane yet.
+                </div>
+              )}
             </div>
           </div>
 

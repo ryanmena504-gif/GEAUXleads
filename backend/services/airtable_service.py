@@ -310,6 +310,47 @@ def _derive_priority_score(opp: Dict[str, Any]) -> Optional[float]:
     return score if score > 0 else None
 
 
+# ---------------------------------------------------------------------------
+# Lane classification — three parallel funnels the dashboard ranks across.
+#   market_capture   — permit-driven qualified project leads (the default)
+#   partner          — contractors/designers/architects/suppliers/referrers
+#   non_permit       — public non-permit signals (website, social, referral…)
+# ---------------------------------------------------------------------------
+LANES = ("market_capture", "partner", "non_permit")
+
+LANE_LABELS = {
+    "market_capture": "Market Capture",
+    "partner": "Partner Pipeline",
+    "non_permit": "Non-Permit Signals",
+}
+
+_PARTNER_TYPE_TOKENS = (
+    "contractor", "remodel", "designer", "architect",
+    "supplier", "vendor", "referral", "partner",
+)
+_PARTNER_SOURCE_TOKENS = ("partner", "referral", "network", "trade")
+
+
+def _derive_lane(opp: Dict[str, Any]) -> str:
+    if opp.get("flag_partnership") is True:
+        return "partner"
+    otype = (opp.get("project_type") or "")
+    otype_l = otype.lower() if isinstance(otype, str) else ""
+    if any(tok in otype_l for tok in _PARTNER_TYPE_TOKENS):
+        return "partner"
+    src_cat = (opp.get("source_category") or "")
+    src_cat_l = src_cat.lower() if isinstance(src_cat, str) else ""
+    if any(tok in src_cat_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    src = (opp.get("source") or "")
+    src_l = src.lower() if isinstance(src, str) else ""
+    if any(tok in src_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    if src_l and "permit" not in src_l and "permit" not in src_cat_l:
+        return "non_permit"
+    return "market_capture"
+
+
 def _derive_priority_band(opp: Dict[str, Any]) -> Optional[str]:
     # Honour explicit Airtable Priority if set.
     b = _normalize_priority_band(opp.get("priority_raw"))
@@ -629,6 +670,10 @@ class AirtableOpportunityService:
             "Stalled" if opp.get("flag_won") or opp.get("outcome") else "Normal"
         )
 
+        # Lane classification (market_capture / partner / non_permit)
+        opp["lane"] = _derive_lane(opp)
+        opp["lane_label"] = LANE_LABELS.get(opp["lane"], opp["lane"])
+
         if opp.get("phone") or opp.get("email") or opp.get("phone_alt") or opp.get("email_alt"):
             opp["reachability"] = "Direct"
         elif opp.get("company") or opp.get("website"):
@@ -812,7 +857,7 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None) -> List[Dict[str, Any]]:
+             q=None, lane=None) -> List[Dict[str, Any]]:
         results = self._all_cached()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -824,6 +869,8 @@ class AirtableOpportunityService:
             results = [o for o in results if o.get("daily_mission") == daily_mission]
         if project_type:
             results = [o for o in results if o.get("project_type") == project_type]
+        if lane:
+            results = [o for o in results if o.get("lane") == lane]
         if min_score is not None:
             results = [o for o in results if (o.get("priority_score") or 0) >= float(min_score)]
         if q:
@@ -951,6 +998,49 @@ class AirtableOpportunityService:
         # Force cache refresh so subsequent reads pick up formula recomputation.
         self._refresh_cache(force=True)
         return self.get(opp_id)
+
+    def update_status(self, opp_id: str, status: str) -> Optional[Dict[str, Any]]:
+        return self.update_fields(opp_id, {"status": status})
+
+    def update_mission(self, opp_id: str, mission: str) -> Optional[Dict[str, Any]]:
+        # Daily Mission is a formula field in the base — writes are rejected.
+        # Kept for API compatibility; the value is stored as a request-time
+        # override on the cached record only, never persisted.
+        with self._lock:
+            cached = self._cache.get(opp_id)
+            if cached:
+                cached["daily_mission"] = mission
+                return deepcopy(cached)
+        return self.get(opp_id)
+
+    def add_activity(self, opp_id: str, type_: str, note: Optional[str]) -> Optional[Dict[str, Any]]:
+        # No Interactions table yet — record in-memory only so the UI stays live.
+        with self._lock:
+            cached = self._cache.get(opp_id)
+            if not cached:
+                return None
+            timeline = cached.setdefault("activity_timeline", [])
+            timeline.insert(0, {
+                "type": type_,
+                "note": note or "",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            return deepcopy(cached)
+
+
+def build_airtable_service_from_env() -> Optional[AirtableOpportunityService]:
+    api_key = os.environ.get("AIRTABLE_API_KEY")
+    base_id = os.environ.get("AIRTABLE_BASE_ID")
+    table = os.environ.get("AIRTABLE_OPPORTUNITIES_TABLE")
+    enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
+    if not (enabled and api_key and base_id and table):
+        return None
+    try:
+        return AirtableOpportunityService(api_key, base_id, table)
+    except Exception:
+        log.exception("Airtable: initialization failed — falling back to sample data")
+        return None
+    return self.get(opp_id)
 
     def update_status(self, opp_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.update_fields(opp_id, {"status": status})

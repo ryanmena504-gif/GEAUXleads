@@ -82,7 +82,7 @@ class SampleOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None) -> List[Dict[str, Any]]:
+             q=None, lane=None) -> List[Dict[str, Any]]:
         results = self.all()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -94,6 +94,8 @@ class SampleOpportunityService:
             results = [o for o in results if o.get("daily_mission") == daily_mission]
         if project_type:
             results = [o for o in results if o.get("project_type") == project_type]
+        if lane:
+            results = [o for o in results if o.get("lane") == lane]
         if min_score is not None:
             results = [o for o in results if (o.get("priority_score") or 0) >= float(min_score)]
         if q:

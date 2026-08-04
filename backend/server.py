@@ -90,6 +90,7 @@ async def list_opportunities(
     project_type: Optional[str] = None,
     min_score: Optional[float] = None,
     q: Optional[str] = None,
+    lane: Optional[str] = None,
 ):
     svc = get_opportunity_service()
     return svc.list(
@@ -100,7 +101,49 @@ async def list_opportunities(
         project_type=project_type,
         min_score=min_score,
         q=q,
+        lane=lane,
     )
+
+
+@api_router.get("/opportunities/lanes")
+async def lane_breakdown():
+    """Counts + pipeline value per lane (market_capture / partner / non_permit)."""
+    svc = get_opportunity_service()
+    LANES = ("market_capture", "partner", "non_permit")
+    LABEL = {"market_capture": "Market Capture", "partner": "Partner Pipeline",
+             "non_permit": "Non-Permit Signals"}
+    all_ops = svc.all() if hasattr(svc, "all") else []
+    out = []
+    for lane in LANES:
+        rows = [o for o in all_ops if o.get("lane") == lane]
+        active = [o for o in rows if o.get("status") not in ("Won", "Lost", "Disqualified")]
+        value = sum((o.get("estimated_value") or 0) for o in active)
+        top = sorted(active, key=lambda o: (o.get("priority_score") or 0), reverse=True)[:1]
+        out.append({
+            "lane": lane,
+            "label": LABEL[lane],
+            "total": len(rows),
+            "active": len(active),
+            "pipeline_value": value,
+            "top_score": (top[0].get("priority_score") if top else None),
+        })
+    return out
+
+
+@api_router.get("/opportunities/top-by-lane")
+async def top_by_lane(limit: int = 4):
+    """Top N opportunities per lane, ranked by priority score."""
+    svc = get_opportunity_service()
+    LANES = ("market_capture", "partner", "non_permit")
+    all_ops = svc.all() if hasattr(svc, "all") else []
+    out = {}
+    for lane in LANES:
+        rows = [o for o in all_ops
+                if o.get("lane") == lane
+                and o.get("status") not in ("Won", "Lost", "Disqualified")]
+        rows.sort(key=lambda o: (o.get("priority_score") or 0), reverse=True)
+        out[lane] = rows[:limit]
+    return out
 
 
 @api_router.get("/opportunities/summary")

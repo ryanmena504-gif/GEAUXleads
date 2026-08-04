@@ -27,6 +27,8 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Business name": "business_name",
     "Opportunity type": "opportunity_type",
     "Source": "source",
+    "Source category": "source_category",
+    "Source URL": "source_url",
     "Lead score": "lead_score",
     "Priority": "priority",
     "Status": "status",
@@ -95,6 +97,33 @@ _FALLBACK_TEXT = (
 EXCLUDE_TOKENS = ("duplicate", "do not contact", "sent", "closed", "complete")
 
 PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "normal": 2, "low": 1}
+
+
+_LANE_LABELS = {
+    "market_capture": "Market Capture",
+    "partner": "Partner Pipeline",
+    "non_permit": "Non-Permit Signals",
+}
+_PARTNER_TYPE_TOKENS = ("contractor", "remodel", "designer", "architect",
+                        "supplier", "vendor", "referral", "partner")
+_PARTNER_SOURCE_TOKENS = ("partner", "referral", "network", "trade")
+
+
+def _derive_lane_from_lead(dto: Dict[str, Any]) -> str:
+    otype = (dto.get("opportunity_type") or "")
+    otype_l = otype.lower() if isinstance(otype, str) else ""
+    if any(tok in otype_l for tok in _PARTNER_TYPE_TOKENS):
+        return "partner"
+    src_cat = (dto.get("source_category") or "")
+    src_cat_l = src_cat.lower() if isinstance(src_cat, str) else ""
+    src = (dto.get("source") or "")
+    src_l = src.lower() if isinstance(src, str) else ""
+    if any(tok in src_cat_l for tok in _PARTNER_SOURCE_TOKENS) \
+            or any(tok in src_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    if src_l and "permit" not in src_l and "permit" not in src_cat_l:
+        return "non_permit"
+    return "market_capture"
 
 
 class LeadsAirtableService:
@@ -167,6 +196,10 @@ class LeadsAirtableService:
         # Compose a stable Airtable URL for "Open Full Lead"
         if self._table_id and dto["id"]:
             dto["_airtable_url"] = f"https://airtable.com/{self._base_id}/{self._table_id}/{dto['id']}"
+        # Lane classification — mirror airtable_service._derive_lane so the NBA
+        # panel can label the lead consistently with the rest of the dashboard.
+        dto["lane"] = _derive_lane_from_lead(dto)
+        dto["lane_label"] = _LANE_LABELS.get(dto["lane"], dto["lane"])
         return dto
 
     def all(self) -> List[Dict[str, Any]]:

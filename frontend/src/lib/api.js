@@ -33,6 +33,10 @@ export const api = {
   schema: () => client.get("/schema").then((r) => r.data),
   cacheStatus: () => client.get("/cache-status").then((r) => r.data),
   refreshCache: () => client.post("/cache-refresh").then((r) => r.data),
+  laneBreakdown: () =>
+    client.get("/opportunities/lanes").then((r) => r.data),
+  topByLane: (limit = 4) =>
+    client.get("/opportunities/top-by-lane", { params: { limit } }).then((r) => r.data),
   leadsNextBestAction: () =>
     client.get("/leads/next-best-action").then((r) => r.data),
   leadsAction: (id, body) =>
