@@ -43,7 +43,16 @@ const Opportunities = () => {
     Number(searchParams.get("min_score") || 0),
   );
   const [q, setQ] = useState(searchParams.get("q") || "");
-  const [sort, setSort] = useState(searchParams.get("sort") || "lead_score");
+  const sort = searchParams.get("sort") || "lead_score";
+  const setSort = (value) => {
+    const next = new URLSearchParams(searchParams);
+    if (!value || value === "lead_score") {
+      next.delete("sort");
+    } else {
+      next.set("sort", value);
+    }
+    setSearchParams(next);
+  };
 
   const filters = {
     source: searchParams.get("source") || undefined,
@@ -69,9 +78,9 @@ const Opportunities = () => {
 
   useEffect(() => {
     api.listOpportunities(filters).then(setItems);
-    // filters is derived from searchParams/minScore/q/sort; safe to depend on those
+    // filters is derived from searchParams/minScore/q; sort is inside searchParams
      
-  }, [searchParams, minScore, q, sort]);
+  }, [searchParams, minScore, q]);
 
   const activeFilterCount = useMemo(
     () =>

@@ -102,14 +102,14 @@ export const CommandPalette = ({ open, onOpenChange }) => {
                 data-testid={`palette-opp-${o.id}`}
               >
                 <div className="flex items-center gap-3 w-full">
-                  <div className="mono text-[10px] text-neutral-500 min-w-[36px] tabular-nums">
+                  <div className="font-display text-[13px] text-[var(--bh-ink)] min-w-[36px] tabular-nums font-medium">
                     {o.priority_score ?? "—"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="truncate text-sm text-neutral-100">
+                    <div className="truncate text-[14px] text-[var(--bh-ink)] tracking-tight">
                       {o.name}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-neutral-500">
+                    <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-[var(--bh-ink-mute)]">
                       {o.project_address && (
                         <span className="inline-flex items-center gap-1 truncate">
                           <MapPin size={10} /> {o.project_address}
@@ -117,10 +117,10 @@ export const CommandPalette = ({ open, onOpenChange }) => {
                       )}
                     </div>
                   </div>
-                  <div className="mono text-[10px] text-neutral-500 uppercase tracking-widest whitespace-nowrap">
+                  <div className="bh-eyebrow whitespace-nowrap">
                     {sourceLabel(o.source)}
                   </div>
-                  <div className="font-display text-sm text-neutral-200 whitespace-nowrap">
+                  <div className="font-display text-[14px] text-[var(--bh-ink)] whitespace-nowrap tabular-nums">
                     {fmtMoney(o.estimated_value)}
                   </div>
                 </div>
@@ -139,8 +139,8 @@ export const CommandPalette = ({ open, onOpenChange }) => {
               onSelect={() => go(f.to)}
               data-testid={`palette-filter-${f.label}`}
             >
-              <FileText size={13} className="text-amber-400 mr-2" />
-              <span className="text-sm">{f.label}</span>
+              <FileText size={13} className="text-[var(--bh-brass)] mr-2" />
+              <span className="text-[14px] text-[var(--bh-ink-2)]">{f.label}</span>
             </CommandItem>
           ))}
         </CommandGroup>
@@ -155,9 +155,9 @@ export const CommandPalette = ({ open, onOpenChange }) => {
               onSelect={() => go(p.to)}
               data-testid={`palette-page-${p.label}`}
             >
-              <p.icon size={13} className="text-neutral-400 mr-2" />
-              <span className="text-sm flex-1">{p.label}</span>
-              <span className="mono text-[10px] text-neutral-500 uppercase tracking-widest">
+              <p.icon size={13} className="text-[var(--bh-ink-mute)] mr-2" />
+              <span className="text-[14px] text-[var(--bh-ink-2)] flex-1">{p.label}</span>
+              <span className="bh-eyebrow">
                 {p.hint}
               </span>
             </CommandItem>
