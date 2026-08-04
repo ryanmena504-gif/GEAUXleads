@@ -82,58 +82,61 @@ const CommandCenter = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Command Center"
-        subtitle="What deserves your attention today"
+        pageTitle="Today's Work"
+        subtitle="What's worth a look this morning"
       />
 
-      <div className="px-4 lg:px-8 py-6 space-y-8">
+      <div className="px-5 lg:px-10 py-8 space-y-10">
         {/* Next Best Action — dominant top section */}
         <NextBestAction />
 
         {/* Metric row */}
         <section
           data-testid="metric-strip"
-          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4"
         >
           <MetricCard
             testId="metric-new"
-            label="New Opportunities"
+            label="New this week"
             value={summary?.new_opportunities ?? "—"}
-            hint="Fresh signals to triage"
+            hint="Fresh signals to review"
             icon={Zap}
             onClick={() => goFilter({ status: "New" })}
           />
           <MetricCard
             testId="metric-immediate"
-            label="Immediate Action"
+            label="Move today"
             value={summary?.immediate_action ?? "—"}
-            hint="Call, text, or visit today"
+            hint="Call, text, or visit"
             icon={Flame}
             accent
             onClick={() => goFilter({ daily_mission: "Call Today" })}
           />
           <MetricCard
             testId="metric-ready"
-            label="Ready to Contact"
+            label="Ready to contact"
             value={summary?.ready_to_contact ?? "—"}
             hint="Complete profile, high intent"
             icon={PhoneCall}
+            tone="olive"
             onClick={() => goFilter({ status: "Ready" })}
           />
           <MetricCard
             testId="metric-research"
-            label="Needs Research"
+            label="Needs research"
             value={summary?.needs_research ?? "—"}
-            hint="Enrich before outreach"
+            hint="Enrich before reaching out"
             icon={SearchCode}
+            tone="sand"
             onClick={() => goFilter({ status: "Needs research" })}
           />
           <MetricCard
             testId="metric-pipeline"
-            label="Pipeline Value"
+            label="Pipeline value"
             value={fmtMoney(summary?.total_pipeline_value ?? 0)}
             hint={`Across ${summary?.active_count ?? 0} active`}
             icon={Landmark}
+            tone="brass"
             onClick={() => navigate("/opportunities")}
           />
         </section>
@@ -190,16 +193,16 @@ const CommandCenter = () => {
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
                 Section / 01
               </div>
-              <h2 className="font-display text-2xl font-bold text-neutral-100">
-                Today&rsquo;s Missions
+              <h2 className="font-display text-[24px] text-[var(--bh-ink)] tracking-tight">
+                Follow-ups for today
               </h2>
             </div>
             <Link
               to="/missions"
               data-testid="missions-see-all"
-              className="mono text-[11px] uppercase tracking-widest text-amber-400 hover:text-amber-300 inline-flex items-center gap-1"
+              className="text-[12px] text-[var(--bh-brass)] hover:text-[var(--bh-brass-2)] inline-flex items-center gap-1"
             >
-              Open dispatch <ChevronRight size={13} />
+              Open follow-ups <ChevronRight size={13} strokeWidth={1.75} />
             </Link>
           </div>
 
@@ -256,16 +259,14 @@ const CommandCenter = () => {
           <div>
             <div className="flex items-baseline justify-between mb-3">
               <div>
-                <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                  Section / 02
-                </div>
-                <h2 className="font-display text-xl font-bold text-neutral-100">
-                  Top Opportunities
+                <div className="bh-eyebrow">Section 02</div>
+                <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+                  Top projects
                 </h2>
               </div>
               <Link
                 to="/opportunities"
-                className="mono text-[11px] uppercase tracking-widest text-amber-400 hover:text-amber-300"
+                className="text-[12px] text-[var(--bh-brass)] hover:text-[var(--bh-brass-2)]"
               >
                 View all
               </Link>
@@ -413,11 +414,9 @@ const CommandCenter = () => {
         {/* Pipeline */}
         <section data-testid="section-pipeline" className="space-y-3">
           <div>
-            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-              Section / 04
-            </div>
-            <h2 className="font-display text-xl font-bold text-neutral-100">
-              Status Pipeline
+            <div className="bh-eyebrow">Section 04</div>
+            <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+              Project pipeline
             </h2>
           </div>
           <StatusPipeline

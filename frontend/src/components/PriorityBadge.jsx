@@ -1,50 +1,57 @@
 import React from "react";
 import clsx from "clsx";
 
+/**
+ * PriorityBand + PriorityScore — quiet, tabular. No emoji, no glowing dots.
+ * Fit reads as a small chip beside the numeric score.
+ */
 const bandStyles = {
-  A: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
-  B: "bg-blue-500/10 text-blue-400 border-blue-500/25",
-  C: "bg-amber-500/10 text-amber-400 border-amber-500/25",
-  D: "bg-red-500/10 text-red-400 border-red-500/25",
+  A: { fg: "var(--bh-olive)", bg: "var(--bh-olive-mute)", border: "rgba(107,122,85,0.35)" },
+  B: { fg: "var(--bh-brass)", bg: "var(--bh-brass-mute)", border: "var(--bh-hair-warm)" },
+  C: { fg: "#8f7a4b",         bg: "rgba(184,153,106,0.14)", border: "rgba(184,153,106,0.30)" },
+  D: { fg: "var(--bh-clay)",  bg: "var(--bh-clay-mute)",    border: "rgba(165,90,62,0.28)" },
 };
 
-export const PriorityBand = ({ band, className }) => (
-  <span
-    data-testid={`priority-band-${band}`}
-    className={clsx(
-      "mono inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold tracking-widest uppercase",
-      bandStyles[band] || "bg-neutral-500/10 text-neutral-400 border-neutral-500/25",
-      className,
-    )}
-  >
-    <span className="w-1 h-1 rounded-full bg-current" />
-    Band {band || "—"}
-  </span>
-);
+export const PriorityBand = ({ band, className }) => {
+  const s = bandStyles[band];
+  const style = s ? { color: s.fg, background: s.bg, borderColor: s.border }
+                  : { color: "var(--bh-ink-mute)", background: "var(--bh-surface-2)", borderColor: "var(--bh-hair)" };
+  return (
+    <span
+      data-testid={`priority-band-${band}`}
+      className={clsx(
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10.5px] font-medium tracking-[0.02em]",
+        className,
+      )}
+      style={style}
+    >
+      <span
+        aria-hidden
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ background: s ? s.fg : "var(--bh-ink-mute)" }}
+      />
+      Fit {band || "—"}
+    </span>
+  );
+};
 
 export const PriorityScore = ({ score, band, size = "md" }) => {
-  const color =
-    band === "A"
-      ? "text-emerald-400"
-      : band === "B"
-        ? "text-blue-400"
-        : band === "C"
-          ? "text-amber-400"
-          : band === "D"
-            ? "text-red-400"
-            : "text-neutral-300";
+  const color = bandStyles[band]?.fg || "var(--bh-ink)";
   const sizeCls =
-    size === "lg"
-      ? "text-4xl"
-      : size === "sm"
-        ? "text-lg"
-        : "text-2xl";
+    size === "lg" ? "text-4xl"
+    : size === "sm" ? "text-lg"
+    : "text-[28px]";
   return (
     <div className="flex items-baseline gap-1" data-testid="priority-score">
-      <span className={clsx("mono font-semibold tabular-nums", color, sizeCls)}>
+      <span
+        className={clsx("font-display tabular-nums leading-none", sizeCls)}
+        style={{ color }}
+      >
         {score ?? "—"}
       </span>
-      <span className="mono text-[10px] text-neutral-500">/100</span>
+      <span className="text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
+        /100
+      </span>
     </div>
   );
 };

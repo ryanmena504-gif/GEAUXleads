@@ -77,7 +77,7 @@ const Settings = () => {
 
   return (
     <>
-      <TopHeader pageTitle="Settings" subtitle="Configure your operator profile" />
+      <TopHeader pageTitle="Settings" subtitle="Configure your account preferences" />
       <div className="px-4 lg:px-8 py-6 space-y-6 max-w-5xl">
         <section>
           <div className="flex items-baseline justify-between mb-3">
@@ -228,12 +228,12 @@ const Settings = () => {
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            Section / 04 · Operator Preferences
+            Section 04 · Account preferences
           </div>
           <div className="bh-surface rounded p-5 space-y-4">
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
-                Operator name
+                Account name
               </div>
               <input
                 defaultValue="Ryan C."

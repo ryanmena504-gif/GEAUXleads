@@ -2,35 +2,38 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
-  LayoutDashboard,
-  Target,
-  Crosshair,
-  Network,
-  Radar,
-  Settings as SettingsIcon,
+  Sun,
+  FileText,
+  ListChecks,
+  Users,
+  BookOpen,
+  Sliders,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 
+// Route paths preserved; visible labels rebranded to owner-operated,
+// architectural language. No two-letter call signs, no tactical rails.
 const nav = [
-  { to: "/", label: "Command Center", icon: LayoutDashboard, code: "CC" },
-  { to: "/opportunities", label: "Opportunities", icon: Crosshair, code: "OP" },
-  { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
-  { to: "/relationships", label: "Relationships", icon: Network, code: "RE" },
-  { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN" },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, code: "SE" },
+  { to: "/", label: "Today's Work", icon: Sun },
+  { to: "/opportunities", label: "Project Signals", icon: FileText },
+  { to: "/missions", label: "Follow-Ups", icon: ListChecks },
+  { to: "/relationships", label: "Trade Network", icon: Users },
+  { to: "/intelligence", label: "Market Notes", icon: BookOpen },
+  { to: "/settings", label: "Settings", icon: Sliders },
 ];
 
 export const Sidebar = () => (
   <aside
     data-testid="sidebar"
-    className="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col bh-surface border-r bh-hairline z-30"
+    className="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col bh-surface border-r bh-hairline z-30"
+    style={{ background: "var(--bh-surface)" }}
   >
-    <div className="px-5 pt-6 pb-4 border-b bh-hairline">
+    <div className="px-6 pt-7 pb-5 border-b bh-hairline">
       <BloodhoundLogo />
     </div>
 
-    <nav className="flex-1 px-3 py-5 space-y-0.5">
+    <nav className="flex-1 px-3 py-6 space-y-0.5">
       {nav.map((item) => (
         <NavLink
           key={item.to}
@@ -39,28 +42,15 @@ export const Sidebar = () => (
           data-testid={`nav-${item.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
           className={({ isActive }) =>
             clsx(
-              "group flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors duration-150",
+              "group flex items-center gap-3 px-3 py-2 rounded-md text-[14px] transition-colors duration-150",
               isActive
-                ? "bg-white/[0.04] text-neutral-100"
-                : "text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.03]",
+                ? "bg-[var(--bh-surface-2)] text-[var(--bh-ink)]"
+                : "text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]/70",
             )
           }
         >
-          {({ isActive }) => (
-            <>
-              <span
-                className={clsx(
-                  "w-1 h-5 rounded-full transition-colors duration-150",
-                  isActive ? "bg-amber-500" : "bg-transparent",
-                )}
-              />
-              <item.icon size={15} strokeWidth={2} />
-              <span className="flex-1">{item.label}</span>
-              <span className="mono text-[9px] text-neutral-600 tracking-widest">
-                {item.code}
-              </span>
-            </>
-          )}
+          <item.icon size={15} strokeWidth={1.75} />
+          <span className="flex-1 font-medium tracking-tight">{item.label}</span>
         </NavLink>
       ))}
     </nav>

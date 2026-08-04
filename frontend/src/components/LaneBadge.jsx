@@ -2,27 +2,32 @@ import React from "react";
 import { LANE_LABEL } from "@/lib/constants";
 
 /**
- * LaneBadge — small pill showing which of the three parallel funnels a lead
- * belongs to. Colored per lane for at-a-glance triage.
- *   market_capture -> amber   (project leads, the default hunter output)
- *   partner        -> emerald (relationship/referral network)
- *   non_permit     -> sky     (public non-permit signals — not a green light)
+ * LaneBadge — quiet material chip. No color alarms, just a soft tone per lane
+ * that reads well against the bone canvas.
  */
 const LANE_STYLES = {
-  market_capture: "bg-amber-500/12 text-amber-300 border-amber-500/30",
-  partner: "bg-emerald-500/12 text-emerald-300 border-emerald-500/30",
-  non_permit: "bg-sky-500/12 text-sky-300 border-sky-500/30",
+  market_capture: { fg: "var(--bh-brass)", bg: "var(--bh-brass-mute)", border: "var(--bh-hair-warm)" },
+  partner:        { fg: "var(--bh-olive)", bg: "var(--bh-olive-mute)", border: "rgba(107,122,85,0.32)" },
+  non_permit:     { fg: "#4b6b6f",         bg: "rgba(75,107,111,0.10)", border: "rgba(75,107,111,0.30)" },
+};
+
+// Softer, non-tactical labels shown in the UI. Backend key unchanged.
+const DISPLAY_LABEL = {
+  market_capture: "Projects",
+  partner: "Trade Network",
+  non_permit: "Market Notes",
 };
 
 export const LaneBadge = ({ lane, size = "sm", className = "" }) => {
   if (!lane) return null;
-  const label = LANE_LABEL[lane] || lane;
-  const style = LANE_STYLES[lane] || "border-neutral-700 text-neutral-300";
-  const px = size === "md" ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10px]";
+  const label = DISPLAY_LABEL[lane] || LANE_LABEL[lane] || lane;
+  const s = LANE_STYLES[lane] || { fg: "var(--bh-ink-mute)", bg: "var(--bh-surface-2)", border: "var(--bh-hair)" };
+  const px = size === "md" ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10.5px]";
   return (
     <span
       data-testid={`lane-badge-${lane}`}
-      className={`mono uppercase tracking-widest rounded border inline-flex items-center ${px} ${style} ${className}`}
+      className={`inline-flex items-center rounded-full border font-medium tracking-tight ${px} ${className}`}
+      style={{ color: s.fg, background: s.bg, borderColor: s.border }}
     >
       {label}
     </span>

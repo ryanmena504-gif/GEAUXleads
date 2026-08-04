@@ -137,8 +137,8 @@ const NonPermitSignals = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Non-Permit Signals"
-        subtitle={items === null ? "Loading…" : `${items.length} high-priority signals`}
+        pageTitle="Market Notes"
+        subtitle={items === null ? "Loading" : `${items.length} non-permit signals worth reading`}
       />
       <div className="px-4 lg:px-8 py-6 space-y-5">
         <section
@@ -146,21 +146,21 @@ const NonPermitSignals = () => {
           className="bh-surface rounded p-5 sm:p-6 border-t border-t-sky-500/60"
         >
           <div className="flex items-center gap-2">
-            <Radar size={13} className="text-sky-300" />
-            <span className="mono text-[10px] uppercase tracking-widest text-sky-300">
-              Non-Permit Signals
+            <Radar size={13} style={{ color: "#4b6b6f" }} strokeWidth={1.75} />
+            <span className="bh-eyebrow" style={{ color: "#4b6b6f" }}>
+              Market notes
             </span>
-            <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-0.5 inline-flex items-center gap-1 ml-2">
-              <Shield size={10} /> Read-only · campaign approval required
+            <span className="bh-note ml-2 inline-flex items-center gap-1 py-0.5">
+              <Shield size={10} strokeWidth={1.75} /> Read-only · approval required before outreach
             </span>
           </div>
-          <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold text-neutral-100 tracking-tight max-w-2xl">
-            Public project signals your competitors haven&apos;t seen yet.
+          <h2 className="mt-3 font-display text-[26px] sm:text-[32px] text-[var(--bh-ink)] tracking-tight max-w-2xl">
+            Project signals from outside the permit feed.
           </h2>
-          <p className="mt-2 text-sm text-neutral-400 max-w-2xl leading-relaxed">
-            Website mentions, referral hints, social posts, and other non-permit
-            evidence the automation has qualified as project-relevant. A public
-            signal is not permission to contact — send only after a campaign is
+          <p className="mt-2 text-[14px] text-[var(--bh-ink-3)] max-w-2xl leading-relaxed">
+            Website mentions, referral hints, and other non-permit evidence
+            the automation has qualified as project-relevant. A public signal
+            is not permission to contact — reach out only after a campaign is
             approved.
           </p>
         </section>
@@ -174,10 +174,10 @@ const NonPermitSignals = () => {
                 data-testid={`signal-platform-${p}`}
                 onClick={() => setPlatform(p)}
                 className={
-                  "mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded border transition-colors duration-150 " +
+                  "mono text-[10.5px] px-2.5 py-1 rounded-full border transition-colors duration-150 tracking-tight " +
                   (platform === p
-                    ? "bg-sky-500/15 border-sky-500/40 text-sky-300"
-                    : "bh-hairline text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.03]")
+                    ? "bg-[rgba(75,107,111,0.10)] border-[rgba(75,107,111,0.30)] text-[#4b6b6f]"
+                    : "bh-hairline text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]/70")
                 }
               >
                 {p === "all" ? "All platforms" : p}

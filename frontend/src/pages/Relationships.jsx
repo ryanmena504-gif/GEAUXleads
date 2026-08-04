@@ -155,8 +155,8 @@ const PartnerIntelligence = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Partner Intelligence"
-        subtitle={items === null ? "Loading…" : `${items.length} qualified partners`}
+        pageTitle="Trade Network"
+        subtitle={items === null ? "Loading" : `${items.length} qualified partners on record`}
       />
       <div className="px-4 lg:px-8 py-6 space-y-5">
         <section
@@ -164,21 +164,21 @@ const PartnerIntelligence = () => {
           className="bh-surface rounded p-5 sm:p-6 border-t border-t-emerald-500/60"
         >
           <div className="flex items-center gap-2">
-            <Handshake size={13} className="text-emerald-400" />
-            <span className="mono text-[10px] uppercase tracking-widest text-emerald-400">
-              Partner Pipeline
+            <Handshake size={13} style={{ color: "var(--bh-olive)" }} strokeWidth={1.75} />
+            <span className="bh-eyebrow" style={{ color: "var(--bh-olive)" }}>
+              Trade network
             </span>
-            <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-0.5 inline-flex items-center gap-1 ml-2">
-              <Shield size={10} /> Read-only intelligence · no outreach
+            <span className="bh-note ml-2 inline-flex items-center gap-1 py-0.5">
+              <Shield size={10} strokeWidth={1.75} /> Read-only · approval required before outreach
             </span>
           </div>
-          <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold text-neutral-100 tracking-tight max-w-2xl">
-            Qualified contractors, designers, architects, and referral partners.
+          <h2 className="mt-3 font-display text-[26px] sm:text-[32px] text-[var(--bh-ink)] tracking-tight max-w-2xl">
+            Contractors, designers, architects, and referral partners on the book.
           </h2>
-          <p className="mt-2 text-sm text-neutral-400 max-w-2xl leading-relaxed">
-            Every row here is a qualified relationship candidate the Airtable
-            model has flagged as a partner. Contact automation is disabled by
-            design — send only after a campaign is approved.
+          <p className="mt-2 text-[14px] text-[var(--bh-ink-3)] max-w-2xl leading-relaxed">
+            Every row here is a qualified relationship the Airtable model has
+            flagged as a trade partner. Contact automation is intentionally off —
+            reach out only after a campaign has been approved.
           </p>
         </section>
 
@@ -190,10 +190,10 @@ const PartnerIntelligence = () => {
               data-testid={`partner-tab-${t.key}`}
               onClick={() => setTab(t.key)}
               className={
-                "mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded border transition-colors duration-150 " +
+                "mono text-[10.5px] px-2.5 py-1 rounded-full border transition-colors duration-150 tracking-tight " +
                 (tab === t.key
-                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                  : "bh-hairline text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.03]")
+                  ? "bg-[var(--bh-olive-mute)] border-[rgba(107,122,85,0.32)] text-[var(--bh-olive)]"
+                  : "bh-hairline text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]/70")
               }
             >
               {t.label}

@@ -3,34 +3,32 @@ import { Bell, Search } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import { useCommandPalette } from "@/layouts/AppLayout";
 
-export const TopHeader = ({ pageTitle, subtitle, right, mobileMenu }) => {
+export const TopHeader = ({ pageTitle, subtitle, right }) => {
   const palette = useCommandPalette();
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
-    year: "numeric",
   });
 
   return (
     <header
       data-testid="top-header"
       className="sticky top-0 z-20 bh-surface border-b bh-hairline"
+      style={{ background: "var(--bh-surface)" }}
     >
-      <div className="px-4 lg:px-8 h-16 flex items-center gap-4">
+      <div className="px-5 lg:px-10 h-[72px] flex items-center gap-5">
         <div className="lg:hidden">
           <BloodhoundLogo compact />
         </div>
 
         <div className="hidden lg:flex flex-col leading-tight">
-          <div className="font-display text-xl font-bold text-neutral-100 tracking-tight">
+          <div className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
             {pageTitle}
           </div>
           {subtitle ? (
-            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-              {subtitle}
-            </div>
+            <div className="bh-eyebrow mt-0.5">{subtitle}</div>
           ) : null}
         </div>
 
@@ -40,13 +38,17 @@ export const TopHeader = ({ pageTitle, subtitle, right, mobileMenu }) => {
           type="button"
           onClick={() => palette.open()}
           data-testid="global-search"
-          className="hidden md:flex items-center gap-2 bh-surface-2 rounded px-3 h-9 min-w-[240px] max-w-sm text-left hover:bg-white/[0.05] transition-colors duration-150"
+          className="hidden md:flex items-center gap-2 rounded-md px-3 h-10 min-w-[280px] max-w-md text-left transition-colors duration-150"
+          style={{
+            background: "var(--bh-surface-2)",
+            border: "1px solid var(--bh-hair)",
+          }}
         >
-          <Search size={14} className="text-neutral-500" />
-          <span className="text-sm flex-1 text-neutral-500">
-            Search opportunities, addresses, permits…
+          <Search size={14} className="text-[var(--bh-ink-mute)]" strokeWidth={1.75} />
+          <span className="text-[13px] flex-1 text-[var(--bh-ink-mute)]">
+            Search projects, addresses, permits…
           </span>
-          <span className="mono text-[10px] text-neutral-500 border bh-hairline rounded px-1.5 py-0.5">
+          <span className="mono text-[10px] text-[var(--bh-ink-mute)] rounded px-1.5 py-0.5 bh-hairline border">
             ⌘K
           </span>
         </button>
@@ -55,50 +57,55 @@ export const TopHeader = ({ pageTitle, subtitle, right, mobileMenu }) => {
           type="button"
           onClick={() => palette.open()}
           data-testid="mobile-search-btn"
-          aria-label="Open command palette"
-          className="md:hidden w-9 h-9 flex items-center justify-center rounded bh-surface-2 hover:bg-white/[0.05] transition-colors duration-150"
+          aria-label="Open search"
+          className="md:hidden w-10 h-10 flex items-center justify-center rounded-md bh-surface-2"
         >
-          <Search size={15} className="text-neutral-300" />
+          <Search size={16} className="text-[var(--bh-ink-2)]" strokeWidth={1.75} />
         </button>
 
-        <div className="hidden lg:flex items-center gap-3 text-xs text-neutral-400">
-          <div className="mono uppercase tracking-widest text-[10px]">
-            {dateStr}
-          </div>
+        <div className="hidden lg:block text-[12px] text-[var(--bh-ink-mute)] tracking-tight">
+          {dateStr}
         </div>
 
         <button
           data-testid="notifications-btn"
-          className="relative w-9 h-9 flex items-center justify-center rounded bh-surface-2 hover:bg-white/[0.05] transition-colors duration-150"
+          className="relative w-10 h-10 flex items-center justify-center rounded-md bh-surface-2"
           aria-label="Notifications"
         >
-          <Bell size={15} className="text-neutral-300" strokeWidth={2} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
+          <Bell size={15} className="text-[var(--bh-ink-2)]" strokeWidth={1.75} />
+          <span
+            className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full"
+            style={{ background: "var(--bh-brass)" }}
+          />
         </button>
 
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center font-display font-bold text-neutral-950">
-            RC
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center font-display text-[15px]"
+            style={{
+              background: "var(--bh-surface-3)",
+              color: "var(--bh-ink)",
+              border: "1px solid var(--bh-hair)",
+            }}
+            aria-label="Account"
+          >
+            R
           </div>
           <div className="hidden xl:flex flex-col leading-tight">
-            <div className="text-xs text-neutral-200 font-medium">Ryan C.</div>
-            <div className="mono text-[10px] text-neutral-500 uppercase tracking-widest">
-              Operator
-            </div>
+            <div className="text-[13px] text-[var(--bh-ink)] font-medium">Ryan</div>
+            <div className="text-[11px] text-[var(--bh-ink-mute)]">Account Lead</div>
           </div>
         </div>
 
         {right}
       </div>
 
-      <div className="lg:hidden px-4 pb-3">
-        <div className="font-display text-2xl font-bold text-neutral-100 tracking-tight">
+      <div className="lg:hidden px-5 pb-4">
+        <div className="font-display text-[26px] text-[var(--bh-ink)] tracking-tight">
           {pageTitle}
         </div>
         {subtitle ? (
-          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mt-0.5">
-            {subtitle}
-          </div>
+          <div className="bh-eyebrow mt-1">{subtitle}</div>
         ) : null}
       </div>
     </header>

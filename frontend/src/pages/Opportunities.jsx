@@ -88,8 +88,8 @@ const Opportunities = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Opportunities"
-        subtitle={`${items.length} matching · ${activeFilterCount} filters`}
+        pageTitle="Project Signals"
+        subtitle={`${items.length} matching · ${activeFilterCount} filters applied`}
       />
 
       <div className="px-4 lg:px-8 py-6 space-y-5">
@@ -101,7 +101,7 @@ const Opportunities = () => {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search name, address, permit, decision maker…"
               data-testid="opps-search"
-              className="flex-1 min-w-[220px] bg-transparent border bh-hairline rounded h-9 px-3 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-amber-500/50 outline-none"
+              className="flex-1 min-w-[220px] bg-transparent border bh-hairline rounded-md h-10 px-3 text-[14px] text-[var(--bh-ink)] placeholder:text-[var(--bh-ink-mute)] focus:border-[var(--bh-brass)]/60 outline-none"
             />
             <div className="inline-flex items-center border bh-hairline rounded overflow-hidden">
               <button
@@ -110,7 +110,7 @@ const Opportunities = () => {
                 className={
                   "px-3 h-9 text-xs inline-flex items-center gap-1.5 transition-colors duration-150 " +
                   (view === "list"
-                    ? "bg-white/[0.05] text-neutral-100"
+                    ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
                     : "text-neutral-500 hover:text-neutral-200")
                 }
               >
@@ -122,7 +122,7 @@ const Opportunities = () => {
                 className={
                   "px-3 h-9 text-xs inline-flex items-center gap-1.5 transition-colors duration-150 " +
                   (view === "grid"
-                    ? "bg-white/[0.05] text-neutral-100"
+                    ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
                     : "text-neutral-500 hover:text-neutral-200")
                 }
               >
@@ -227,7 +227,7 @@ const Opportunities = () => {
                   data-testid="filter-min-score"
                   className="flex-1 accent-amber-500"
                 />
-                <div className="mono text-sm text-neutral-100 w-10 text-right tabular-nums">
+                <div className="text-[14px] text-[var(--bh-ink)] w-10 text-right tabular-nums">
                   {minScore}
                 </div>
               </div>
@@ -263,7 +263,7 @@ const Opportunities = () => {
                   />
                   <PriorityBand band={o.priority_band} />
                 </div>
-                <div className="mt-3 font-display font-semibold text-neutral-100 leading-tight">
+                <div className="mt-3 font-display text-[19px] text-[var(--bh-ink)] leading-tight tracking-tight">
                   {o.name}
                 </div>
                 <div className="mt-1 text-xs text-neutral-500 truncate">
@@ -277,7 +277,7 @@ const Opportunities = () => {
                   <StatusBadge status={o.status} />
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="mono text-[10px] text-neutral-500 uppercase tracking-widest">
+                  <span className="text-[10.5px] text-[var(--bh-ink-mute)] tracking-tight">
                     {sourceLabel(o.source)}
                   </span>
                   <span className="font-display font-semibold text-neutral-200">

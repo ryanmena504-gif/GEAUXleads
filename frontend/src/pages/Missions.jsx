@@ -26,7 +26,7 @@ const missionCopy = {
   "Ask for Referral":
     "Win once, sell twice. Ask past clients who else needs work.",
   "Follow Up":
-    "The most valuable mission. Owners buy from whoever is still present.",
+    "The most valuable follow-up. Owners buy from whoever is still present.",
   Wait:
     "Do nothing today. The signal is developing — check back Friday.",
 };
@@ -46,7 +46,7 @@ const Missions = () => {
 
   const markDone = (id) => {
     setCompleted((c) => ({ ...c, [id]: true }));
-    toast.success("Mission marked complete");
+    toast.success("Follow-up marked complete");
   };
 
   const snooze = async (id) => {
@@ -62,7 +62,7 @@ const Missions = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Today's Missions"
+        pageTitle="Follow-Ups"
         subtitle={`${doneCount} of ${total} complete`}
       />
 
@@ -70,15 +70,15 @@ const Missions = () => {
         <div className="bh-surface rounded p-4 flex items-center gap-3 border-t border-t-amber-500/60">
           <Clock size={16} className="text-amber-400" />
           <div className="flex-1">
-            <div className="text-sm text-neutral-100 font-medium">
+            <div className="text-sm text-[var(--bh-ink)] font-medium">
               Daily operating plan
             </div>
-            <div className="text-xs text-neutral-500">
-              Missions are ranked by priority score within each bucket. Complete
+            <div className="text-xs text-[var(--bh-ink-mute)]">
+              Follow-ups are ranked by priority score within each bucket. Complete
               the highest-priority items first.
             </div>
           </div>
-          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+          <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
             Score threshold · 0
           </div>
         </div>
@@ -91,11 +91,11 @@ const Missions = () => {
               <div className="flex items-baseline justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <MissionBadge mission={m} />
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
                     {items.length} opportunit{items.length === 1 ? "y" : "ies"}
                   </div>
                 </div>
-                <div className="hidden md:block text-xs text-neutral-500 max-w-md text-right leading-relaxed">
+                <div className="hidden md:block text-xs text-[var(--bh-ink-mute)] max-w-md text-right leading-relaxed">
                   {missionCopy[m]}
                 </div>
               </div>
@@ -128,11 +128,11 @@ const Missions = () => {
                       </div>
                       <Link
                         to={`/opportunities/${o.id}`}
-                        className="mt-3 font-display font-semibold text-neutral-100 leading-tight hover:text-amber-300"
+                        className="mt-3 font-display font-semibold text-[var(--bh-ink)] leading-tight hover:text-amber-300"
                       >
                         {o.name}
                       </Link>
-                      <div className="mt-1 text-xs text-neutral-500 truncate">
+                      <div className="mt-1 text-xs text-[var(--bh-ink-mute)] truncate">
                         {o.project_address}
                       </div>
                       <div className="mt-3 text-[13px] text-amber-200/90 line-clamp-2 flex-1">
@@ -142,7 +142,7 @@ const Missions = () => {
                         <span className="font-display font-semibold text-neutral-200">
                           {fmtMoney(o.estimated_value)}
                         </span>
-                        <span className="mono text-[10px] text-neutral-500 uppercase tracking-widest truncate max-w-[140px]">
+                        <span className="mono text-[10px] text-[var(--bh-ink-mute)] uppercase tracking-widest truncate max-w-[140px]">
                           {o.decision_maker || "Contact TBD"}
                         </span>
                       </div>
@@ -172,7 +172,7 @@ const Missions = () => {
         })}
 
         {total === 0 && (
-          <div className="bh-surface rounded p-12 text-center text-neutral-500 text-sm">
+          <div className="bh-surface rounded p-12 text-center text-[var(--bh-ink-mute)] text-sm">
             No active missions right now.
           </div>
         )}

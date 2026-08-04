@@ -60,13 +60,13 @@ const activityIcon = (t) => {
 const SectionHeading = ({ code, title, hint }) => (
   <div className="flex items-baseline justify-between mb-3">
     <div>
-      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+      <div className="bh-eyebrow">
         {code}
       </div>
-      <h3 className="font-display text-lg font-bold text-neutral-100">{title}</h3>
+      <h3 className="font-display text-lg font-bold text-[var(--bh-ink)]">{title}</h3>
     </div>
     {hint ? (
-      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+      <div className="bh-eyebrow">
         {hint}
       </div>
     ) : null}
@@ -75,10 +75,10 @@ const SectionHeading = ({ code, title, hint }) => (
 
 const KV = ({ label, value, mono, testId }) => (
   <div className="py-2 border-b bh-hairline last:border-b-0" data-testid={testId}>
-    <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+    <div className="bh-eyebrow">
       {label}
     </div>
-    <div className={"mt-1 text-sm text-neutral-100 " + (mono ? "mono" : "")}>
+    <div className={"mt-1 text-sm text-[var(--bh-ink)] " + (mono ? "mono" : "")}>
       {value ?? <span className="text-neutral-600 italic">Not available yet</span>}
     </div>
   </div>
@@ -103,8 +103,8 @@ const Meter = ({ label, level }) => {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="mono text-[10px] uppercase tracking-widest text-neutral-500">{label}</span>
-        <span className="text-xs text-neutral-200">{display}</span>
+        <span className="bh-eyebrow">{label}</span>
+        <span className="text-xs text-[var(--bh-ink-2)]">{display}</span>
       </div>
       <div className="mt-1.5 flex gap-1">
         {[1, 2, 3].map((i) => (
@@ -144,7 +144,7 @@ const OpportunityDetail = () => {
     return (
       <>
         <TopHeader pageTitle="Opportunity" subtitle="Loading…" />
-        <div className="px-4 lg:px-8 py-10 text-neutral-500">Loading…</div>
+        <div className="px-4 lg:px-8 py-10 text-[var(--bh-ink-mute)]">Loading…</div>
       </>
     );
   }
@@ -159,7 +159,7 @@ const OpportunityDetail = () => {
       <div className="px-4 lg:px-8 py-6 space-y-6">
         <Link
           to="/opportunities"
-          className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-amber-400"
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--bh-ink-mute)] hover:text-amber-400"
           data-testid="back-to-opps"
         >
           <ArrowLeft size={13} /> Back to opportunities
@@ -173,22 +173,22 @@ const OpportunityDetail = () => {
           <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                <span className="bh-eyebrow">
                   {opp.opportunity_id}
                 </span>
                 <StatusBadge status={opp.status} />
                 <PriorityBand band={opp.priority_band} />
               </div>
-              <h1 className="mt-2 font-display text-3xl lg:text-4xl font-bold text-neutral-100 tracking-tight">
+              <h1 className="mt-2 font-display text-3xl lg:text-4xl font-bold text-[var(--bh-ink)] tracking-tight">
                 {opp.name}
               </h1>
-              <div className="mt-2 flex items-center gap-2 text-sm text-neutral-400">
-                <MapPin size={14} className="text-neutral-500" />
+              <div className="mt-2 flex items-center gap-2 text-sm text-[var(--bh-ink-mute)]">
+                <MapPin size={14} className="text-[var(--bh-ink-mute)]" />
                 {opp.project_address}
               </div>
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 min-w-0">
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  <div className="bh-eyebrow">
                     Priority
                   </div>
                   <div className="mt-1">
@@ -200,26 +200,26 @@ const OpportunityDetail = () => {
                   </div>
                 </div>
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  <div className="bh-eyebrow">
                     Est. value
                   </div>
-                  <div className="font-display text-2xl lg:text-3xl font-bold text-neutral-100 tabular-nums mt-1">
+                  <div className="font-display text-2xl lg:text-3xl font-bold text-[var(--bh-ink)] tabular-nums mt-1">
                     {fmtMoney(opp.estimated_value)}
                   </div>
                 </div>
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  <div className="bh-eyebrow">
                     Source
                   </div>
-                  <div className="mt-1 text-neutral-100 font-medium">
+                  <div className="mt-1 text-[var(--bh-ink)] font-medium">
                     {sourceLabel(opp.source)}
                   </div>
                 </div>
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  <div className="bh-eyebrow">
                     Project type
                   </div>
-                  <div className="mt-1 text-neutral-100 font-medium">
+                  <div className="mt-1 text-[var(--bh-ink)] font-medium">
                     {opp.project_type}
                   </div>
                 </div>
@@ -228,13 +228,13 @@ const OpportunityDetail = () => {
 
             {/* Primary action panel */}
             <div className="bh-surface-2 rounded p-4 min-w-0">
-              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+              <div className="bh-eyebrow">
                 Recommended action
               </div>
               <div className="mt-1.5">
                 <MissionBadge mission={opp.daily_mission} />
               </div>
-              <div className="mt-3 font-display text-lg font-semibold text-neutral-100 leading-snug">
+              <div className="mt-3 font-display text-lg font-semibold text-[var(--bh-ink)] leading-snug">
                 {opp.recommended_action}
               </div>
               <div className="mt-2 text-sm text-amber-200/90">
@@ -256,7 +256,7 @@ const OpportunityDetail = () => {
                           ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
                           : a.tone === "danger"
                             ? "border bh-hairline text-red-300 hover:bg-red-500/10"
-                            : "border bh-hairline text-neutral-200 hover:bg-white/[0.03]") +
+                            : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
                       (opp.status === a.status ? " opacity-40" : "") +
                       " disabled:cursor-not-allowed"
                     }
@@ -282,18 +282,18 @@ const OpportunityDetail = () => {
               />
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] mb-1">
                     Why this recommendation
                   </div>
-                  <p className="text-sm text-neutral-200 leading-relaxed">
+                  <p className="text-sm text-[var(--bh-ink-2)] leading-relaxed">
                     {opp.recommendation_reason || "—"}
                   </p>
                 </div>
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] mb-1">
                     Evidence summary
                   </div>
-                  <p className="text-sm text-neutral-200 leading-relaxed">
+                  <p className="text-sm text-[var(--bh-ink-2)] leading-relaxed">
                     {opp.evidence_summary || "—"}
                   </p>
                 </div>
@@ -301,7 +301,7 @@ const OpportunityDetail = () => {
 
               <div className="mt-5 grid sm:grid-cols-2 gap-5">
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5 inline-flex items-center gap-1.5">
+                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] mb-1.5 inline-flex items-center gap-1.5">
                     <Info size={11} /> Missing information
                   </div>
                   {opp.missing_information?.length ? (
@@ -317,13 +317,13 @@ const OpportunityDetail = () => {
                       ))}
                     </ul>
                   ) : (
-                    <div className="text-sm text-neutral-500">
+                    <div className="text-sm text-[var(--bh-ink-mute)]">
                       Nothing critical missing.
                     </div>
                   )}
                 </div>
                 <div>
-                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5 inline-flex items-center gap-1.5">
+                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] mb-1.5 inline-flex items-center gap-1.5">
                     <ShieldAlert size={11} /> Risk flags
                   </div>
                   {opp.risk_flags?.length ? (
@@ -339,7 +339,7 @@ const OpportunityDetail = () => {
                       ))}
                     </ul>
                   ) : (
-                    <div className="text-sm text-neutral-500">
+                    <div className="text-sm text-[var(--bh-ink-mute)]">
                       No risk flags detected.
                     </div>
                   )}
@@ -401,7 +401,7 @@ const OpportunityDetail = () => {
                 title="Relationships"
                 hint="Preview"
               />
-              <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
+              <p className="text-xs text-[var(--bh-ink-mute)] mb-4 leading-relaxed">
                 Who is the strongest relationship path to help win this opportunity?
               </p>
               <div className="space-y-2">
@@ -417,13 +417,13 @@ const OpportunityDetail = () => {
                     className="bh-surface-2 rounded p-3 flex items-center gap-3"
                   >
                     <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
-                      <r.icon size={14} className="text-neutral-400" />
+                      <r.icon size={14} className="text-[var(--bh-ink-mute)]" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+                      <div className="mono text-[9px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
                         {r.label}
                       </div>
-                      <div className="text-sm text-neutral-200 truncate">
+                      <div className="text-sm text-[var(--bh-ink-2)] truncate">
                         {r.val}
                       </div>
                     </div>
@@ -431,10 +431,10 @@ const OpportunityDetail = () => {
                 ))}
               </div>
               <div className="mt-3 border-t bh-hairline pt-3">
-                <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                <div className="bh-eyebrow">
                   Coming next
                 </div>
-                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+                <p className="text-xs text-[var(--bh-ink-mute)] mt-1 leading-relaxed">
                   Relationship graph will map contractors, past clients, and mutual
                   connections to surface the strongest intro path.
                 </p>
@@ -451,18 +451,18 @@ const OpportunityDetail = () => {
                       <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-[color:var(--bh-surface)] border bh-hairline-strong flex items-center justify-center">
                         <Icon size={9} className="text-amber-400" />
                       </span>
-                      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 flex items-center gap-2">
+                      <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] flex items-center gap-2">
                         <Clock3 size={10} />
                         {fmtDateTime(a.timestamp)}
                       </div>
-                      <div className="text-sm text-neutral-200 mt-0.5">
+                      <div className="text-sm text-[var(--bh-ink-2)] mt-0.5">
                         {a.note}
                       </div>
                     </li>
                   );
                 })}
                 {(!opp.activity_timeline || opp.activity_timeline.length === 0) && (
-                  <li className="text-sm text-neutral-500">No activity yet.</li>
+                  <li className="text-sm text-[var(--bh-ink-mute)]">No activity yet.</li>
                 )}
               </ol>
             </section>

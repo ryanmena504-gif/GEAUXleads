@@ -1,25 +1,68 @@
 import React from "react";
+import { Link } from "react-router-dom";
 
-export const BloodhoundLogo = ({ compact = false }) => (
-  <div className="flex items-center gap-2.5" data-testid="bloodhound-logo">
-    <div className="relative w-7 h-7 flex items-center justify-center">
-      <div className="absolute inset-0 rounded-sm border bh-hairline-strong" />
-      <div className="absolute inset-[6px] rounded-full border border-amber-500/70" />
-      <div className="absolute inset-[10px] rounded-full bg-amber-500 bh-pulse-dot" />
-      <div className="absolute left-1/2 top-0 bottom-0 w-px bg-amber-500/25" />
-      <div className="absolute top-1/2 left-0 right-0 h-px bg-amber-500/25" />
-    </div>
-    {!compact && (
+/**
+ * Bloodhound mark — quiet geometric.
+ *  - Two nested rounded squares (a plate + inset), aged brass hairline.
+ *  - A single soft dot at the intersection reads like a builder's benchmark.
+ * No shields, crosshairs, radar, or animal iconography.
+ */
+const Mark = ({ size = 32 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 32 32"
+    role="img"
+    aria-label="Bloodhound"
+    className="shrink-0"
+  >
+    <rect
+      x="3.5"
+      y="3.5"
+      width="25"
+      height="25"
+      rx="6"
+      fill="var(--bh-surface)"
+      stroke="var(--bh-brass)"
+      strokeOpacity="0.7"
+      strokeWidth="1.25"
+    />
+    <rect
+      x="9"
+      y="9"
+      width="14"
+      height="14"
+      rx="3"
+      fill="none"
+      stroke="var(--bh-brass)"
+      strokeOpacity="0.6"
+      strokeWidth="1.15"
+    />
+    <circle cx="16" cy="16" r="1.6" fill="var(--bh-brass)" />
+  </svg>
+);
+
+export const BloodhoundLogo = ({ compact = false }) => {
+  if (compact) {
+    return (
+      <Link to="/" className="inline-flex items-center gap-2">
+        <Mark size={28} />
+      </Link>
+    );
+  }
+  return (
+    <Link to="/" className="inline-flex items-center gap-3 group">
+      <Mark size={34} />
       <div className="leading-tight">
-        <div className="font-display text-[13px] font-bold tracking-[0.22em] text-neutral-100">
-          BLOODHOUND
+        <div className="font-display text-[19px] text-[var(--bh-ink)] tracking-tight">
+          Bloodhound
         </div>
-        <div className="mono text-[9px] tracking-[0.28em] text-neutral-500 uppercase">
-          Opportunity Intel
+        <div className="text-[11px] text-[var(--bh-ink-mute)] tracking-tight">
+          Owner-operated project book
         </div>
       </div>
-    )}
-  </div>
-);
+    </Link>
+  );
+};
 
 export default BloodhoundLogo;

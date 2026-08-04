@@ -2,44 +2,60 @@ import React from "react";
 import clsx from "clsx";
 import { ArrowUpRight } from "lucide-react";
 
+/**
+ * MetricCard — material swatch. Restrained corner accent + soft warm border,
+ * 12px radius, no chrome. Preserves label / value / hint / onClick contract.
+ */
 export const MetricCard = ({
   label,
   value,
   hint,
-  accent = false,
+  accent = false,      // brass hairline accent when the metric is the priority focus
+  tone = "default",    // "olive" | "clay" | "sand" | "brass" | "default"
   onClick,
   testId,
   icon: Icon,
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    data-testid={testId}
-    className={clsx(
-      "group relative text-left w-full bh-surface rounded-md p-4 lg:p-5",
-      "hover:bg-white/[0.03] transition-colors duration-150",
-      "border-t",
-      accent ? "border-t-amber-500/60" : "border-t-white/10",
-    )}
-  >
-    <div className="flex items-start justify-between gap-2">
-      <div className="flex items-center gap-2 text-neutral-400">
-        {Icon ? <Icon size={13} strokeWidth={2} /> : null}
-        <div className="mono uppercase tracking-[0.2em] text-[10px]">{label}</div>
+}) => {
+  const toneClass =
+    accent ? "bh-swatch--brass"
+    : tone === "olive" ? "bh-swatch--olive"
+    : tone === "clay" ? "bh-swatch--clay"
+    : tone === "sand" ? "bh-swatch--sand"
+    : tone === "brass" ? "bh-swatch--brass"
+    : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className={clsx(
+        "bh-swatch group relative text-left w-full p-5 lg:p-6",
+        "transition-shadow duration-200",
+        toneClass,
+      )}
+      style={{ minHeight: 132 }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 text-[var(--bh-ink-mute)]">
+          {Icon ? <Icon size={14} strokeWidth={1.75} /> : null}
+          <div className="bh-eyebrow">{label}</div>
+        </div>
+        <ArrowUpRight
+          size={15}
+          strokeWidth={1.5}
+          className="text-[var(--bh-ink-faint)] group-hover:text-[var(--bh-brass)] transition-colors duration-150"
+        />
       </div>
-      <ArrowUpRight
-        size={14}
-        className="text-neutral-600 group-hover:text-amber-400 transition-colors duration-150"
-        strokeWidth={2}
-      />
-    </div>
-    <div className="mt-3 font-display text-3xl lg:text-4xl font-bold tracking-tight text-neutral-100 tabular-nums">
-      {value}
-    </div>
-    {hint ? (
-      <div className="mt-1.5 text-xs text-neutral-500">{hint}</div>
-    ) : null}
-  </button>
-);
+      <div className="mt-5 font-display text-[34px] lg:text-[38px] leading-none text-[var(--bh-ink)] tabular-nums">
+        {value}
+      </div>
+      {hint ? (
+        <div className="mt-2 text-[12.5px] text-[var(--bh-ink-mute)] tracking-tight">
+          {hint}
+        </div>
+      ) : null}
+    </button>
+  );
+};
 
 export default MetricCard;

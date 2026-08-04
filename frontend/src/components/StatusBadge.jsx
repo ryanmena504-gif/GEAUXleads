@@ -2,29 +2,36 @@ import React from "react";
 import clsx from "clsx";
 
 const statusStyles = {
-  New: "bg-blue-500/10 text-blue-400 border-blue-500/25",
-  "Needs research": "bg-amber-500/10 text-amber-300 border-amber-500/25",
-  Ready: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
-  "Conversation started": "bg-sky-500/10 text-sky-300 border-sky-500/25",
-  "Estimate requested": "bg-indigo-500/10 text-indigo-300 border-indigo-500/25",
-  "Estimate sent": "bg-violet-500/10 text-violet-300 border-violet-500/25",
-  Won: "bg-emerald-600/15 text-emerald-300 border-emerald-500/40",
-  Lost: "bg-red-500/10 text-red-400 border-red-500/25",
-  Disqualified: "bg-neutral-500/10 text-neutral-400 border-neutral-500/25",
+  New:                     { fg: "var(--bh-brass)",  bg: "var(--bh-brass-mute)",  border: "var(--bh-hair-warm)" },
+  "Needs research":        { fg: "#7a6a4f",          bg: "rgba(122,106,79,0.12)", border: "rgba(122,106,79,0.28)" },
+  Ready:                   { fg: "var(--bh-olive)",  bg: "var(--bh-olive-mute)",  border: "rgba(107,122,85,0.32)" },
+  "Conversation started":  { fg: "#4b6b6f",          bg: "rgba(75,107,111,0.10)", border: "rgba(75,107,111,0.30)" },
+  "Estimate requested":    { fg: "#5a5847",          bg: "rgba(90,88,71,0.12)",   border: "rgba(90,88,71,0.28)" },
+  "Estimate sent":         { fg: "#6a5c85",          bg: "rgba(106,92,133,0.10)", border: "rgba(106,92,133,0.28)" },
+  Won:                     { fg: "var(--bh-olive)",  bg: "rgba(107,122,85,0.18)", border: "rgba(107,122,85,0.45)" },
+  Lost:                    { fg: "var(--bh-clay)",   bg: "var(--bh-clay-mute)",   border: "rgba(165,90,62,0.28)" },
+  Disqualified:            { fg: "var(--bh-ink-mute)",bg: "var(--bh-surface-2)",  border: "var(--bh-hair)" },
 };
 
-export const StatusBadge = ({ status, className }) => (
-  <span
-    data-testid={`status-badge`}
-    className={clsx(
-      "inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-medium",
-      statusStyles[status] || "bg-neutral-500/10 text-neutral-400 border-neutral-500/25",
-      className,
-    )}
-  >
-    <span className="w-1.5 h-1.5 rounded-full bg-current" />
-    {status || "—"}
-  </span>
-);
+export const StatusBadge = ({ status, className }) => {
+  const s = statusStyles[status] || statusStyles.Disqualified;
+  return (
+    <span
+      data-testid="status-badge"
+      className={clsx(
+        "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11.5px] font-medium tracking-tight",
+        className,
+      )}
+      style={{ color: s.fg, background: s.bg, borderColor: s.border }}
+    >
+      <span
+        aria-hidden
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ background: s.fg }}
+      />
+      {status || "—"}
+    </span>
+  );
+};
 
 export default StatusBadge;
