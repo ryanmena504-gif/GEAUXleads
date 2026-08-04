@@ -33,6 +33,8 @@ export const api = {
   schema: () => client.get("/schema").then((r) => r.data),
   cacheStatus: () => client.get("/cache-status").then((r) => r.data),
   refreshCache: () => client.post("/cache-refresh").then((r) => r.data),
+  listOpportunities: (params = {}) =>
+    client.get("/opportunities", { params }).then((r) => r.data),
   laneBreakdown: () =>
     client.get("/opportunities/lanes").then((r) => r.data),
   topByLane: (limit = 4) =>

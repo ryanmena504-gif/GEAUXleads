@@ -43,6 +43,7 @@ const Opportunities = () => {
     Number(searchParams.get("min_score") || 0),
   );
   const [q, setQ] = useState(searchParams.get("q") || "");
+  const [sort, setSort] = useState(searchParams.get("sort") || "lead_score");
 
   const filters = {
     source: searchParams.get("source") || undefined,
@@ -53,6 +54,7 @@ const Opportunities = () => {
     lane: searchParams.get("lane") || undefined,
     min_score: minScore || undefined,
     q: q || undefined,
+    sort,
   };
 
   const setFilter = (key, value) => {
@@ -67,9 +69,9 @@ const Opportunities = () => {
 
   useEffect(() => {
     api.listOpportunities(filters).then(setItems);
-    // filters is derived from searchParams/minScore/q; safe to depend on those
+    // filters is derived from searchParams/minScore/q/sort; safe to depend on those
      
-  }, [searchParams, minScore, q]);
+  }, [searchParams, minScore, q, sort]);
 
   const activeFilterCount = useMemo(
     () =>
@@ -103,6 +105,27 @@ const Opportunities = () => {
               data-testid="opps-search"
               className="flex-1 min-w-[220px] bg-transparent border bh-hairline rounded-md h-10 px-3 text-[14px] text-[var(--bh-ink)] placeholder:text-[var(--bh-ink-mute)] focus:border-[var(--bh-brass)]/60 outline-none"
             />
+            <div className="inline-flex items-center border bh-hairline rounded overflow-hidden" data-testid="opps-sort">
+              {[
+                { k: "lead_score", label: "Lead Score" },
+                { k: "freshness",  label: "Freshness" },
+                { k: "confidence", label: "Confidence" },
+              ].map((s) => (
+                <button
+                  key={s.k}
+                  onClick={() => setSort(s.k)}
+                  data-testid={`opps-sort-${s.k}`}
+                  className={
+                    "text-[12px] px-3 h-10 tracking-tight transition-colors duration-150 " +
+                    (sort === s.k
+                      ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
+                      : "text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)]")
+                  }
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
             <div className="inline-flex items-center border bh-hairline rounded overflow-hidden">
               <button
                 onClick={() => setView("list")}

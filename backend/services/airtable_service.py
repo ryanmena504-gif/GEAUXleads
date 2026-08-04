@@ -236,6 +236,56 @@ READONLY_FIELD_TYPES = {
 # Statuses considered "closed" for pipeline/summary calcs.
 CLOSED_STATUSES = {"Won", "Lost", "Disqualified"}
 
+
+# ---------------------------------------------------------------------------
+# Canonical sort — `Lead score` (Airtable) is the primary priority everywhere.
+# Unscored records rank BELOW scored ones. Ties: freshness DESC, id ASC.
+# ---------------------------------------------------------------------------
+def _score_num(o: Dict[str, Any]) -> Optional[float]:
+    s = o.get("priority_score")
+    return s if isinstance(s, (int, float)) else None
+
+
+def _date_str(o: Dict[str, Any]) -> str:
+    return (o.get("last_reviewed") or o.get("created_time") or "")
+
+
+def _conf_num(o: Dict[str, Any]) -> Optional[float]:
+    c = o.get("confidence_score") or o.get("evidence_confidence")
+    try:
+        return float(c) if c not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def sort_opportunities(items: List[Dict[str, Any]], mode: str = "lead_score") -> List[Dict[str, Any]]:
+    """Canonical dashboard sort. Never mutates the input list."""
+    mode = (mode or "lead_score").lower()
+    if mode == "freshness":
+        with_d = [o for o in items if _date_str(o)]
+        without = [o for o in items if not _date_str(o)]
+        with_d.sort(key=lambda o: o.get("id") or "")
+        with_d.sort(key=lambda o: _date_str(o), reverse=True)
+        without.sort(key=lambda o: o.get("id") or "")
+        return with_d + without
+    if mode == "confidence":
+        scored = [o for o in items if _conf_num(o) is not None]
+        unscored = [o for o in items if _conf_num(o) is None]
+        scored.sort(key=lambda o: o.get("id") or "")
+        scored.sort(key=lambda o: _date_str(o), reverse=True)
+        scored.sort(key=lambda o: -_conf_num(o))
+        unscored.sort(key=lambda o: o.get("id") or "")
+        return scored + unscored
+    # Default: canonical Lead score
+    scored = [o for o in items if _score_num(o) is not None]
+    unscored = [o for o in items if _score_num(o) is None]
+    scored.sort(key=lambda o: o.get("id") or "")
+    scored.sort(key=lambda o: _date_str(o), reverse=True)
+    scored.sort(key=lambda o: -_score_num(o))
+    unscored.sort(key=lambda o: o.get("id") or "")
+    return scored + unscored
+
+
 PIPELINE_STATUSES = [
     "New",
     "Needs research",
@@ -272,42 +322,16 @@ def _derive_status(opp: Dict[str, Any]) -> str:
     return "New"
 
 
-# Derive a 0-100 priority score from what the Leads table actually populates.
-# Real Lead score / Confidence score are almost always 0 in this base, so we
-# synthesise from richness signals until the automation starts scoring.
+# Priority score is the canonical Airtable `Lead score`. Do NOT synthesise —
+# a missing value means "needs scoring", never zero, never a fake value.
 def _derive_priority_score(opp: Dict[str, Any]) -> Optional[float]:
     raw = opp.get("lead_score")
+    if raw is None or raw == "":
+        return None
     try:
-        if raw is not None and float(raw) > 0:
-            return float(raw)
+        return float(raw)
     except (TypeError, ValueError):
-        pass
-    score = 0
-    if (opp.get("ai_status") or "").lower() == "complete":
-        score += 35
-    if opp.get("evidence_summary"):
-        score += 10
-    if opp.get("recommendation_reason"):
-        score += 5
-    if opp.get("phone") or opp.get("email") or opp.get("phone_alt") or opp.get("email_alt"):
-        score += 15
-    if opp.get("decision_maker") or opp.get("company"):
-        score += 10
-    if opp.get("permit_number"):
-        score += 10
-    if opp.get("project_address"):
-        score += 5
-    if opp.get("estimated_value"):
-        score += 5
-    if opp.get("flag_verified"):
-        score += 5
-    if opp.get("flag_qualified"):
-        score += 5
-    if opp.get("flag_premium"):
-        score += 3
-    if opp.get("flag_partnership"):
-        score += 2
-    return score if score > 0 else None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -857,7 +881,7 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
         results = self._all_cached()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -872,7 +896,11 @@ class AirtableOpportunityService:
         if lane:
             results = [o for o in results if o.get("lane") == lane]
         if min_score is not None:
-            results = [o for o in results if (o.get("priority_score") or 0) >= float(min_score)]
+            # Only filter records that HAVE a score; unscored are dropped when
+            # a min-score threshold is set (we can't compare "Needs scoring").
+            results = [o for o in results
+                       if isinstance(o.get("priority_score"), (int, float))
+                       and o["priority_score"] >= float(min_score)]
         if q:
             ql = q.lower()
             def match(o):
@@ -886,13 +914,11 @@ class AirtableOpportunityService:
                 ]).lower()
                 return ql in blob
             results = [o for o in results if match(o)]
-        results.sort(key=lambda o: o.get("priority_score") or 0, reverse=True)
-        return results
+        return sort_opportunities(results, mode=sort or "lead_score")
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:
         active = [o for o in self._all_cached() if o.get("status") not in CLOSED_STATUSES]
-        active.sort(key=lambda o: o.get("priority_score") or 0, reverse=True)
-        return active[:limit]
+        return sort_opportunities(active, mode="lead_score")[:limit]
 
     def recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         items = self._all_cached()
@@ -929,7 +955,7 @@ class AirtableOpportunityService:
             if mission in groups:
                 groups[mission].append(o)
         for m in groups:
-            groups[m].sort(key=lambda o: o.get("priority_score") or 0, reverse=True)
+            groups[m] = sort_opportunities(groups[m], mode="lead_score")
         return groups
 
     def pipeline_counts(self) -> List[Dict[str, Any]]:

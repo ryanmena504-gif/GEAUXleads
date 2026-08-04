@@ -36,18 +36,28 @@ export const PriorityBand = ({ band, className }) => {
 };
 
 export const PriorityScore = ({ score, band, size = "md" }) => {
+  const has = typeof score === "number" && !Number.isNaN(score);
   const color = bandStyles[band]?.fg || "var(--bh-ink)";
   const sizeCls =
     size === "lg" ? "text-4xl"
     : size === "sm" ? "text-lg"
     : "text-[28px]";
+  if (!has) {
+    return (
+      <div className="flex items-baseline gap-1" data-testid="priority-score-empty">
+        <span className="text-[11px] tracking-tight text-[var(--bh-ink-mute)] italic">
+          Needs scoring
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex items-baseline gap-1" data-testid="priority-score">
       <span
         className={clsx("font-display tabular-nums leading-none", sizeCls)}
         style={{ color }}
       >
-        {score ?? "—"}
+        {score}
       </span>
       <span className="text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
         /100

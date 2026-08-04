@@ -91,6 +91,7 @@ async def list_opportunities(
     min_score: Optional[float] = None,
     q: Optional[str] = None,
     lane: Optional[str] = None,
+    sort: Optional[str] = "lead_score",
 ):
     svc = get_opportunity_service()
     return svc.list(
@@ -102,6 +103,7 @@ async def list_opportunities(
         min_score=min_score,
         q=q,
         lane=lane,
+        sort=sort,
     )
 
 
@@ -118,21 +120,23 @@ async def lane_breakdown():
         rows = [o for o in all_ops if o.get("lane") == lane]
         active = [o for o in rows if o.get("status") not in ("Won", "Lost", "Disqualified")]
         value = sum((o.get("estimated_value") or 0) for o in active)
-        top = sorted(active, key=lambda o: (o.get("priority_score") or 0), reverse=True)[:1]
+        scored = [o for o in active if isinstance(o.get("priority_score"), (int, float))]
+        scored.sort(key=lambda o: -o["priority_score"])
         out.append({
             "lane": lane,
             "label": LABEL[lane],
             "total": len(rows),
             "active": len(active),
             "pipeline_value": value,
-            "top_score": (top[0].get("priority_score") if top else None),
+            "top_score": (scored[0].get("priority_score") if scored else None),
         })
     return out
 
 
 @api_router.get("/opportunities/top-by-lane")
 async def top_by_lane(limit: int = 4):
-    """Top N opportunities per lane, ranked by priority score."""
+    """Top N per lane, ranked by canonical Lead score."""
+    from services.airtable_service import sort_opportunities as _sort_ops
     svc = get_opportunity_service()
     LANES = ("market_capture", "partner", "non_permit")
     all_ops = svc.all() if hasattr(svc, "all") else []
@@ -141,8 +145,7 @@ async def top_by_lane(limit: int = 4):
         rows = [o for o in all_ops
                 if o.get("lane") == lane
                 and o.get("status") not in ("Won", "Lost", "Disqualified")]
-        rows.sort(key=lambda o: (o.get("priority_score") or 0), reverse=True)
-        out[lane] = rows[:limit]
+        out[lane] = _sort_ops(rows, mode="lead_score")[:limit]
     return out
 
 

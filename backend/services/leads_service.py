@@ -291,15 +291,21 @@ class LeadsAirtableService:
         ]
         if not candidates:
             return None
-        candidates.sort(key=lambda l: (
-            -self._completeness(l),
-            -int(self._ai_complete(l)),
-            -int(self._has_usable_contact(l)),
-            -self._priority_rank(l.get("priority")),
-            -(l.get("lead_score") or 0),
-            (l.get("date_discovered") or l.get("created_time") or ""),
-        ))
-        pick = candidates[0]
+        # Canonical: `Lead score` DESC first — the single primary priority.
+        # Ties: freshness DESC, then id ASC. Unscored records land LAST.
+        def _score(l):
+            s = l.get("lead_score")
+            return s if isinstance(s, (int, float)) else None
+        def _date(l):
+            return l.get("date_discovered") or l.get("created_time") or ""
+        scored   = [l for l in candidates if _score(l) is not None]
+        unscored = [l for l in candidates if _score(l) is None]
+        scored.sort(key=lambda l: l["id"])
+        scored.sort(key=lambda l: _date(l), reverse=True)
+        scored.sort(key=lambda l: -_score(l))
+        unscored.sort(key=lambda l: l["id"])
+        ordered = scored + unscored
+        pick = ordered[0]
         pick["_selection_reason"] = self._explain(pick)
         if pick["id"] in self._approvals:
             pick["_approved_at"] = self._approvals[pick["id"]]
