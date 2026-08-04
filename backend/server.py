@@ -16,6 +16,10 @@ from services.opportunity_service import get_opportunity_service, reset_opportun
 from services.leads_service import get_leads_service, reset_leads_service
 from services.airtable_service import AirtableWriteError
 from services.email_service import send_outreach_email, EmailSendError
+from services.slack_service import (
+    get_slack_alerter,
+    is_configured as slack_is_configured,
+)
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -34,6 +38,11 @@ async def lifespan(_app: FastAPI):
         await init_webhook_manager()
     except Exception:
         logging.getLogger("bloodhound").exception("Webhook init failed at startup")
+    # Slack alerter init — logs a one-time warning if webhook URL is absent.
+    try:
+        get_slack_alerter()
+    except Exception:
+        logging.getLogger("bloodhound").exception("Slack alerter init failed at startup")
     yield
     # Shutdown: best-effort webhook cleanup.
     try:
@@ -431,6 +440,16 @@ async def _handle_ping_background():
         "changed_record_ids": sorted(changed_records),
         "at": datetime.now(timezone.utc).isoformat(),
     })
+    # Fire Band A Slack alerts (best-effort — never blocks the SSE broadcast).
+    try:
+        alerter = get_slack_alerter()
+        if alerter and slack_is_configured():
+            opps_svc = get_opportunity_service()
+            band_a = [o for o in opps_svc.all() if o.get("priority_band") == "A"]
+            if band_a:
+                await alerter.evaluate_and_alert(band_a)
+    except Exception:
+        logger.exception("webhook: slack alerter failed")
 
 
 @app.post("/api/airtable/webhook")
@@ -514,6 +533,51 @@ async def live_reregister():
     if not mgr:
         raise HTTPException(status_code=500, detail="Re-registration failed")
     return {"ok": True, "webhook_id": mgr.webhook_id}
+
+
+# ============================================================================
+# Slack alerts — status + manual trigger. Webhook URL is NEVER exposed.
+# ============================================================================
+@api_router.get("/slack/alerts/status")
+async def slack_alerts_status():
+    """Reports whether Slack alerts are wired up. Does NOT return the URL."""
+    alerter = get_slack_alerter()
+    configured = slack_is_configured()
+    tracked = 0
+    last_alert = None
+    if alerter and configured:
+        try:
+            tracked = await alerter._col.count_documents({})
+            last = await alerter._col.find_one(sort=[("alert_sent_at", -1)])
+            if last:
+                last_alert = {
+                    "opportunity_id": last.get("opportunity_id"),
+                    "alert_sent_at": last.get("alert_sent_at"),
+                    "last_alerted_score": last.get("last_alerted_score"),
+                    "last_reason": last.get("last_reason"),
+                }
+        except Exception:
+            logger.exception("slack status query failed")
+    return {
+        "configured": configured,
+        "score_delta_threshold": 10.0,
+        "tracked_alerts_total": tracked,
+        "last_alert": last_alert,
+    }
+
+
+@api_router.post("/slack/alerts/scan")
+async def slack_alerts_scan():
+    """Manually rescan Band A opportunities and dispatch any missed alerts.
+    Useful after first-time webhook setup or a backfill. Idempotent — the
+    dedupe tracker prevents duplicate notifications."""
+    alerter = get_slack_alerter()
+    if not (alerter and slack_is_configured()):
+        return {"configured": False, "sent": 0}
+    opps_svc = get_opportunity_service()
+    band_a = [o for o in opps_svc.all() if o.get("priority_band") == "A"]
+    sent = await alerter.evaluate_and_alert(band_a)
+    return {"configured": True, "candidates": len(band_a), "sent": sent}
 
 
 app.include_router(api_router)

@@ -36,19 +36,41 @@ BLOODHOUND — AI Opportunity Intelligence for contractors. Command Center that 
   - **Opportunities**: Lane filter group added as the first filter row.
   - **NBA panel**: lane badge shown next to the lead name.
 - All pages remain read-only against Airtable's outreach fields — no outreach send buttons, no automations. Approve & Send lives only on the NBA panel and is unchanged.
-- Verified live: `/api/health` → 11 records, `/api/opportunities/lanes` returns `[{market_capture:1 active/11 total, top 62}, {partner:0}, {non_permit:0}]`. Lane filter query returns 11/0/0 respectively — matches your automation's current classification (all rows are Permit-sourced Bathroom leads today; the moment your automation flags a partner or a non-permit source, the corresponding page + card will populate).
+
+### 2026-02-04 — Lead Score Canonical Ranking
+- `sort_opportunities()` is the single source of truth for ranking. Modes: `lead_score` (default, DESC), `freshness`, `confidence`. Scored records always precede unscored; ties by freshness DESC then id ASC.
+- `_derive_priority_score()` reads Airtable's cleaned `Lead score` only — never synthesised, returns None when missing.
+- NBA (`pick_next_best_action`) picks the top absolute `lead_score` across the eligible queue.
+- Frontend Opportunities page adds a `Lead Score / Freshness / Confidence` sort control; selection is persisted to the URL (`?sort=`).
+- Verified by testing agent iteration_7: 15/15 backend + full frontend sort UI pass, Command Center top-opps prefix perfectly matches `/api/opportunities/top`.
+
+### 2026-02-04 — Hunt-Status Guardrail Fix
+- `LEADS_FIELD_MAP` now maps Airtable `Hunt status` → `hunt_status`. `can_send()` correctly returns 422 with `Blocked by Hunt status=...` when the field contains `rejected/closed/disqualified`. Verified: no email leaves Resend when guardrail fires.
+
+### 2026-02-04 — Light Premium UI Polish
+- Command Palette (⌘K) rewired to the bone/limestone/graphite palette: `bh-eyebrow` group headings, `--bh-ink` text tokens, `--bh-brass` accent on quick-filter icons. No more dark `text-neutral-*` remnants.
+- OpportunityDetail KV labels already use sentence-case via `.bh-eyebrow` (`text-transform:none`).
+
+### 2026-02-04 — Slack Band A Alerts (Incoming Webhook)
+- **Endpoint / trigger**: after every Airtable webhook ping, the SSE broadcaster also scans currently Band-A opportunities and dispatches Slack notifications.
+- **Dedupe (Mongo)**: collection `slack_band_a_alerts` persists `{opportunity_id, last_alerted_score, alert_sent_at, alert_count, last_reason}`. A lead is alerted at most once unless its `Lead score` climbs by **10 points or more** after the prior alert.
+- **Payload**: Slack Block Kit — header + lead name + fields (Lead score, Confidence, Lane, Source, Location) + Why it matters + Next best action + "Open in Bloodhound" button + "Notification only · no outreach triggered" context.
+- **Secrecy**: webhook URL read from `SLACK_BLOODHOUND_WEBHOOK_URL` env at call time. Never logged, never returned by any API, never exposed to the frontend. On success/failure only the HTTP status code is logged, not the body.
+- **Fail-safe**: absent env var → single boot-time warning, app remains fully functional, all endpoints unaffected.
+- **API**: `GET /api/slack/alerts/status` returns `{configured, score_delta_threshold, tracked_alerts_total, last_alert}` (no URL). `POST /api/slack/alerts/scan` re-scans Band A and dispatches any missed alerts (idempotent via dedupe).
+- Verified: 6/6 unit tests in `backend/tests/slack_service_test.py` pass — new-lead / below-delta / at-delta / missing-scores / Band B never fires / block payload correctness.
 
 ## API Reference (dashboard-facing)
 ```
 GET  /api/health
-GET  /api/opportunities?lane=&source=&status=&priority_band=&daily_mission=&project_type=&min_score=&q=
+GET  /api/opportunities?lane=&source=&status=&priority_band=&daily_mission=&project_type=&min_score=&q=&sort=
 GET  /api/opportunities/summary
 GET  /api/opportunities/missions
 GET  /api/opportunities/pipeline
 GET  /api/opportunities/recent?limit=
 GET  /api/opportunities/top?limit=
-GET  /api/opportunities/top-by-lane?limit=      # NEW
-GET  /api/opportunities/lanes                    # NEW
+GET  /api/opportunities/top-by-lane?limit=
+GET  /api/opportunities/lanes
 GET  /api/opportunities/{id}
 PATCH /api/opportunities/{id}/fields             # writes only status/hunt_status/next_follow_up/outcome/notes/approval_status/outreach_status
 GET  /api/leads/next-best-action
@@ -58,6 +80,8 @@ POST /api/airtable/webhook                       # signed
 GET  /api/live/stream                            # SSE
 GET  /api/live/status
 POST /api/live/reregister
+GET  /api/slack/alerts/status                    # NEW — never returns URL
+POST /api/slack/alerts/scan                      # NEW — idempotent Band A backfill
 ```
 
 ## Airtable Fields In Use (Leads table)
@@ -72,11 +96,15 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 - `Lead score` / `Confidence score` — 0 on every record → dashboard synthesises a score from richness signals until your automation starts scoring.
 
 ## P1 Backlog
-- **Slack alerts** for Band A opportunities.
 - Twilio/SMS as a second outreach channel once Ryan has a dedicated business number.
 - Editable send template + subject line via Settings.
 - Persist `webhook_id + mac_secret` to Mongo so a preview restart doesn't leave orphaned webhooks.
 - Reply tracking (inbound Resend webhook → Airtable `Reply summary`).
+- Slack alert digest: rollup + morning summary in addition to per-lead pings.
+
+## Environment
+- `SLACK_BLOODHOUND_WEBHOOK_URL` (secret) — enables Band A Slack alerts. Absent → alerts skipped, boot warns once, everything else works.
+- `PUBLIC_APP_URL` (optional) — frontend base URL used in the "Open in Bloodhound" button. Falls back to `PUBLIC_BACKEND_URL`.
 
 ## P2 Backlog
 - Auth (JWT or Emergent Google Auth).
