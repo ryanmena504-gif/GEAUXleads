@@ -598,6 +598,39 @@ async def list_message_playbooks():
     return {"available": True, "playbooks": safe}
 
 
+class PlaybookUpdate(BaseModel):
+    default_subject: Optional[str] = None
+    default_draft: Optional[str] = None
+
+
+@api_router.patch("/message-playbooks/{playbook_id}")
+async def update_message_playbook(playbook_id: str, payload: PlaybookUpdate):
+    """Update Default Subject / Default Draft on a playbook record in
+    Airtable. Restricted to those two fields — never touches Audience Type,
+    Voice Rules, Status, or anything else in the table."""
+    svc = get_playbook_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Playbook service unavailable")
+    patch = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(status_code=422, detail="No editable fields provided")
+    try:
+        updated = svc.update(playbook_id, patch)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Airtable update failed")
+    if not updated:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return {
+        "id": updated.get("id"),
+        "playbook_id": updated.get("playbook_id"),
+        "name": updated.get("name"),
+        "audience_type": updated.get("audience_type"),
+        "audience_slug": updated.get("audience_slug"),
+        "default_subject": updated.get("default_subject"),
+        "default_draft": updated.get("default_draft"),
+    }
+
+
 class DraftCreate(BaseModel):
     opportunity_id: str
     opportunity_name: Optional[str] = None

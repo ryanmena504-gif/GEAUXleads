@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
+import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked } from "lucide-react";
 import { toast } from "sonner";
 
 const Row = ({ icon: Icon, title, subtitle, right }) => (
@@ -225,6 +226,13 @@ const Settings = () => {
             </div>
           </section>
         )}
+
+        <section data-testid="section-playbooks">
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+            <BookMarked size={11} /> Section · Message playbooks
+          </div>
+          <PlaybookEditor />
+        </section>
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">

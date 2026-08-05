@@ -98,6 +98,43 @@ class PlaybookService:
                 return p
         return None
 
+    # ------------------------------------------------------------------
+    # Write path — Ryan can tweak Default Subject / Default Draft from
+    # Settings without opening Airtable. This is the ONLY writable path
+    # from the Bloodhound UI into the Message Playbooks table; the
+    # allowlist below is enforced server-side.
+    # ------------------------------------------------------------------
+    _EDITABLE_AIRTABLE_FIELDS = {
+        "default_subject": "Default Subject",
+        "default_draft":   "Default Draft",
+    }
+
+    def update(self, playbook_id: str, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update the whitelisted fields on a playbook record and bust the
+        cache. Silently drops anything not in the allowlist. Returns the
+        fresh DTO or None if the record isn't found."""
+        record = self.get(playbook_id)
+        if not record:
+            return None
+        record_id = record.get("id")
+        if not record_id:
+            return None
+        clean_airtable: Dict[str, Any] = {}
+        for snake, at_field in self._EDITABLE_AIRTABLE_FIELDS.items():
+            if snake in patch and isinstance(patch[snake], str):
+                clean_airtable[at_field] = patch[snake]
+        if not clean_airtable:
+            return record
+        try:
+            self._table.update(record_id, clean_airtable)
+        except Exception:
+            log.exception("Playbooks: Airtable update failed for %s", record_id)
+            raise
+        # Bust cache so the next read serves the fresh copy.
+        with self._lock:
+            self._last_refresh = 0.0
+        return self.get(playbook_id)
+
 
 _singleton: Optional[PlaybookService] = None
 

@@ -49,6 +49,8 @@ export const api = {
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),
+  updatePlaybook: (id, patch) =>
+    client.patch(`/message-playbooks/${id}`, patch).then((r) => r.data),
   listDrafts: (opportunity_id) =>
     client.get("/drafts", { params: { opportunity_id } }).then((r) => r.data),
   listDraftQueue: (status = "Ready for Ryan review", limit = 200) =>
