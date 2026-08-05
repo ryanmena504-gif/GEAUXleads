@@ -280,12 +280,51 @@ body {
     line-height: 1.45;
 }
 
-/* Eyebrow — small sentence-case label */
+/* Eyebrow — small sentence-case label. Uses ink-3 (not ink-mute) so it
+   passes WCAG AA on the warm bone background. */
 .bh-eyebrow {
     font-family: "General Sans", sans-serif;
     font-weight: 500;
     font-size: 11px;
     letter-spacing: 0.06em;
-    color: var(--bh-ink-mute);
+    color: var(--bh-ink-3);
     text-transform: none;
 }
+
+/* ---------------------------------------------------------------------
+   Light-theme contrast overrides.
+
+   The app was ported from a dark palette; a lot of components still ship
+   `text-neutral-400/500/600` and `text-amber-200/300` which read as gray-
+   on-bone (contrast < 4.5:1) — literally illegible on mobile. Rather than
+   patch 80+ call sites we redirect the offending colors to the correct
+   light-mode ink tokens here. Anywhere a component genuinely needs a
+   different color, it should use one of the semantic `bh-text-*` helpers
+   or an inline `--bh-*` variable instead.
+   --------------------------------------------------------------------- */
+.text-neutral-400 { color: var(--bh-ink-2) !important; }
+.text-neutral-500 { color: var(--bh-ink-3) !important; }
+.text-neutral-600 { color: var(--bh-ink-3) !important; }
+.text-neutral-700 { color: var(--bh-ink-2) !important; }
+.text-neutral-200 { color: var(--bh-ink)   !important; }
+.text-neutral-100 { color: var(--bh-ink)   !important; }
+
+/* Hover states that used to lift toward white on dark now deepen to ink. */
+.hover\:text-neutral-200:hover { color: var(--bh-ink)   !important; }
+.hover\:text-neutral-100:hover { color: var(--bh-ink)   !important; }
+
+/* Amber accents — brass on light bg reads clean and stays on-brand. */
+.text-amber-200,
+.text-amber-200\/80,
+.text-amber-200\/90 { color: var(--bh-brass-2) !important; }
+.text-amber-300     { color: var(--bh-brass)   !important; }
+.text-amber-400     { color: var(--bh-brass)   !important; }
+.hover\:text-amber-300:hover,
+.hover\:text-amber-400:hover { color: var(--bh-brass-2) !important; }
+
+/* Amber-tinted backgrounds/borders on dark → brass mutes on light. */
+.bg-amber-500\/10,
+.bg-amber-500\/15  { background-color: var(--bh-brass-mute) !important; }
+.border-amber-500\/25,
+.border-amber-500\/40 { border-color: var(--bh-hair-warm) !important; }
+
