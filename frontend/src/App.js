@@ -9,6 +9,7 @@ import OpportunityDetail from "@/pages/OpportunityDetail";
 import Missions from "@/pages/Missions";
 import Relationships from "@/pages/Relationships";
 import Intelligence from "@/pages/Intelligence";
+import ReviewQueue from "@/pages/ReviewQueue";
 import Settings from "@/pages/Settings";
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
             <Route path="/missions" element={<Missions />} />
             <Route path="/relationships" element={<Relationships />} />
             <Route path="/intelligence" element={<Intelligence />} />
+            <Route path="/review-queue" element={<ReviewQueue />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

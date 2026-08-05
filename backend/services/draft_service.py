@@ -70,6 +70,25 @@ class DraftService:
         cur = self._col.find({"opportunity_id": opportunity_id}).sort("updated_at", -1)
         return [self._serialize(d) async for d in cur]
 
+    async def list_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
+        """Return every draft with the given review_status, newest first."""
+        cur = (
+            self._col.find({"review_status": status})
+            .sort("updated_at", -1)
+            .limit(limit)
+        )
+        return [self._serialize(d) async for d in cur]
+
+    async def counts_by_status(self) -> Dict[str, int]:
+        """Return {status: count} across all drafts. Empty statuses are omitted."""
+        pipeline = [{"$group": {"_id": "$review_status", "n": {"$sum": 1}}}]
+        out: Dict[str, int] = {}
+        async for doc in self._col.aggregate(pipeline):
+            key = doc.get("_id")
+            if isinstance(key, str):
+                out[key] = int(doc.get("n") or 0)
+        return out
+
     async def get(self, draft_id: str) -> Optional[Dict[str, Any]]:
         doc = await self._col.find_one({"draft_id": draft_id})
         return self._serialize(doc) if doc else None

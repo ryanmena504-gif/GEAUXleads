@@ -631,6 +631,29 @@ async def list_drafts(opportunity_id: str):
     return {"available": True, "drafts": drafts}
 
 
+@api_router.get("/drafts/queue")
+async def draft_review_queue(
+    status: str = "Ready for Ryan review",
+    limit: int = 200,
+):
+    """List every draft matching the requested review status, newest first.
+    Also returns a status breakdown so the UI can show live counts."""
+    svc = get_draft_service()
+    if not svc:
+        return {"available": False, "status": status, "drafts": [], "counts": {}}
+    if status not in REVIEW_STATUSES:
+        raise HTTPException(status_code=400, detail="Unknown review_status")
+    drafts = await svc.list_by_status(status, limit=max(1, min(limit, 500)))
+    counts = await svc.counts_by_status()
+    return {
+        "available": True,
+        "status": status,
+        "count": len(drafts),
+        "counts": counts,
+        "drafts": drafts,
+    }
+
+
 @api_router.post("/drafts")
 async def create_draft(payload: DraftCreate):
     svc = get_draft_service()

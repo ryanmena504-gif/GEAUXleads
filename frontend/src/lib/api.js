@@ -51,6 +51,10 @@ export const api = {
     client.get("/message-playbooks").then((r) => r.data),
   listDrafts: (opportunity_id) =>
     client.get("/drafts", { params: { opportunity_id } }).then((r) => r.data),
+  listDraftQueue: (status = "Ready for Ryan review", limit = 200) =>
+    client
+      .get("/drafts/queue", { params: { status, limit } })
+      .then((r) => r.data),
   createDraft: (payload) =>
     client.post("/drafts", payload).then((r) => r.data),
   getDraft: (id) => client.get(`/drafts/${id}`).then((r) => r.data),
