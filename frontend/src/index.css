@@ -294,37 +294,54 @@ body {
 /* ---------------------------------------------------------------------
    Light-theme contrast overrides.
 
-   The app was ported from a dark palette; a lot of components still ship
-   `text-neutral-400/500/600` and `text-amber-200/300` which read as gray-
-   on-bone (contrast < 4.5:1) — literally illegible on mobile. Rather than
-   patch 80+ call sites we redirect the offending colors to the correct
-   light-mode ink tokens here. Anywhere a component genuinely needs a
-   different color, it should use one of the semantic `bh-text-*` helpers
-   or an inline `--bh-*` variable instead.
+   Uses word-boundary attribute selectors: `[class^=...]` matches when the
+   token is the first class, `[class*=" token"]` matches when preceded by
+   a space. Together they catch bare classes AND Tailwind opacity variants
+   (e.g. `text-amber-200/90`) while EXCLUDING hover:/md:/lg: variants
+   (those are preceded by `:` not a space and never appear at start).
    --------------------------------------------------------------------- */
-.text-neutral-400 { color: var(--bh-ink-2) !important; }
-.text-neutral-500 { color: var(--bh-ink-3) !important; }
-.text-neutral-600 { color: var(--bh-ink-3) !important; }
-.text-neutral-700 { color: var(--bh-ink-2) !important; }
-.text-neutral-200 { color: var(--bh-ink)   !important; }
-.text-neutral-100 { color: var(--bh-ink)   !important; }
+[class^="text-neutral-400"], [class*=" text-neutral-400"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-500"], [class*=" text-neutral-500"] { color: var(--bh-ink-3) !important; }
+[class^="text-neutral-600"], [class*=" text-neutral-600"] { color: var(--bh-ink-3) !important; }
+[class^="text-neutral-700"], [class*=" text-neutral-700"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-300"], [class*=" text-neutral-300"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-200"], [class*=" text-neutral-200"] { color: var(--bh-ink)   !important; }
+[class^="text-neutral-100"], [class*=" text-neutral-100"] { color: var(--bh-ink)   !important; }
 
-/* Hover states that used to lift toward white on dark now deepen to ink. */
-.hover\:text-neutral-200:hover { color: var(--bh-ink)   !important; }
-.hover\:text-neutral-100:hover { color: var(--bh-ink)   !important; }
+/* Amber value text (evidence / signal / next-best-action) → body ink.
+   Amber icons / accent chips (amber-300/400) → aged brass. */
+[class^="text-amber-200"], [class*=" text-amber-200"] { color: var(--bh-ink-2) !important; }
+[class^="text-amber-300"], [class*=" text-amber-300"] { color: var(--bh-brass) !important; }
+[class^="text-amber-400"], [class*=" text-amber-400"] { color: var(--bh-brass) !important; }
 
-/* Amber accents — brass on light bg reads clean and stays on-brand. */
-.text-amber-200,
-.text-amber-200\/80,
-.text-amber-200\/90 { color: var(--bh-brass-2) !important; }
-.text-amber-300     { color: var(--bh-brass)   !important; }
-.text-amber-400     { color: var(--bh-brass)   !important; }
+/* Sky / light-blue → deep teal so labels are legible on bone. */
+[class^="text-sky-200"], [class*=" text-sky-200"] { color: #24484d !important; }
+[class^="text-sky-300"], [class*=" text-sky-300"] { color: #24484d !important; }
+[class^="text-sky-400"], [class*=" text-sky-400"] { color: #24484d !important; }
+
+/* Emerald / positive → muted olive from design tokens. */
+[class^="text-emerald-200"], [class*=" text-emerald-200"] { color: var(--bh-olive) !important; }
+[class^="text-emerald-300"], [class*=" text-emerald-300"] { color: var(--bh-olive) !important; }
+[class^="text-emerald-400"], [class*=" text-emerald-400"] { color: var(--bh-olive) !important; }
+
+/* Red / destructive → restrained clay. */
+[class^="text-red-200"], [class*=" text-red-200"] { color: var(--bh-clay) !important; }
+[class^="text-red-300"], [class*=" text-red-300"] { color: var(--bh-clay) !important; }
+[class^="text-red-400"], [class*=" text-red-400"] { color: var(--bh-clay) !important; }
+
+/* Hover variants — deepen toward ink instead of lifting toward white. */
+.hover\:text-neutral-200:hover,
+.hover\:text-neutral-100:hover { color: var(--bh-ink) !important; }
 .hover\:text-amber-300:hover,
-.hover\:text-amber-400:hover { color: var(--bh-brass-2) !important; }
+.hover\:text-amber-400:hover  { color: var(--bh-brass-2) !important; }
+.hover\:text-sky-200:hover    { color: #12303a !important; }
 
 /* Amber-tinted backgrounds/borders on dark → brass mutes on light. */
-.bg-amber-500\/10,
-.bg-amber-500\/15  { background-color: var(--bh-brass-mute) !important; }
-.border-amber-500\/25,
-.border-amber-500\/40 { border-color: var(--bh-hair-warm) !important; }
+[class*="bg-amber-500"]     { background-color: var(--bh-brass-mute) !important; }
+[class*="border-amber-500"] { border-color: var(--bh-hair-warm) !important; }
+[class*="border-sky-500"]   { border-color: rgba(36,72,77,0.28) !important; }
+[class*="bg-emerald-500"]   { background-color: var(--bh-olive-mute) !important; }
+[class*="border-emerald-500"]{ border-color: rgba(107,122,85,0.32) !important; }
+[class*="bg-red-500"]       { background-color: var(--bh-clay-mute) !important; }
+[class*="border-red-500"]   { border-color: rgba(165,90,62,0.32) !important; }
 
