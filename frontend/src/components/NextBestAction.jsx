@@ -11,9 +11,11 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
+  PenLine,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
+import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 
 const Stat = ({ label, value }) => (
@@ -33,6 +35,7 @@ export const NextBestAction = () => {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(null);
   const [confirmDNC, setConfirmDNC] = useState(false);
+  const [draftDrawerOpen, setDraftDrawerOpen] = useState(false);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true }));
@@ -308,6 +311,20 @@ export const NextBestAction = () => {
           )}
           {approved ? "Approved" : "Approve & Send"}
         </button>
+        {l.lane === "partner" && (
+          <button
+            onClick={() => setDraftDrawerOpen(true)}
+            data-testid="nba-draft-note"
+            className="h-11 px-4 rounded border text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
+            style={{
+              background: "var(--bh-brass-mute)",
+              borderColor: "var(--bh-hair-warm)",
+              color: "var(--bh-brass)",
+            }}
+          >
+            <PenLine size={13} /> Draft a Note
+          </button>
+        )}
         <button
           onClick={() => act("hold")}
           disabled={busy === "hold"}
@@ -354,6 +371,13 @@ export const NextBestAction = () => {
           </div>
         )}
       </div>
+      {l.lane === "partner" && (
+        <DraftNoteDrawer
+          open={draftDrawerOpen}
+          onOpenChange={setDraftDrawerOpen}
+          opportunity={l}
+        />
+      )}
     </section>
   );
 };

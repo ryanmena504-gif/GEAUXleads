@@ -29,14 +29,32 @@ const REVIEW_STATUSES = [
   "Archived",
 ];
 
-// Map an opportunity's project_type to a playbook audience slug.
+// Map an opportunity's project_type + name/why to a playbook audience slug.
 // Falls back to `null` (which triggers "start from blank" behavior).
-const audienceFromProjectType = (projectType) => {
-  if (!projectType) return null;
-  const t = String(projectType).toLowerCase();
-  if (/(contractor|remodel|home builder|builder)/.test(t)) return "builder";
-  if (/(designer|architect)/.test(t)) return "designer";
-  if (/(pool|outdoor|landscape|hardscape|deck)/.test(t)) return "pool_outdoor";
+const audienceFromOpportunity = (opp) => {
+  if (!opp) return null;
+  const hay = [
+    opp.project_type,
+    opp.opportunity_type,
+    opp.name,
+    opp.company,
+    opp.recommendation_reason,
+    opp.evidence_summary,
+    opp.why_lead_matters,
+    opp.source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!hay) return null;
+  // Pool/outdoor takes precedence — names like "Backyard Living" or
+  // "Pool Pros" should route to the Pool / Outdoor Living playbook even if
+  // their project_type is a generic "Contractor".
+  if (/(pool|outdoor|landscape|hardscape|backyard|deck|patio|spa|hot tub)/.test(hay)) {
+    return "pool_outdoor";
+  }
+  if (/(designer|architect|interior)/.test(hay)) return "designer";
+  if (/(contractor|remodel|home builder|builder|construction)/.test(hay)) return "builder";
   return null;
 };
 
@@ -172,7 +190,7 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
           setReviewStatus(latest.review_status || "Draft");
           setExistingDraftId(latest.draft_id);
         } else {
-          const wanted = audienceFromProjectType(opp.project_type);
+          const wanted = audienceFromOpportunity(opp);
           const auto = list.find((p) => p.audience_slug === wanted) || list[0] || BLANK_TEMPLATE;
           setSelectedId(auto.id);
           setSubject(personalise(auto.default_subject || "", tokens));
@@ -181,7 +199,11 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
           setReviewStatus("Draft");
           setExistingDraftId(null);
         }
-      } catch {
+      } catch (err) {
+        // Log the real error so future debugging is easy — the drawer stays
+        // usable even if the network call failed.
+         
+        console.error("DraftNoteDrawer load failed", err);
         toast.error("Could not load playbooks");
       }
     })();

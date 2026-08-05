@@ -104,12 +104,16 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 
 ## Draft a Note (2026-02-05)
 - Server-side `GET /api/message-playbooks` reads the Airtable `Message Playbooks` table (tble13PxRqtWfPHzb) and returns a safe UI DTO with no credentials.
-- Mongo-backed `outreach_drafts` collection with full CRUD at `/api/drafts` (`opportunity_id`, `selected_playbook`, `subject`, `body`, `internal_note`, `review_status`, timestamps).
+- Mongo-backed `outreach_drafts` collection with full CRUD at `/api/drafts` (`opportunity_id`, `selected_playbook`, `subject`, `body`, `internal_note`, `review_status`, timestamps). Persists across refresh — verified via e2e Playwright: save with a marker, reload page, reopen drawer, marker still in subject + body + "Ready for Ryan review" pill still active.
 - `POST /api/opportunities/{id}/sms-draft` appends a timestamped SMS draft to Airtable Notes with `Outreach status = "SMS Draft"`. Requires `confirmed=true`, a permitted business phone, and an SMS permission hint. **Never sends SMS.**
-- Right-side drawer (`DraftNoteDrawer.jsx`) shows opportunity header, lane badge, Lead Score, guardrail banner, playbook selector (auto-picks Builder/Designer/Pool from `project_type`, plus "Start from blank"), personalization panel, editable subject + body, internal note, review-status pills, Copy/Save/Discard, and a conditional "Create SMS draft in Airtable" panel.
-- Wired button `Draft a Note` in `OpportunityDetail.jsx` directly below `Mark Contacted`, visible only when `lane === "partner"`.
-- Verified with the 3 required records: **Sweeney Restoration** → Builder / Remodeler, **Tristan Construction LLC** → Builder / Remodeler, **Walther Design Studio** → Interior Designer.
-- Guardrail scan: no Send button, no mail/SMS/DM/webhook call from this feature — the only outbound is copy-to-clipboard and Airtable Notes writes.
+- Right-side drawer (`DraftNoteDrawer.jsx`) shows opportunity header, lane badge, Lead Score, guardrail banner, playbook selector (auto-picks Builder/Designer/Pool from `project_type` + company name + evidence, plus "Start from blank"), personalization panel, editable subject + body, internal note, review-status pills, Copy/Save/Discard, and a conditional "Create SMS draft in Airtable" panel.
+- **Auto-select heuristic** (`audienceFromOpportunity`): matches on project_type + name + why-fit — so "Backyard Living" (project_type=Contractor) still routes to **Pool / Outdoor Living**. Precedence: pool/outdoor > designer/architect > contractor/remodeler.
+- Wired button `Draft a Note` in **three** placements:
+  - `OpportunityDetail.jsx` — directly below `Mark Contacted` when `lane === "partner"`
+  - `Relationships.jsx` → PartnerRow — inline `[Draft a Note]` pill next to Source
+  - `NextBestAction.jsx` — next to `Approve & Send` when the picked lead is in Partner Pipeline
+- Verified with the 4 required records: **Sweeney Restoration** → Builder/Remodeler, **Tristan Construction LLC** → Builder/Remodeler, **Walther Design Studio** → Interior Designer, **Backyard Living** → Pool / Outdoor Living.
+- Guardrail scan clean: no send / mail / SMS / DM / webhook call from this feature. The only outbound work is copy-to-clipboard and safe Airtable Notes writes (through the existing write allowlist).
 
 ## Environment
 - `SLACK_BLOODHOUND_WEBHOOK_URL` (secret) — enables Band A Slack alerts. Absent → alerts skipped, boot warns once, everything else works.

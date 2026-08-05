@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import LaneBadge from "@/components/LaneBadge";
+import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
@@ -14,9 +15,10 @@ import {
   Shield,
   AlertTriangle,
   ArrowRight,
+  PenLine,
 } from "lucide-react";
 
-const PartnerRow = ({ p }) => {
+const PartnerRow = ({ p, onDraft }) => {
   const partnerType = p.project_type || "Unclassified partner";
   const evidence = p.evidence_summary || p.signal_type;
   const why = p.recommendation_reason;
@@ -104,6 +106,23 @@ const PartnerRow = ({ p }) => {
                 <ExternalLink size={11} /> Source
               </a>
             )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDraft(p);
+              }}
+              data-testid={`partner-draft-${p.id}`}
+              className="mono text-[10px] uppercase tracking-widest inline-flex items-center gap-1 px-2 py-0.5 rounded border"
+              style={{
+                background: "var(--bh-brass-mute)",
+                borderColor: "var(--bh-hair-warm)",
+                color: "var(--bh-brass)",
+              }}
+            >
+              <PenLine size={10} /> Draft a Note
+            </button>
             <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-0.5 inline-flex items-center gap-1">
               <Lock size={10} /> Campaign approval required
             </span>
@@ -117,6 +136,7 @@ const PartnerRow = ({ p }) => {
 const PartnerIntelligence = () => {
   const [items, setItems] = useState(null);
   const [tab, setTab] = useState("all");
+  const [draftOpp, setDraftOpp] = useState(null);
 
   const load = React.useCallback(() => {
     api.listOpportunities({ lane: "partner" }).then(setItems);
@@ -238,10 +258,16 @@ const PartnerIntelligence = () => {
         ) : (
           <div className="space-y-2">
             {visible.map((p) => (
-              <PartnerRow key={p.id} p={p} />
+              <PartnerRow key={p.id} p={p} onDraft={setDraftOpp} />
             ))}
           </div>
         )}
+
+        <DraftNoteDrawer
+          open={!!draftOpp}
+          onOpenChange={(o) => !o && setDraftOpp(null)}
+          opportunity={draftOpp}
+        />
 
         <section className="text-xs text-neutral-500 flex items-center gap-2 justify-end pt-2">
           <ArrowRight size={11} />
