@@ -20,6 +20,8 @@ from services.slack_service import (
     get_slack_alerter,
     is_configured as slack_is_configured,
 )
+from services.playbook_service import get_playbook_service
+from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -566,18 +568,175 @@ async def slack_alerts_status():
     }
 
 
-@api_router.post("/slack/alerts/scan")
-async def slack_alerts_scan():
-    """Manually rescan Band A opportunities and dispatch any missed alerts.
-    Useful after first-time webhook setup or a backfill. Idempotent — the
-    dedupe tracker prevents duplicate notifications."""
-    alerter = get_slack_alerter()
-    if not (alerter and slack_is_configured()):
-        return {"configured": False, "sent": 0}
-    opps_svc = get_opportunity_service()
-    band_a = [o for o in opps_svc.all() if o.get("priority_band") == "A"]
-    sent = await alerter.evaluate_and_alert(band_a)
-    return {"configured": True, "candidates": len(band_a), "sent": sent}
+# ============================================================================
+# Draft a Note — Message Playbooks (Airtable, read-only) + Outreach Drafts
+# (Mongo-backed CRUD) + SMS Draft (Airtable Notes field). DRAFT-ONLY.
+# There is no send path in this file — never has been, never will be.
+# ============================================================================
+@api_router.get("/message-playbooks")
+async def list_message_playbooks():
+    svc = get_playbook_service()
+    if not svc:
+        return {"available": False, "playbooks": []}
+    playbooks = svc.list()
+    safe = [
+        {
+            "id": p.get("id"),
+            "playbook_id": p.get("playbook_id"),
+            "name": p.get("name"),
+            "audience_type": p.get("audience_type"),
+            "audience_slug": p.get("audience_slug"),
+            "channel": p.get("channel"),
+            "default_subject": p.get("default_subject"),
+            "default_draft": p.get("default_draft"),
+            "editable_variables": p.get("editable_variables"),
+            "voice_rules": p.get("voice_rules"),
+            "approval_note": p.get("approval_note"),
+        }
+        for p in playbooks
+    ]
+    return {"available": True, "playbooks": safe}
+
+
+class DraftCreate(BaseModel):
+    opportunity_id: str
+    opportunity_name: Optional[str] = None
+    selected_playbook: Optional[str] = None
+    subject: Optional[str] = ""
+    body: Optional[str] = ""
+    internal_note: Optional[str] = ""
+    review_status: Optional[str] = "Draft"
+
+
+class DraftUpdate(BaseModel):
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    internal_note: Optional[str] = None
+    selected_playbook: Optional[str] = None
+    review_status: Optional[str] = None
+
+
+class SmsDraftCreate(BaseModel):
+    body: str
+    playbook: Optional[str] = None
+    confirmed: bool = False
+
+
+@api_router.get("/drafts")
+async def list_drafts(opportunity_id: str):
+    svc = get_draft_service()
+    if not svc:
+        return {"available": False, "drafts": []}
+    drafts = await svc.list_for_opportunity(opportunity_id)
+    return {"available": True, "drafts": drafts}
+
+
+@api_router.post("/drafts")
+async def create_draft(payload: DraftCreate):
+    svc = get_draft_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Draft store unavailable")
+    return await svc.create(payload.model_dump())
+
+
+@api_router.get("/drafts/{draft_id}")
+async def get_draft(draft_id: str):
+    svc = get_draft_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Draft store unavailable")
+    doc = await svc.get(draft_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return doc
+
+
+@api_router.patch("/drafts/{draft_id}")
+async def update_draft(draft_id: str, payload: DraftUpdate):
+    svc = get_draft_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Draft store unavailable")
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    doc = await svc.update(draft_id, updates)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return doc
+
+
+@api_router.delete("/drafts/{draft_id}")
+async def delete_draft(draft_id: str):
+    svc = get_draft_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Draft store unavailable")
+    ok = await svc.delete(draft_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# Optional SMS Draft — writes the SMS text into the opportunity's Airtable
+# Notes field, tagged and timestamped. NEVER sends SMS. Requires:
+#   - explicit `confirmed=True` from the operator,
+#   - a permitted contact phone on the record,
+#   - and (soft-check) a preferred contact method that mentions text/phone
+#     OR a Notes/Best-contact-method value naming warm-relationship intent.
+# If the Airtable base later adds a dedicated "SMS Permission" field, we
+# tighten this check without changing the client contract.
+# --------------------------------------------------------------------------
+_SMS_PERMIT_HINTS = ("yes", "existing customer", "warm relationship",
+                     "sms", "text", "phone")
+
+
+def _has_sms_permission(opp: dict) -> bool:
+    for key in ("sms_permission", "preferred_contact_method",
+                "best_contact_method"):
+        v = opp.get(key)
+        if isinstance(v, str) and any(h in v.lower() for h in _SMS_PERMIT_HINTS):
+            return True
+    return False
+
+
+@api_router.post("/opportunities/{opp_id}/sms-draft")
+async def create_sms_draft(opp_id: str, payload: SmsDraftCreate):
+    if not payload.confirmed:
+        raise HTTPException(status_code=400,
+                            detail="Confirmation required — SMS drafts are opt-in")
+    if not (payload.body and payload.body.strip()):
+        raise HTTPException(status_code=422, detail="Draft body cannot be empty")
+
+    svc = get_opportunity_service()
+    opp = svc.get(opp_id) if hasattr(svc, "get") else None
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    if not (opp.get("phone") or opp.get("phone_alt")):
+        raise HTTPException(status_code=422,
+                            detail="No permitted business phone on this record")
+    if not _has_sms_permission(opp):
+        raise HTTPException(status_code=422,
+                            detail="SMS permission is not marked (Yes / Existing "
+                                   "Customer / Warm Relationship)")
+
+    now = datetime.now(timezone.utc).isoformat()
+    tag = f"\n\n— SMS DRAFT ({now[:19]}Z"
+    if payload.playbook:
+        tag += f" · playbook={payload.playbook}"
+    tag += ") · draft only, no send —\n"
+    existing = (opp.get("notes") or "") if isinstance(opp.get("notes"), str) else ""
+    new_notes = f"{existing.rstrip()}{tag}{payload.body.strip()}"
+
+    try:
+        updated = svc.update_fields(opp_id, {
+            "notes": new_notes,
+            "outreach_status": "SMS Draft",
+        })
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    return {
+        "ok": True,
+        "opportunity_id": opp_id,
+        "note": "SMS draft appended to Airtable Notes. No SMS sent.",
+        "outreach_status": (updated or {}).get("outreach_status") if updated else None,
+    }
 
 
 app.include_router(api_router)

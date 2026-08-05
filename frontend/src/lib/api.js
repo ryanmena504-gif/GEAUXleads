@@ -45,4 +45,20 @@ export const api = {
     client.post(`/leads/${id}/action`, body).then((r) => r.data),
   leadsUpdateMessage: (id, message) =>
     client.patch(`/leads/${id}/message`, { message }).then((r) => r.data),
+
+  // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
+  listPlaybooks: () =>
+    client.get("/message-playbooks").then((r) => r.data),
+  listDrafts: (opportunity_id) =>
+    client.get("/drafts", { params: { opportunity_id } }).then((r) => r.data),
+  createDraft: (payload) =>
+    client.post("/drafts", payload).then((r) => r.data),
+  getDraft: (id) => client.get(`/drafts/${id}`).then((r) => r.data),
+  updateDraft: (id, patch) =>
+    client.patch(`/drafts/${id}`, patch).then((r) => r.data),
+  deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
+  createSmsDraft: (opp_id, payload) =>
+    client
+      .post(`/opportunities/${opp_id}/sms-draft`, payload)
+      .then((r) => r.data),
 };

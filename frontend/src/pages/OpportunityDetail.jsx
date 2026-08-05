@@ -6,6 +6,7 @@ import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
+import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import {
@@ -31,6 +32,7 @@ import {
   Gauge,
   Signal,
   Target,
+  PenLine,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -122,6 +124,7 @@ const OpportunityDetail = () => {
   const { id } = useParams();
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [draftOpen, setDraftOpen] = useState(false);
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
@@ -242,33 +245,61 @@ const OpportunityDetail = () => {
               </div>
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-1.5">
-                {ACTION_BUTTONS.map((a) => (
-                  <button
-                    key={a.status}
-                    data-testid={`action-${a.status}`}
-                    disabled={busy === a.status || opp.status === a.status}
-                    onClick={() => handleStatus(a.status)}
-                    className={
-                      "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
-                      (a.tone === "primary"
-                        ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
-                        : a.tone === "success"
-                          ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
-                          : a.tone === "danger"
-                            ? "border bh-hairline text-red-300 hover:bg-red-500/10"
-                            : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
-                      (opp.status === a.status ? " opacity-40" : "") +
-                      " disabled:cursor-not-allowed"
-                    }
-                  >
-                    <a.icon size={14} />
-                    {a.label}
-                  </button>
-                ))}
+                {ACTION_BUTTONS.map((a) => {
+                  const isMarkContacted = a.label === "Mark Contacted";
+                  return (
+                    <React.Fragment key={a.status}>
+                      <button
+                        data-testid={`action-${a.status}`}
+                        disabled={busy === a.status || opp.status === a.status}
+                        onClick={() => handleStatus(a.status)}
+                        className={
+                          "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
+                          (a.tone === "primary"
+                            ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
+                            : a.tone === "success"
+                              ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
+                              : a.tone === "danger"
+                                ? "border bh-hairline text-red-300 hover:bg-red-500/10"
+                                : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
+                          (opp.status === a.status ? " opacity-40" : "") +
+                          " disabled:cursor-not-allowed"
+                        }
+                      >
+                        <a.icon size={14} />
+                        {a.label}
+                      </button>
+                      {isMarkContacted && opp.lane === "partner" && (
+                        <button
+                          type="button"
+                          onClick={() => setDraftOpen(true)}
+                          data-testid="action-draft-note"
+                          className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
+                          style={{
+                            background: "var(--bh-brass-mute)",
+                            borderColor: "var(--bh-hair-warm)",
+                            color: "var(--bh-brass)",
+                          }}
+                        >
+                          <PenLine size={14} />
+                          Draft a Note
+                        </button>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </div>
         </section>
+
+        {opp.lane === "partner" && (
+          <DraftNoteDrawer
+            open={draftOpen}
+            onOpenChange={setDraftOpen}
+            opportunity={opp}
+          />
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left col: Intelligence + Contact + Property */}

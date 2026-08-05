@@ -102,6 +102,15 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 - Reply tracking (inbound Resend webhook → Airtable `Reply summary`).
 - Slack alert digest: rollup + morning summary in addition to per-lead pings.
 
+## Draft a Note (2026-02-05)
+- Server-side `GET /api/message-playbooks` reads the Airtable `Message Playbooks` table (tble13PxRqtWfPHzb) and returns a safe UI DTO with no credentials.
+- Mongo-backed `outreach_drafts` collection with full CRUD at `/api/drafts` (`opportunity_id`, `selected_playbook`, `subject`, `body`, `internal_note`, `review_status`, timestamps).
+- `POST /api/opportunities/{id}/sms-draft` appends a timestamped SMS draft to Airtable Notes with `Outreach status = "SMS Draft"`. Requires `confirmed=true`, a permitted business phone, and an SMS permission hint. **Never sends SMS.**
+- Right-side drawer (`DraftNoteDrawer.jsx`) shows opportunity header, lane badge, Lead Score, guardrail banner, playbook selector (auto-picks Builder/Designer/Pool from `project_type`, plus "Start from blank"), personalization panel, editable subject + body, internal note, review-status pills, Copy/Save/Discard, and a conditional "Create SMS draft in Airtable" panel.
+- Wired button `Draft a Note` in `OpportunityDetail.jsx` directly below `Mark Contacted`, visible only when `lane === "partner"`.
+- Verified with the 3 required records: **Sweeney Restoration** → Builder / Remodeler, **Tristan Construction LLC** → Builder / Remodeler, **Walther Design Studio** → Interior Designer.
+- Guardrail scan: no Send button, no mail/SMS/DM/webhook call from this feature — the only outbound is copy-to-clipboard and Airtable Notes writes.
+
 ## Environment
 - `SLACK_BLOODHOUND_WEBHOOK_URL` (secret) — enables Band A Slack alerts. Absent → alerts skipped, boot warns once, everything else works.
 - `PUBLIC_APP_URL` (optional) — frontend base URL used in the "Open in Bloodhound" button. Falls back to `PUBLIC_BACKEND_URL`.
