@@ -649,12 +649,6 @@ class DraftUpdate(BaseModel):
     review_status: Optional[str] = None
 
 
-class SmsDraftCreate(BaseModel):
-    body: str
-    playbook: Optional[str] = None
-    confirmed: bool = False
-
-
 @api_router.get("/drafts")
 async def list_drafts(opportunity_id: str):
     svc = get_draft_service()
@@ -730,70 +724,12 @@ async def delete_draft(draft_id: str):
 
 
 # --------------------------------------------------------------------------
-# Optional SMS Draft — writes the SMS text into the opportunity's Airtable
-# Notes field, tagged and timestamped. NEVER sends SMS. Requires:
-#   - explicit `confirmed=True` from the operator,
-#   - a permitted contact phone on the record,
-#   - and the Airtable single-select `SMS Permission` set to Yes /
-#     Existing Customer / Warm Relationship. Any other value (No, Unknown,
-#     blank) blocks the draft. Managed from Airtable — the app never writes
-#     to this field.
+# Reserved: previously hosted a POST /opportunities/{id}/sms-draft that wrote
+# an SMS draft into Airtable's Notes field. Removed 2026-02-06 in favor of a
+# pure client-side iPhone handoff (OpenInMessages) — no backend write, no
+# messaging API, no automation. If you're looking for send-anything logic in
+# this file, stop looking. There isn't any.
 # --------------------------------------------------------------------------
-_SMS_PERMIT_VALUES = {
-    "yes",
-    "existing customer",
-    "warm relationship",
-}
-
-
-def _has_sms_permission(opp: dict) -> bool:
-    raw = opp.get("sms_permission")
-    if not isinstance(raw, str):
-        return False
-    return raw.strip().lower() in _SMS_PERMIT_VALUES
-
-
-@api_router.post("/opportunities/{opp_id}/sms-draft")
-async def create_sms_draft(opp_id: str, payload: SmsDraftCreate):
-    if not payload.confirmed:
-        raise HTTPException(status_code=400,
-                            detail="Confirmation required — SMS drafts are opt-in")
-    if not (payload.body and payload.body.strip()):
-        raise HTTPException(status_code=422, detail="Draft body cannot be empty")
-
-    svc = get_opportunity_service()
-    opp = svc.get(opp_id) if hasattr(svc, "get") else None
-    if not opp:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-    if not (opp.get("phone") or opp.get("phone_alt")):
-        raise HTTPException(status_code=422,
-                            detail="No permitted business phone on this record")
-    if not _has_sms_permission(opp):
-        raise HTTPException(status_code=422,
-                            detail="SMS Permission on the Airtable record must "
-                                   "be Yes, Existing Customer, or Warm Relationship")
-
-    now = datetime.now(timezone.utc).isoformat()
-    tag = f"\n\n— SMS DRAFT ({now[:19]}Z"
-    if payload.playbook:
-        tag += f" · playbook={payload.playbook}"
-    tag += ") · draft only, no send —\n"
-    existing = (opp.get("notes") or "") if isinstance(opp.get("notes"), str) else ""
-    new_notes = f"{existing.rstrip()}{tag}{payload.body.strip()}"
-
-    try:
-        updated = svc.update_fields(opp_id, {
-            "notes": new_notes,
-            "outreach_status": "SMS Draft",
-        })
-    except AirtableWriteError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
-    return {
-        "ok": True,
-        "opportunity_id": opp_id,
-        "note": "SMS draft appended to Airtable Notes. No SMS sent.",
-        "outreach_status": (updated or {}).get("outreach_status") if updated else None,
-    }
 
 
 app.include_router(api_router)

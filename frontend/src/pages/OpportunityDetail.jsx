@@ -7,6 +7,7 @@ import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
+import OpenInMessages from "@/components/OpenInMessages";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import {
@@ -244,7 +245,9 @@ const OpportunityDetail = () => {
                 → {opp.next_best_action}
               </div>
 
-              <div className="mt-4 border-t bh-hairline pt-3 space-y-1.5">
+              <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
+                <OpenInMessages opportunity={opp} variant="panel" />
+                <div className="space-y-1.5 pt-1">
                 {ACTION_BUTTONS.map((a) => {
                   const isMarkContacted = a.label === "Mark Contacted";
                   return (
@@ -288,6 +291,7 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
+                </div>
               </div>
             </div>
           </div>

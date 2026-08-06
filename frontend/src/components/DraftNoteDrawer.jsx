@@ -8,8 +8,9 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import LaneBadge from "@/components/LaneBadge";
-import { Copy, Save, Trash2, ShieldCheck, PenLine, Lock, MessageSquare } from "lucide-react";
+import { Copy, Save, Trash2, ShieldCheck, PenLine, Lock } from "lucide-react";
 import { api } from "@/lib/api";
+import OpenInMessages from "@/components/OpenInMessages";
 
 /**
  * DraftNoteDrawer — partner-outreach preparation ONLY.
@@ -138,8 +139,6 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
   const [existingDraftId, setExistingDraftId] = useState(null);
   const [savedDrafts, setSavedDrafts] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [smsBusy, setSmsBusy] = useState(false);
-  const [smsConfirm, setSmsConfirm] = useState(false);
 
   const opp = opportunity || {};
   const tokens = useMemo(() => {
@@ -285,45 +284,6 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
 
   const discardChanges = () => {
     onOpenChange(false);
-  };
-
-  // SMS draft eligibility (client-side gate; server re-checks against
-  // the same explicit Airtable field).
-  const smsPermitValues = new Set(["yes", "existing customer", "warm relationship"]);
-  const hasPhone = !!(opp.phone || opp.phone_alt || opp.contact_phone || opp.phone_number);
-  const smsPermitRaw = (opp.sms_permission || "").toString().trim().toLowerCase();
-  const smsPermitted = hasPhone && smsPermitValues.has(smsPermitRaw);
-
-  const createSmsDraft = async () => {
-    if (!smsConfirm) {
-      setSmsConfirm(true);
-      return;
-    }
-    if (!opp.id) return;
-    // Compose a short SMS body from the email body (first ~300 chars, plain text)
-    const smsBody = (body || "")
-      .replace(/^\s*Subject:.*$/im, "")
-      .trim()
-      .slice(0, 300);
-    if (!smsBody) {
-      toast.error("Nothing to draft — write a body first");
-      return;
-    }
-    setSmsBusy(true);
-    try {
-      await api.createSmsDraft(opp.id, {
-        body: smsBody,
-        playbook: selected?.playbook_id || selected?.id || null,
-        confirmed: true,
-      });
-      toast.success("SMS draft saved to Airtable Notes. No text sent.");
-      setSmsConfirm(false);
-    } catch (e) {
-      const msg = e?.response?.data?.detail || "SMS draft failed";
-      toast.error(msg);
-    } finally {
-      setSmsBusy(false);
-    }
   };
 
   if (!opp || !opp.id) return null;
@@ -584,44 +544,10 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
 
           {/* Footer actions */}
           <div className="border-t bh-hairline px-6 py-4 space-y-3">
-            {smsPermitted && (
-              <div
-                className="rounded-md p-3 flex items-start gap-3"
-                style={{
-                  background: "var(--bh-surface-2)",
-                  border: "1px solid var(--bh-hair)",
-                }}
-                data-testid="sms-draft-panel"
-              >
-                <MessageSquare size={14} className="mt-0.5" style={{ color: "var(--bh-brass)" }} />
-                <div className="flex-1 text-[12.5px] leading-relaxed text-[var(--bh-ink-2)]">
-                  <div className="font-medium" style={{ color: "var(--bh-ink)" }}>
-                    Create SMS draft in Airtable
-                  </div>
-                  <div className="text-[11.5px] text-[var(--bh-ink-3)] mt-0.5">
-                    Writes a shortened version of the body into this record's Notes
-                    field with "SMS Draft" status. Never sends a text.
-                  </div>
-                </div>
-                <button
-                  onClick={createSmsDraft}
-                  disabled={smsBusy}
-                  data-testid="sms-draft-btn"
-                  className="text-[12.5px] h-8 px-3 rounded-md border shrink-0 self-center"
-                  style={{
-                    background: smsConfirm ? "var(--bh-brass)" : "var(--bh-surface)",
-                    color: smsConfirm ? "var(--bh-surface)" : "var(--bh-ink-2)",
-                    borderColor: "var(--bh-hair-strong)",
-                  }}
-                >
-                  {smsBusy
-                    ? "Saving…"
-                    : smsConfirm
-                    ? "Tap to confirm"
-                    : "Create SMS draft"}
-                </button>
-              </div>
-            )}
+            <OpenInMessages
+              opportunity={{ ...opp, first_message: body || opp.first_message }}
+              variant="panel"
+            />
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
                 <ShieldCheck size={12} style={{ color: "var(--bh-olive)" }} />

@@ -16,6 +16,7 @@ import {
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
+import OpenInMessages from "@/components/OpenInMessages";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 
 const Stat = ({ label, value }) => (
@@ -333,6 +334,12 @@ export const NextBestAction = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* iPhone handoff — replaces every send/SMS-draft path. Tapping this on
+          iPhone opens Messages/Mail with the draft prefilled; Ryan hits Send. */}
+      <div className="px-5 sm:px-7 pb-4 pt-4 border-t bh-hairline">
+        <OpenInMessages opportunity={l} variant="panel" />
       </div>
 
       {/* Send-readiness banner — shown when a real blocker would prevent

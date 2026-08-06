@@ -63,8 +63,4 @@ export const api = {
   updateDraft: (id, patch) =>
     client.patch(`/drafts/${id}`, patch).then((r) => r.data),
   deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
-  createSmsDraft: (opp_id, payload) =>
-    client
-      .post(`/opportunities/${opp_id}/sms-draft`, payload)
-      .then((r) => r.data),
 };

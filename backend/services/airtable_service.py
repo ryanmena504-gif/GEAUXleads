@@ -85,6 +85,11 @@ LIVE_FIELDS: Dict[str, str] = {
     "contact confidence": "contact_confidence_raw",
     "Best contact method": "best_contact_method",
     "Preferred contact method": "preferred_contact_method",
+    "First message": "first_message",
+    "First contact message": "first_contact_message",
+    "First contact channel": "first_contact_channel",
+    "Open approved message iPhone": "open_approved_message_iphone",
+    "Open approved message": "open_approved_message",
     "SMS Permission": "sms_permission",
 
     # AI intelligence

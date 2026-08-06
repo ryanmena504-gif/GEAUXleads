@@ -102,6 +102,18 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 - Reply tracking (inbound Resend webhook → Airtable `Reply summary`).
 - Slack alert digest: rollup + morning summary in addition to per-lead pings.
 
+## Open in Messages — iPhone handoff (2026-02-06)
+- Ripped out the entire backend SMS-draft path (`POST /api/opportunities/{id}/sms-draft`, `_has_sms_permission`, `_SMS_PERMIT_VALUES`, `SmsDraftCreate`) and the frontend `createSmsDraft` client. That endpoint now returns 404.
+- New `components/OpenInMessages.jsx` component. Priority:
+  1. If Airtable's `Open approved message iPhone` formula returns an `sms:` URL, use it verbatim as `<a href>`.
+  2. Else, if Contact phone + a message text exist, build `sms:{phone}?body={urlencoded}` locally in the browser.
+  3. Else, if Contact email exists, build `mailto:{email}?subject=…&body=…`.
+  4. Else, disabled "Public contact needed" button with instructions.
+- Wired into three surfaces: Opportunity detail (partner lane, above status buttons), NBA card (top of action area), and the Draft a Note drawer footer (replaces the old "Create SMS draft" panel entirely).
+- **Zero backend writes** on tap. It's a plain `<a href="sms:…">` — iOS handles it via the native URL scheme. No SMS Draft status, no Outreach sent, no Message sent date, no automation. Approval-only policy intact.
+- Airtable field map updated: `Open approved message iPhone → open_approved_message_iphone`, `Open approved message → open_approved_message`, `First contact message → first_contact_message`, `First contact channel → first_contact_channel`.
+- Verified on Greige Interiors (rec9oACK2PGWSmfmk): the Airtable formula returned `sms:(985) 875-7576?body=Hey%20team%2C…` and the button href is set to that exact string. Mobile screenshot at 390px confirms the button is present and prominent.
+
 ## SMS Permission field (2026-02-06)
 - Airtable `SMS Permission` single-select added by the user (Path A) with the five expected options. `/api/schema` confirms it's mapped: `{airtable: "SMS Permission", internal: "sms_permission", readonly: True}`.
 - Backend `_has_sms_permission()` is STRICT: the record's `sms_permission` value must equal `Yes`, `Existing Customer`, or `Warm Relationship`. Every other value blocks the SMS draft.
