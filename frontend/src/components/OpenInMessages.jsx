@@ -18,10 +18,34 @@ import { MessageSquare, Mail, Lock, ShieldCheck } from "lucide-react";
  * Bloodhound never sends, schedules, or persists a status change from this.
  */
 
-// iOS uses `&body=` (ampersand); some Android builds prefer `?body=`. Since
-// this feature is explicitly for iPhone handoff, we stick with the iOS form
-// unless the Airtable formula already provides a full URL (which we honor
-// verbatim). The URL is built locally in the browser — nothing is fetched.
+// Sanitize an sms: URL so iOS Safari will actually open Messages.
+// iOS is strict: the phone must be digits (with an optional leading `+`)
+// only — no spaces, dashes, or parens — otherwise it throws "Failed to
+// load" and never hands off to the Messages app. We honor whatever body
+// the Airtable formula produced but rebuild the phone portion.
+const sanitizeSmsUrl = (rawUrl) => {
+  if (typeof rawUrl !== "string") return null;
+  const trimmed = rawUrl.trim();
+  if (!/^sms:/i.test(trimmed)) return null;
+  const rest = trimmed.slice(4); // drop "sms:"
+  // Split on the first '?' or '&' — whichever comes first — into phone / query.
+  const qIdx = rest.search(/[?&]/);
+  const rawPhone = qIdx === -1 ? rest : rest.slice(0, qIdx);
+  const query = qIdx === -1 ? "" : rest.slice(qIdx + 1);
+  // Keep only digits and a leading `+`.
+  let phone = rawPhone.replace(/[^\d+]/g, "");
+  if (phone.startsWith("+")) {
+    phone = "+" + phone.slice(1).replace(/\+/g, "");
+  } else {
+    phone = phone.replace(/\+/g, "");
+  }
+  if (!phone) return null;
+  // Always use the `&body=` form — it works on every iOS version since 8,
+  // whereas `?body=` fails on some older Message app builds.
+  return query ? `sms:${phone}&${query.replace(/^\?/, "")}` : `sms:${phone}`;
+};
+
+// iOS Safari-friendly SMS href built from raw fields.
 const buildIosSmsHref = (phone, body) => {
   if (!phone) return null;
   const cleanPhone = String(phone).replace(/[^\d+]/g, "");
@@ -60,7 +84,12 @@ export const resolveOpenInMessages = (opp) => {
   const subject = pickSubject(opp);
 
   if (iphoneFormula.toLowerCase().startsWith("sms:")) {
-    return { mode: "sms_formula", href: iphoneFormula, source: phone || "iPhone formula" };
+    // Airtable's formula puts parens + spaces into the phone which iOS
+    // rejects with "Failed to load". Sanitize before handoff.
+    const cleaned = sanitizeSmsUrl(iphoneFormula);
+    if (cleaned) {
+      return { mode: "sms_formula", href: cleaned, source: phone || "iPhone formula" };
+    }
   }
   if (phone && message) {
     const href = buildIosSmsHref(phone, message);
