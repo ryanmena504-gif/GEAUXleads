@@ -103,10 +103,10 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 - Slack alert digest: rollup + morning summary in addition to per-lead pings.
 
 ## SMS Permission field (2026-02-06)
-- Added `SMS Permission → sms_permission` to both `airtable_service.LEADS_FIELD_MAP` (opportunity DTO) and `leads_service.LEADS_FIELD_MAP` (NBA DTO). Marked read-only in `EXPLICIT_READONLY` so the app never writes it — the field is authored in Airtable.
-- Backend `_has_sms_permission()` is now STRICT: the record's `sms_permission` value must equal `Yes`, `Existing Customer`, or `Warm Relationship`. Every other value (No, Unknown, blank, missing field) blocks the SMS draft.
-- Frontend `DraftNoteDrawer` mirrors the same strict check client-side: the "Create SMS draft in Airtable" panel only appears when the record has both a phone and an explicit permitted value.
-- **Airtable field creation blocked at 403** — the personal access token lacks `schema.bases:write`. The user needs to either grant that scope to the PAT or add the field manually in the Airtable UI (single-select with options Yes / Existing Customer / Warm Relationship / No / Unknown). Once the field exists with a permitted value on any lead, the SMS panel appears automatically — no code change needed.
+- Airtable `SMS Permission` single-select added by the user (Path A) with the five expected options. `/api/schema` confirms it's mapped: `{airtable: "SMS Permission", internal: "sms_permission", readonly: True}`.
+- Backend `_has_sms_permission()` is STRICT: the record's `sms_permission` value must equal `Yes`, `Existing Customer`, or `Warm Relationship`. Every other value blocks the SMS draft.
+- Frontend `DraftNoteDrawer` mirrors the same strict check client-side.
+- **Verified end-to-end**: seeded Sweeney Restoration with `Contact phone` + `SMS Permission=Yes` → the "Create SMS draft in Airtable" panel appeared inside the drawer → `POST /api/opportunities/{id}/sms-draft` (confirmed=true) returned 200 → Airtable Notes got the tagged SMS draft appended and `Outreach status` flipped to "SMS Draft". All test mutations reverted so the record is clean.
 
 ## Draft a Note (2026-02-05)
 - Server-side `GET /api/message-playbooks` reads the Airtable `Message Playbooks` table (tble13PxRqtWfPHzb) and returns a safe UI DTO with no credentials.
