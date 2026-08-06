@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import LaneBadge from "@/components/LaneBadge";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
+import OpenInMessages from "@/components/OpenInMessages";
 import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
@@ -123,6 +124,13 @@ const PartnerRow = ({ p, onDraft }) => {
             >
               <PenLine size={10} /> Draft a Note
             </button>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`partner-handoff-${p.id}`}
+              className="inline-flex"
+            >
+              <OpenInMessages opportunity={p} variant="pill" />
+            </div>
             <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-0.5 inline-flex items-center gap-1">
               <Lock size={10} /> Campaign approval required
             </span>

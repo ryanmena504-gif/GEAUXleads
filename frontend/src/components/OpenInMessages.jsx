@@ -125,8 +125,13 @@ export const resolveContacts = (opp) => {
 };
 
 const btnBase =
-  "inline-flex items-center justify-center gap-1.5 h-11 px-4 rounded-md text-sm font-medium " +
+  "inline-flex items-center justify-center gap-1.5 rounded-md font-medium " +
   "transition-colors duration-150 whitespace-nowrap no-underline";
+
+const SIZE = {
+  md: "h-11 px-4 text-sm",
+  sm: "h-8 px-2.5 text-[12px]",
+};
 
 const primary = {
   background: "var(--bh-brass)",
@@ -143,38 +148,38 @@ const disabled = {
   color: "var(--bh-ink-mute)",
 };
 
-const TextButton = ({ href, testid, label, onClick, styleOverride }) => (
+const TextButton = ({ href, testid, label, onClick, styleOverride, size = "md" }) => (
   <a
     href={href}
     data-testid={testid}
     onClick={onClick}
-    className={btnBase}
+    className={`${btnBase} ${SIZE[size]}`}
     style={styleOverride || primary}
   >
-    <MessageSquare size={14} /> {label}
+    <MessageSquare size={size === "sm" ? 12 : 14} /> {label}
   </a>
 );
 
-const EmailButton = ({ href, testid, label, styleOverride }) => (
+const EmailButton = ({ href, testid, label, styleOverride, size = "md" }) => (
   <a
     href={href}
     data-testid={testid}
-    className={btnBase}
+    className={`${btnBase} ${SIZE[size]}`}
     style={styleOverride || primary}
   >
-    <Mail size={14} /> {label}
+    <Mail size={size === "sm" ? 12 : 14} /> {label}
   </a>
 );
 
-const DisabledButton = () => (
+const DisabledButton = ({ size = "md" }) => (
   <button
     type="button"
     disabled
     data-testid="open-in-messages-disabled"
-    className={btnBase + " cursor-not-allowed"}
+    className={`${btnBase} ${SIZE[size]} cursor-not-allowed`}
     style={disabled}
   >
-    <Lock size={14} /> Public contact needed
+    <Lock size={size === "sm" ? 12 : 14} /> Public contact needed
   </button>
 );
 
@@ -219,9 +224,14 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   // Compact variant for row lists — show just the buttons, no chrome.
   if (variant === "pill") {
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5" data-testid="lead-contact-pill">
         {hasText && (
-          <TextButton href={contacts.text.href} testid="lead-contact-text" label="Text" />
+          <TextButton
+            href={contacts.text.href}
+            testid="lead-contact-text"
+            label="Text"
+            size="sm"
+          />
         )}
         {hasEmail && (
           <EmailButton
@@ -229,6 +239,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             testid="lead-contact-email"
             label="Email"
             styleOverride={hasText ? secondary : primary}
+            size="sm"
           />
         )}
       </div>
