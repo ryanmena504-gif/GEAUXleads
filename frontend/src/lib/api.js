@@ -63,4 +63,13 @@ export const api = {
   updateDraft: (id, patch) =>
     client.patch(`/drafts/${id}`, patch).then((r) => r.data),
   deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
+
+  logHandoff: (opp_id, payload) =>
+    client
+      .post(`/opportunities/${opp_id}/handoff`, payload)
+      .then((r) => r.data),
+  listHandoffs: (opp_id, limit = 50) =>
+    client
+      .get(`/opportunities/${opp_id}/handoffs`, { params: { limit } })
+      .then((r) => r.data),
 };

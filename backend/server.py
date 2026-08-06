@@ -22,6 +22,7 @@ from services.slack_service import (
 )
 from services.playbook_service import get_playbook_service
 from services.draft_service import get_draft_service, REVIEW_STATUSES
+from services.handoff_service import get_handoff_service
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -730,6 +731,61 @@ async def delete_draft(draft_id: str):
 # messaging API, no automation. If you're looking for send-anything logic in
 # this file, stop looking. There isn't any.
 # --------------------------------------------------------------------------
+
+
+# ============================================================================
+# Contact-handoff log — every tap of the Text/Email buttons on any device
+# logs ONE event immediately. Because Mail on iPhone / laptop uses whichever
+# account is the OS default, we can't observe the actual send — we log the
+# INTENT-TO-HANDOFF client-side. No messaging API is called.
+# ============================================================================
+class HandoffCreate(BaseModel):
+    opportunity_id: str
+    opportunity_name: Optional[str] = None
+    channel: str  # "text" | "email"
+    recipient: Optional[str] = None
+
+
+@api_router.post("/opportunities/{opp_id}/handoff")
+async def log_handoff(opp_id: str, payload: HandoffCreate, request: Request):
+    svc = get_handoff_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Handoff log unavailable")
+    if payload.opportunity_id and payload.opportunity_id != opp_id:
+        raise HTTPException(status_code=422, detail="opportunity_id mismatch")
+    if payload.channel not in ("text", "email"):
+        raise HTTPException(status_code=422, detail="channel must be 'text' or 'email'")
+    try:
+        rec = await svc.create(
+            {
+                "opportunity_id": opp_id,
+                "opportunity_name": payload.opportunity_name,
+                "channel": payload.channel,
+                "recipient": payload.recipient,
+            },
+            user_agent=request.headers.get("user-agent"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return rec
+
+
+@api_router.get("/opportunities/{opp_id}/handoffs")
+async def list_handoffs_for(opp_id: str, limit: int = 50):
+    svc = get_handoff_service()
+    if not svc:
+        return {"available": False, "handoffs": []}
+    handoffs = await svc.list_for_opportunity(opp_id, limit=limit)
+    return {"available": True, "handoffs": handoffs}
+
+
+@api_router.get("/handoffs/recent")
+async def list_recent_handoffs(limit: int = 100):
+    svc = get_handoff_service()
+    if not svc:
+        return {"available": False, "handoffs": []}
+    handoffs = await svc.list_recent(limit=limit)
+    return {"available": True, "handoffs": handoffs}
 
 
 app.include_router(api_router)
