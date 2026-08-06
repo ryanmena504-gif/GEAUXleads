@@ -61,12 +61,46 @@ export const NextBestAction = () => {
       const res = await api.leadsAction(state.lead.id, { action, ...extra });
       toast.success(res.note || `${action.replace(/_/g, " ")} · done`);
       await load();
-    } catch {
-      toast.error(`Failed: ${action}`);
+    } catch (err) {
+      // Surface the ACTUAL server reason so Ryan knows why a send failed
+      // ("Lead has no contact email on file", "Blocked by Hunt status=…", etc.)
+      const reason =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        `Failed: ${action}`;
+      toast.error(reason, { duration: 8000 });
     } finally {
       setBusy(null);
     }
   };
+
+  // ---- send-readiness precheck ------------------------------------------
+  // Compute this from the NBA lead itself so the UI can show WHY a send
+  // would fail BEFORE Ryan clicks Approve 5 times and gets a stale toast.
+  const sendBlockers = React.useMemo(() => {
+    const l = state.lead;
+    if (!l) return [];
+    const blockers = [];
+    const email = (l.contact_email || l.email || "").trim();
+    if (!email.includes("@")) {
+      blockers.push({
+        code: "no_email",
+        label: "No contact email on this record",
+        fix: "Add a public business email to the Leads row in Airtable, then reload.",
+      });
+    }
+    const hunt = (l.hunt_status || "").toLowerCase();
+    if (["rejected", "closed", "disqualified"].some((t) => hunt.includes(t))) {
+      blockers.push({
+        code: "hunt_blocked",
+        label: `Hunt status "${l.hunt_status}" blocks send`,
+        fix: 'Change Hunt status in Airtable to "Pursue" or "Message ready".',
+      });
+    }
+    return blockers;
+  }, [state.lead]);
+  const canSend = sendBlockers.length === 0;
 
   const saveMessage = async () => {
     if (!state.lead) return;
@@ -125,11 +159,16 @@ export const NextBestAction = () => {
   }
 
   const l = state.lead;
+  const alreadySent =
+    !!l?._sent_at ||
+    l?.outreach_sent === true ||
+    (typeof l?.outreach_status === "string" &&
+      l.outreach_status.toLowerCase() === "sent");
   const approved =
-    !!l._approved_at ||
-    (typeof l.approval_status === "string" &&
+    !!l?._approved_at ||
+    (typeof l?.approval_status === "string" &&
       l.approval_status.toLowerCase().includes("approved"));
-  const timeSince = l.date_discovered || l.created_time;
+  const timeSince = l?.date_discovered || l?.created_time;
 
   return (
     <section
@@ -296,20 +335,58 @@ export const NextBestAction = () => {
         )}
       </div>
 
+      {/* Send-readiness banner — shown when a real blocker would prevent
+          the send AND nothing has actually been sent yet. Also disables
+          the Approve button so nobody clicks it six times in frustration. */}
+      {!canSend && !alreadySent && (
+        <div
+          data-testid="nba-send-blocked"
+          className="mx-5 sm:mx-7 mb-3 rounded-md border p-3 space-y-1.5"
+          style={{
+            background: "var(--bh-clay-mute)",
+            borderColor: "rgba(165,90,62,0.35)",
+          }}
+        >
+          <div className="text-[12px] font-semibold" style={{ color: "var(--bh-clay)" }}>
+            {approved ? "Approved, but nothing has been sent" : "Send is blocked"}
+          </div>
+          <ul className="space-y-1">
+            {sendBlockers.map((b) => (
+              <li key={b.code} className="text-[12.5px] leading-relaxed text-[var(--bh-ink-2)]">
+                · <span className="font-medium">{b.label}.</span>{" "}
+                <span className="text-[var(--bh-ink-3)]">{b.fix}</span>
+              </li>
+            ))}
+          </ul>
+          {approved && (
+            <div className="text-[11.5px] text-[var(--bh-ink-3)] pt-0.5 leading-relaxed">
+              Bloodhound never sent this because the guardrails caught the missing info. Once you fix the item{sendBlockers.length > 1 ? "s" : ""} above and reload, the send will proceed on the next Approve click.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="px-5 sm:px-7 pb-5 pt-3 border-t bh-hairline flex flex-wrap gap-2">
         <button
           onClick={() => act("approve")}
-          disabled={busy === "approve" || approved}
+          disabled={busy === "approve" || alreadySent || !canSend}
           data-testid="nba-approve"
-          className="flex-1 min-w-[160px] h-11 rounded bg-amber-500 text-neutral-950 hover:bg-amber-400 text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2 transition-colors duration-150"
+          title={!canSend ? sendBlockers.map((b) => b.label).join(" · ") : ""}
+          className="flex-1 min-w-[160px] h-11 rounded bg-amber-500 text-neutral-950 hover:bg-amber-400 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors duration-150"
         >
           {busy === "approve" ? (
             <Loader2 size={14} className="animate-spin" />
           ) : (
             <CheckCircle2 size={14} />
           )}
-          {approved ? "Approved" : "Approve & Send"}
+          {alreadySent
+            ? "Sent"
+            : canSend
+              ? approved
+                ? "Retry send"
+                : "Approve & Send"
+              : "Send blocked"}
         </button>
         {l.lane === "partner" && (
           <button

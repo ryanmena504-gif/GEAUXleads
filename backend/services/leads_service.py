@@ -340,20 +340,25 @@ class LeadsAirtableService:
     def approve(self, lead_id: str) -> Dict[str, Any]:
         ts = datetime.now(timezone.utc).isoformat()
         self._approvals[lead_id] = ts
+        # Approval status DOES have an "Approved" option.
         wrote_approval = self._safe_update(lead_id, "Approval status", "Approved")
-        wrote_outreach = self._safe_update(lead_id, "Outreach status", "Approved")
+        # Outreach status only has {Not sent, Sent, Replied, No response,
+        # Not interested, SMS Draft} — writing "Approved" here 422s. The
+        # session store + Approval status already capture the state, so we
+        # skip the invalid write.
         self._refresh_cache(force=True)
         return {
             "lead_id": lead_id,
             "state": "approved",
             "approved_at": ts,
-            "persisted": {"Approval status": wrote_approval, "Outreach status": wrote_outreach},
+            "persisted": {"Approval status": wrote_approval},
             "note": "Approved — awaiting messaging connection.",
         }
 
     def hold(self, lead_id: str) -> Dict[str, Any]:
         self._held.add(lead_id)
-        wrote = self._safe_update(lead_id, "Outreach status", "Hold")
+        # Hunt status = Paused is the canonical hold signal on Airtable.
+        wrote = self._safe_update(lead_id, "Hunt status", "Paused")
         self._refresh_cache(force=True)
         return {"lead_id": lead_id, "state": "hold", "persisted": wrote}
 
@@ -362,11 +367,11 @@ class LeadsAirtableService:
         return {"lead_id": lead_id, "state": "skipped"}
 
     def do_not_contact(self, lead_id: str) -> Dict[str, Any]:
-        # Prefer Status; if unwritable/absent, try Outreach status; then Approval status.
-        for field in ("Status", "Outreach status", "Approval status"):
-            if self._safe_update(lead_id, field, "Do Not Contact"):
-                self._refresh_cache(force=True)
-                return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": field}
+        # Hunt status = Rejected is the canonical DNC signal on Airtable.
+        # Outreach status doesn't have a DNC value, so we stop there.
+        if self._safe_update(lead_id, "Hunt status", "Rejected"):
+            self._refresh_cache(force=True)
+            return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": "Hunt status"}
         # Fallback: session-only exclude
         self._held.add(lead_id)
         return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": None,
