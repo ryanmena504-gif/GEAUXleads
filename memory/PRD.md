@@ -102,6 +102,12 @@ Write allowlist: `Status`, `Hunt status`, `Next followup`, `Rejection reason`, `
 - Reply tracking (inbound Resend webhook → Airtable `Reply summary`).
 - Slack alert digest: rollup + morning summary in addition to per-lead pings.
 
+## SMS Permission field (2026-02-06)
+- Added `SMS Permission → sms_permission` to both `airtable_service.LEADS_FIELD_MAP` (opportunity DTO) and `leads_service.LEADS_FIELD_MAP` (NBA DTO). Marked read-only in `EXPLICIT_READONLY` so the app never writes it — the field is authored in Airtable.
+- Backend `_has_sms_permission()` is now STRICT: the record's `sms_permission` value must equal `Yes`, `Existing Customer`, or `Warm Relationship`. Every other value (No, Unknown, blank, missing field) blocks the SMS draft.
+- Frontend `DraftNoteDrawer` mirrors the same strict check client-side: the "Create SMS draft in Airtable" panel only appears when the record has both a phone and an explicit permitted value.
+- **Airtable field creation blocked at 403** — the personal access token lacks `schema.bases:write`. The user needs to either grant that scope to the PAT or add the field manually in the Airtable UI (single-select with options Yes / Existing Customer / Warm Relationship / No / Unknown). Once the field exists with a permitted value on any lead, the SMS panel appears automatically — no code change needed.
+
 ## Draft a Note (2026-02-05)
 - Server-side `GET /api/message-playbooks` reads the Airtable `Message Playbooks` table (tble13PxRqtWfPHzb) and returns a safe UI DTO with no credentials.
 - Mongo-backed `outreach_drafts` collection with full CRUD at `/api/drafts` (`opportunity_id`, `selected_playbook`, `subject`, `body`, `internal_note`, `review_status`, timestamps). Persists across refresh — verified via e2e Playwright: save with a marker, reload page, reopen drawer, marker still in subject + body + "Ready for Ryan review" pill still active.

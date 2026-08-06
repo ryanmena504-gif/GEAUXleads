@@ -62,6 +62,7 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "SCORE band": "score_band",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
+    "SMS Permission": "sms_permission",
 }
 
 # Only these Airtable fields may ever be written by this service.

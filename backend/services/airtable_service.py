@@ -85,6 +85,7 @@ LIVE_FIELDS: Dict[str, str] = {
     "contact confidence": "contact_confidence_raw",
     "Best contact method": "best_contact_method",
     "Preferred contact method": "preferred_contact_method",
+    "SMS Permission": "sms_permission",
 
     # AI intelligence
     "Ai status": "ai_status",
@@ -186,6 +187,7 @@ EXPLICIT_READONLY: set = {
     "Job won",
     "Closed revenue",
     "Estimated gross profit",
+    "SMS Permission",
 }
 
 # Only these Airtable field names may ever be written from the app.

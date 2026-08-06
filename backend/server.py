@@ -734,22 +734,23 @@ async def delete_draft(draft_id: str):
 # Notes field, tagged and timestamped. NEVER sends SMS. Requires:
 #   - explicit `confirmed=True` from the operator,
 #   - a permitted contact phone on the record,
-#   - and (soft-check) a preferred contact method that mentions text/phone
-#     OR a Notes/Best-contact-method value naming warm-relationship intent.
-# If the Airtable base later adds a dedicated "SMS Permission" field, we
-# tighten this check without changing the client contract.
+#   - and the Airtable single-select `SMS Permission` set to Yes /
+#     Existing Customer / Warm Relationship. Any other value (No, Unknown,
+#     blank) blocks the draft. Managed from Airtable — the app never writes
+#     to this field.
 # --------------------------------------------------------------------------
-_SMS_PERMIT_HINTS = ("yes", "existing customer", "warm relationship",
-                     "sms", "text", "phone")
+_SMS_PERMIT_VALUES = {
+    "yes",
+    "existing customer",
+    "warm relationship",
+}
 
 
 def _has_sms_permission(opp: dict) -> bool:
-    for key in ("sms_permission", "preferred_contact_method",
-                "best_contact_method"):
-        v = opp.get(key)
-        if isinstance(v, str) and any(h in v.lower() for h in _SMS_PERMIT_HINTS):
-            return True
-    return False
+    raw = opp.get("sms_permission")
+    if not isinstance(raw, str):
+        return False
+    return raw.strip().lower() in _SMS_PERMIT_VALUES
 
 
 @api_router.post("/opportunities/{opp_id}/sms-draft")
@@ -769,8 +770,8 @@ async def create_sms_draft(opp_id: str, payload: SmsDraftCreate):
                             detail="No permitted business phone on this record")
     if not _has_sms_permission(opp):
         raise HTTPException(status_code=422,
-                            detail="SMS permission is not marked (Yes / Existing "
-                                   "Customer / Warm Relationship)")
+                            detail="SMS Permission on the Airtable record must "
+                                   "be Yes, Existing Customer, or Warm Relationship")
 
     now = datetime.now(timezone.utc).isoformat()
     tag = f"\n\n— SMS DRAFT ({now[:19]}Z"

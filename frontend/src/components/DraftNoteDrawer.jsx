@@ -287,18 +287,12 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
     onOpenChange(false);
   };
 
-  // SMS draft eligibility (client-side gate; server re-checks).
-  const smsHints = ["yes", "existing customer", "warm relationship", "sms", "text", "phone"];
-  const hasPhone = !!(opp.phone || opp.phone_alt);
-  const permitHay = [
-    opp.sms_permission,
-    opp.preferred_contact_method,
-    opp.best_contact_method,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const smsPermitted = hasPhone && smsHints.some((h) => permitHay.includes(h));
+  // SMS draft eligibility (client-side gate; server re-checks against
+  // the same explicit Airtable field).
+  const smsPermitValues = new Set(["yes", "existing customer", "warm relationship"]);
+  const hasPhone = !!(opp.phone || opp.phone_alt || opp.contact_phone || opp.phone_number);
+  const smsPermitRaw = (opp.sms_permission || "").toString().trim().toLowerCase();
+  const smsPermitted = hasPhone && smsPermitValues.has(smsPermitRaw);
 
   const createSmsDraft = async () => {
     if (!smsConfirm) {
