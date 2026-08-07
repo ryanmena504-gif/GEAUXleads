@@ -17,11 +17,14 @@ import { useUserSettings } from "@/hooks/useUserSettings";
  * these buttons is tapped. Approval-only policy intact.
  */
 
-// Default sender identity — overridden per-account via Settings → Sender email.
-// Bloodhound never CONNECTS to this account; the value only shows up inside
-// the mailto: body so Ryan can see which address he's about to send from.
+// Default sender identity — Ryan's fixed business phone + email for The
+// Shirtless Handyman. Ryan can override these in Settings, but every email
+// draft is signed with this identity by default. Bloodhound never CONNECTS
+// to any account; the values just appear inside the mailto: body so the
+// recipient sees the right contact info.
 const DEFAULT_SENDER_EMAIL = "ryanmena@theshirtlesshandyman.com";
 const DEFAULT_SENDER_NAME = "Ryan Mena";
+const DEFAULT_SENDER_PHONE = "(504) 264-4919";
 const EMAIL_SUBJECT = "Quick question about your project";
 
 // iOS is strict: sms: URLs must contain digits (with optional leading `+`)
@@ -53,15 +56,19 @@ const buildIosSmsHref = (phone, body) => {
   return `sms:${cleanPhone}${q}`;
 };
 
-// mailto: signature. Includes the sender's email so it's visible in the
-// composed draft — iPhone/Mac Mail can't be forced to a specific From
-// account via mailto, so this at least surfaces the correct address to
-// send from. The sender identity is configurable in Settings.
-const withSignature = (body, senderName, senderEmail) => {
+// mailto: signature. Includes the sender's name, business, phone, and
+// email so it's visible in the composed draft — iPhone/Mac Mail can't be
+// forced to a specific From account via mailto, so this at least makes
+// sure the recipient sees the right contact info.
+const withSignature = (body, senderName, senderEmail, senderPhone) => {
   const base = (body || "").trim();
   const name = (senderName || DEFAULT_SENDER_NAME).trim();
   const email = (senderEmail || DEFAULT_SENDER_EMAIL).trim();
-  const signature = `\n\n${name}\nThe Shirtless Handyman\n${email}`;
+  const phone = (senderPhone || DEFAULT_SENDER_PHONE).trim();
+  const signatureLines = [name, "The Shirtless Handyman"];
+  if (phone) signatureLines.push(phone);
+  if (email) signatureLines.push(email);
+  const signature = `\n\n${signatureLines.join("\n")}`;
   if (!base) return signature.trimStart();
   if (base.endsWith(email)) return base;
   return `${base}${signature}`;
@@ -77,13 +84,13 @@ const buildMailtoHref = (email) => {
   return `mailto:${clean}?${params.join("&")}`;
 };
 
-const buildMailtoWithBody = (email, body, senderName, senderEmail) => {
+const buildMailtoWithBody = (email, body, senderName, senderEmail, senderPhone) => {
   if (!email) return null;
   const clean = String(email).trim();
   if (!clean.includes("@")) return null;
   const params = [
     `subject=${encodeURIComponent(EMAIL_SUBJECT)}`,
-    `body=${encodeURIComponent(withSignature(body, senderName, senderEmail))}`,
+    `body=${encodeURIComponent(withSignature(body, senderName, senderEmail, senderPhone))}`,
   ];
   return `mailto:${clean}?${params.join("&")}`;
 };
@@ -105,6 +112,7 @@ export const resolveContacts = (opp, senderIdentity) => {
   const message = pickMessage(opp);
   const senderName = senderIdentity?.name;
   const senderEmail = senderIdentity?.email;
+  const senderPhone = senderIdentity?.phone;
 
   let textHref = null;
   let textDisplay = null;
@@ -124,7 +132,7 @@ export const resolveContacts = (opp, senderIdentity) => {
   let emailDisplay = null;
   if (emailRaw && emailRaw.includes("@")) {
     emailHref = message
-      ? buildMailtoWithBody(emailRaw, message, senderName, senderEmail)
+      ? buildMailtoWithBody(emailRaw, message, senderName, senderEmail, senderPhone)
       : buildMailtoHref(emailRaw);
     emailDisplay = emailRaw;
   }
@@ -205,6 +213,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const senderIdentity = {
     name: settings?.sender_name,
     email: settings?.sender_email,
+    phone: settings?.sender_phone,
   };
   const contacts = resolveContacts(opportunity, senderIdentity);
   const hasText = !!contacts.text;

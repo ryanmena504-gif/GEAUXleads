@@ -16,6 +16,7 @@ import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
 const SenderIdentitySection = () => {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -24,6 +25,7 @@ const SenderIdentitySection = () => {
       if (!s) return;
       setEmail(s.sender_email || "");
       setName(s.sender_name || "");
+      setPhone(s.sender_phone || "");
       setLoaded(true);
     });
   }, []);
@@ -36,8 +38,12 @@ const SenderIdentitySection = () => {
     }
     setSaving(true);
     try {
-      await saveUserSettings({ sender_email: trimmed, sender_name: name.trim() });
-      toast.success("Sender email saved");
+      await saveUserSettings({
+        sender_email: trimmed,
+        sender_name: name.trim(),
+        sender_phone: phone.trim(),
+      });
+      toast.success("Sender identity saved");
     } catch (err) {
       const msg = err?.response?.data?.detail || "Save failed";
       toast.error(msg);
@@ -49,21 +55,22 @@ const SenderIdentitySection = () => {
   return (
     <section data-testid="section-sender-identity">
       <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
-        <Mail size={11} /> Section · Sender email
+        <Mail size={11} /> Section · Your sender identity
       </div>
       <div className="bh-surface rounded p-5 space-y-4">
         <p className="text-sm text-neutral-400 leading-relaxed">
-          This is the email address that appears inside every email draft as
-          your signature. Change it here if you want emails to look like they
-          come from a different account.
+          Every email draft is signed with this name, phone, and email so
+          recipients always see the same contact info from The Shirtless
+          Handyman. Change it here if you ever need a different one.
         </p>
         <p className="text-[12px] text-neutral-500 leading-relaxed">
           Note: iPhone and Mac Mail always send from whichever account is set
-          as default on your device. Bloodhound cannot pick the account for
-          you — this value just makes sure you see the right address before
-          you press Send.
+          as default on your device, and text messages always come from your
+          iPhone&rsquo;s own number. Bloodhound cannot pick either one — this
+          value just makes sure the right info appears inside the draft
+          before you press Send.
         </p>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-3 gap-3">
           <div>
             <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
               Your name
@@ -85,9 +92,23 @@ const SenderIdentitySection = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               data-testid="settings-sender-email"
-              placeholder="ryan@theshirtlesshandyman.com"
+              placeholder="ryanmena@theshirtlesshandyman.com"
               disabled={!loaded}
               type="email"
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Sender phone
+            </div>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              data-testid="settings-sender-phone"
+              placeholder="(504) 264-4919"
+              disabled={!loaded}
+              type="tel"
               className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
             />
           </div>
@@ -104,7 +125,7 @@ const SenderIdentitySection = () => {
             }}
           >
             <Save size={13} />
-            {saving ? "Saving…" : "Save sender email"}
+            {saving ? "Saving…" : "Save sender identity"}
           </button>
         </div>
       </div>

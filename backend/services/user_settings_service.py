@@ -20,11 +20,15 @@ SINGLETON_KEY = "singleton"
 
 # Whitelist of keys Ryan can update. Anything else is silently dropped so
 # the endpoint can never be used as a general document editor.
-EDITABLE_KEYS = {"sender_email", "sender_name"}
+EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone"}
 
+# Ryan's fixed sender identity for The Shirtless Handyman. These are the
+# defaults every draft is seeded with; overrides are honoured if Ryan ever
+# edits them in Settings, but for the current setup this is the identity.
 DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
+    "sender_phone": "(504) 264-4919",
 }
 
 
