@@ -2,8 +2,115 @@ import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
 import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save } from "lucide-react";
 import { toast } from "sonner";
+import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
+
+/**
+ * Sender identity block — Ryan can point mailto: drafts at whichever email
+ * address he wants to appear as the sender. This is a display-only value
+ * (mailto: cannot force a specific From account on iPhone / Mac Mail), but
+ * having the right address visible in the composed body keeps him from
+ * hitting Send on the wrong account.
+ */
+const SenderIdentitySection = () => {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchUserSettings().then((s) => {
+      if (!s) return;
+      setEmail(s.sender_email || "");
+      setName(s.sender_name || "");
+      setLoaded(true);
+    });
+  }, []);
+
+  const save = async () => {
+    const trimmed = email.trim();
+    if (trimmed && (!trimmed.includes("@") || !trimmed.split("@")[1]?.includes("."))) {
+      toast.error("That doesn't look like an email address");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveUserSettings({ sender_email: trimmed, sender_name: name.trim() });
+      toast.success("Sender email saved");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Save failed";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section data-testid="section-sender-identity">
+      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+        <Mail size={11} /> Section · Sender email
+      </div>
+      <div className="bh-surface rounded p-5 space-y-4">
+        <p className="text-sm text-neutral-400 leading-relaxed">
+          This is the email address that appears inside every email draft as
+          your signature. Change it here if you want emails to look like they
+          come from a different account.
+        </p>
+        <p className="text-[12px] text-neutral-500 leading-relaxed">
+          Note: iPhone and Mac Mail always send from whichever account is set
+          as default on your device. Bloodhound cannot pick the account for
+          you — this value just makes sure you see the right address before
+          you press Send.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Your name
+            </div>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              data-testid="settings-sender-name"
+              placeholder="Ryan Mena"
+              disabled={!loaded}
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Sender email
+            </div>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              data-testid="settings-sender-email"
+              placeholder="ryan@theshirtlesshandyman.com"
+              disabled={!loaded}
+              type="email"
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end">
+          <button
+            onClick={save}
+            disabled={!loaded || saving}
+            data-testid="settings-sender-save"
+            className="text-[13px] h-9 px-4 rounded-md font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
+            style={{
+              background: "var(--bh-brass)",
+              color: "var(--bh-surface)",
+            }}
+          >
+            <Save size={13} />
+            {saving ? "Saving…" : "Save sender email"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const Row = ({ icon: Icon, title, subtitle, right }) => (
   <div className="bh-surface rounded p-4 flex items-center gap-4">
@@ -226,6 +333,8 @@ const Settings = () => {
             </div>
           </section>
         )}
+
+        <SenderIdentitySection />
 
         <section data-testid="section-playbooks">
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">

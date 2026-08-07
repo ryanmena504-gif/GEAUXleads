@@ -30,6 +30,13 @@ const REVIEW_STATUSES = [
   "Archived",
 ];
 
+const REVIEW_STATUS_LABEL = {
+  Draft: "Still writing",
+  "Ready for Ryan review": "Needs a look",
+  "Approved for manual send": "Ready to contact",
+  Archived: "Archived",
+};
+
 // Map an opportunity's project_type + name/why to a playbook audience slug.
 // Falls back to `null` (which triggers "start from blank" behavior).
 const audienceFromOpportunity = (opp) => {
@@ -110,9 +117,9 @@ const GuardrailBanner = () => (
   >
     <Lock size={13} className="mt-0.5 shrink-0" style={{ color: "var(--bh-brass)" }} />
     <span>
-      <strong className="font-medium">Draft only.</strong> Outreach requires
-      Ryan's explicit campaign approval — this drawer never sends, schedules,
-      or automates anything.
+      <strong className="font-medium">Draft only.</strong> Nothing sends from
+      here. When you&rsquo;re ready, tap Contact them — you press Send on
+      your phone.
     </span>
   </div>
 );
@@ -307,7 +314,7 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
                 className="font-display text-xl font-medium"
                 style={{ color: "var(--bh-ink)" }}
               >
-                Draft a Note
+                Draft a note
               </SheetTitle>
             </div>
             <SheetDescription className="sr-only">
@@ -332,8 +339,11 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
                       color: "var(--bh-brass)",
                     }}
                     data-testid="draft-lead-score"
+                    title={`Score ${Math.round(opp.priority_score)}/100`}
                   >
-                    Lead score {Math.round(opp.priority_score)}
+                    {opp.priority_band === "A" ? "High priority" :
+                     opp.priority_band === "B" ? "Medium priority" :
+                     "Priority"}
                   </span>
                 )}
               </div>
@@ -509,13 +519,13 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
                         : { color: "var(--bh-ink-3)" }
                     }
                   >
-                    {s}
+                    {REVIEW_STATUS_LABEL[s] || s}
                   </button>
                 ))}
               </div>
               <p className="text-[11px] text-[var(--bh-ink-3)] leading-relaxed pt-1">
-                "Approved for manual send" records Ryan's decision only — it
-                does not trigger any send, schedule, or automation.
+                &ldquo;Ready to contact&rdquo; records your decision only — it
+                does not send anything.
               </p>
             </Field>
 

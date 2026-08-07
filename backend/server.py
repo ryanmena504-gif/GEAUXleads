@@ -23,6 +23,7 @@ from services.slack_service import (
 from services.playbook_service import get_playbook_service
 from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.handoff_service import get_handoff_service
+from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -786,6 +787,36 @@ async def list_recent_handoffs(limit: int = 100):
         return {"available": False, "handoffs": []}
     handoffs = await svc.list_recent(limit=limit)
     return {"available": True, "handoffs": handoffs}
+
+
+# ============================================================================
+# User settings — Ryan's per-account preferences (e.g. which sender email
+# should appear in mailto: drafts). Stored in Mongo so the value survives
+# preview reloads. Purely preference data; no credentials, no provider config.
+# ============================================================================
+class UserSettingsPatch(BaseModel):
+    sender_email: Optional[str] = None
+    sender_name: Optional[str] = None
+
+
+@api_router.get("/settings/user")
+async def get_user_settings():
+    svc = get_user_settings_service()
+    if not svc:
+        return {"settings": dict(USER_SETTINGS_DEFAULTS), "persisted": False}
+    return {"settings": await svc.get(), "persisted": True}
+
+
+@api_router.patch("/settings/user")
+async def update_user_settings(patch: UserSettingsPatch):
+    svc = get_user_settings_service()
+    if not svc:
+        raise HTTPException(status_code=503, detail="Settings store unavailable")
+    try:
+        settings = await svc.update(patch.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"settings": settings, "persisted": True}
 
 
 app.include_router(api_router)

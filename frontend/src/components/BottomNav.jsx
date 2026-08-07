@@ -10,11 +10,11 @@ import {
 } from "lucide-react";
 
 const nav = [
-  { to: "/", label: "Center", icon: LayoutDashboard },
-  { to: "/opportunities", label: "Opps", icon: Crosshair },
-  { to: "/missions", label: "Missions", icon: Target },
-  { to: "/relationships", label: "Rel.", icon: Network },
-  { to: "/intelligence", label: "Intel", icon: Radar },
+  { to: "/", label: "Today", icon: LayoutDashboard },
+  { to: "/opportunities", label: "Projects", icon: Crosshair },
+  { to: "/missions", label: "Follow-Ups", icon: Target },
+  { to: "/relationships", label: "People", icon: Network },
+  { to: "/intelligence", label: "Watch", icon: Radar },
 ];
 
 export const BottomNav = () => (

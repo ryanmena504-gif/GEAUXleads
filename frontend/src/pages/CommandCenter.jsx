@@ -83,7 +83,7 @@ const CommandCenter = () => {
     <>
       <TopHeader
         pageTitle="Today's Work"
-        subtitle="What's worth a look this morning"
+        subtitle="The few calls, texts, emails, and follow-ups worth doing today"
       />
 
       <div className="px-5 lg:px-10 py-8 space-y-10">
@@ -99,7 +99,7 @@ const CommandCenter = () => {
             testId="metric-new"
             label="New this week"
             value={summary?.new_opportunities ?? "—"}
-            hint="Fresh signals to review"
+            hint="Fresh leads to review"
             icon={Zap}
             onClick={() => goFilter({ status: "New" })}
           />
@@ -116,23 +116,23 @@ const CommandCenter = () => {
             testId="metric-ready"
             label="Ready to contact"
             value={summary?.ready_to_contact ?? "—"}
-            hint="Complete profile, high intent"
+            hint="Public phone or email on file"
             icon={PhoneCall}
             tone="olive"
             onClick={() => goFilter({ status: "Ready" })}
           />
           <MetricCard
             testId="metric-research"
-            label="Needs research"
+            label="Get more info first"
             value={summary?.needs_research ?? "—"}
-            hint="Enrich before reaching out"
+            hint="One piece of info missing"
             icon={SearchCode}
             tone="sand"
             onClick={() => goFilter({ status: "Needs research" })}
           />
           <MetricCard
             testId="metric-pipeline"
-            label="Pipeline value"
+            label="Possible work value"
             value={fmtMoney(summary?.total_pipeline_value ?? 0)}
             hint={`Across ${summary?.active_count ?? 0} active`}
             icon={Landmark}
@@ -191,7 +191,7 @@ const CommandCenter = () => {
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                Section / 01
+                Follow-ups
               </div>
               <h2 className="font-display text-[24px] text-[var(--bh-ink)] tracking-tight">
                 Follow-ups for today
@@ -259,7 +259,7 @@ const CommandCenter = () => {
           <div>
             <div className="flex items-baseline justify-between mb-3">
               <div>
-                <div className="bh-eyebrow">Section 02</div>
+                <div className="bh-eyebrow">Top picks</div>
                 <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
                   Top projects
                 </h2>
@@ -364,7 +364,7 @@ const CommandCenter = () => {
             <div className="flex items-baseline justify-between mb-3">
               <div>
                 <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                  Section / 03
+                  Just found
                 </div>
                 <h2 className="font-display text-xl font-bold text-neutral-100">
                   Recent Discoveries
@@ -414,9 +414,9 @@ const CommandCenter = () => {
         {/* Pipeline */}
         <section data-testid="section-pipeline" className="space-y-3">
           <div>
-            <div className="bh-eyebrow">Section 04</div>
+            <div className="bh-eyebrow">Where things stand</div>
             <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
-              Project pipeline
+              Where every project stands
             </h2>
           </div>
           <StatusPipeline

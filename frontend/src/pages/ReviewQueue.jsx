@@ -16,9 +16,9 @@ import {
 } from "lucide-react";
 
 const STATUS_FILTERS = [
-  { key: "Ready for Ryan review", label: "Ready for review" },
-  { key: "Approved for manual send", label: "Approved for manual send" },
-  { key: "Draft", label: "Drafts in progress" },
+  { key: "Ready for Ryan review", label: "Needs a look" },
+  { key: "Approved for manual send", label: "Ready to contact" },
+  { key: "Draft", label: "Still writing" },
   { key: "Archived", label: "Archived" },
 ];
 
@@ -28,21 +28,25 @@ const StatusBadge = ({ status }) => {
       bg: "var(--bh-brass-mute)",
       color: "var(--bh-brass)",
       border: "var(--bh-hair-warm)",
+      label: "Needs a look",
     },
     "Approved for manual send": {
       bg: "var(--bh-olive-mute)",
       color: "var(--bh-olive)",
       border: "rgba(107,122,85,0.32)",
+      label: "Ready to contact",
     },
     Draft: {
       bg: "var(--bh-surface-2)",
       color: "var(--bh-ink-3)",
       border: "var(--bh-hair)",
+      label: "Still writing",
     },
     Archived: {
       bg: "var(--bh-surface-2)",
       color: "var(--bh-ink-mute)",
       border: "var(--bh-hair)",
+      label: "Archived",
     },
   };
   const s = map[status] || map.Draft;
@@ -51,7 +55,7 @@ const StatusBadge = ({ status }) => {
       className="text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap"
       style={{ background: s.bg, color: s.color, borderColor: s.border }}
     >
-      {status}
+      {s.label}
     </span>
   );
 };
@@ -153,7 +157,7 @@ const DraftRow = ({ draft, onOpen, onAdvance, onArchive, busy }) => {
               color: "var(--bh-olive)",
             }}
           >
-            <CheckCircle2 size={13} /> Mark approved
+            <CheckCircle2 size={13} /> Mark ready to contact
           </button>
         )}
         {draft.review_status === "Approved for manual send" && (
@@ -165,7 +169,7 @@ const DraftRow = ({ draft, onOpen, onAdvance, onArchive, busy }) => {
             className="text-[12.5px] h-9 px-3 rounded-md border bh-hairline inline-flex items-center justify-center gap-1.5"
             style={{ color: "var(--bh-ink-3)" }}
           >
-            Move back to review
+            Move back to needs a look
           </button>
         )}
         {draft.review_status !== "Archived" && (
@@ -260,13 +264,13 @@ const ReviewQueue = () => {
   const heroSubtitle = useMemo(() => {
     if (state.loading) return "Loading";
     const total = readyCount + approvedCount;
-    if (!total) return "Nothing waiting for Ryan right now";
-    return `${readyCount} ready for review · ${approvedCount} approved for manual send`;
+    if (!total) return "Nothing needs a look right now";
+    return `${readyCount} needing a look · ${approvedCount} ready to contact`;
   }, [state.loading, readyCount, approvedCount]);
 
   return (
     <>
-      <TopHeader pageTitle="Review Queue" subtitle={heroSubtitle} />
+      <TopHeader pageTitle="Needs a Look" subtitle={heroSubtitle} />
       <div className="px-4 lg:px-8 py-6 space-y-5">
         {/* Hero */}
         <section
@@ -277,7 +281,7 @@ const ReviewQueue = () => {
           <div className="flex items-center gap-2">
             <Inbox size={13} style={{ color: "var(--bh-brass)" }} strokeWidth={1.75} />
             <span className="bh-eyebrow" style={{ color: "var(--bh-brass)" }}>
-              Ready for Ryan review
+              Needs a look
             </span>
             <span
               className="text-[11px] px-2 py-0.5 rounded-full ml-2 inline-flex items-center gap-1"
@@ -287,17 +291,17 @@ const ReviewQueue = () => {
                 color: "var(--bh-ink-3)",
               }}
             >
-              <ShieldCheck size={10} strokeWidth={1.75} /> Draft-only · nothing sends from this screen
+              <ShieldCheck size={10} strokeWidth={1.75} /> Nothing sends from this screen
             </span>
           </div>
           <h2 className="mt-3 font-display text-[26px] sm:text-[32px] text-[var(--bh-ink)] tracking-tight max-w-2xl">
-            Every draft you flagged for review, in one place.
+            Good possibilities that need one more piece of information.
           </h2>
           <p className="mt-2 text-[14px] text-[var(--bh-ink-3)] max-w-2xl leading-relaxed">
-            When a partner draft is marked "Ready for Ryan review" it lands
-            here. Open the drawer to read the finished message, mark it
-            Approved for manual send, or archive it if it's no longer useful.
-            Approving is a decision — it never triggers a send.
+            When you flag a draft &ldquo;needs a look&rdquo; it lands here.
+            Read it, mark it ready to contact, or archive it if it&rsquo;s no
+            longer useful. Marking it ready is a decision only — it never
+            triggers a send.
           </p>
         </section>
 
@@ -355,14 +359,14 @@ const ReviewQueue = () => {
             <div className="inline-flex items-center gap-2 text-[var(--bh-ink)]">
               <Inbox size={16} style={{ color: "var(--bh-olive)" }} />
               <span className="font-display text-lg font-semibold">
-                Nothing in "{STATUS_FILTERS.find((s) => s.key === status)?.label || status}" yet.
+                Nothing in &ldquo;{STATUS_FILTERS.find((s) => s.key === status)?.label || status}&rdquo; yet.
               </span>
             </div>
             <p className="text-[13px] text-[var(--bh-ink-3)] max-w-lg mx-auto leading-relaxed">
-              Open any Partner Pipeline opportunity, click{" "}
-              <span className="font-medium text-[var(--bh-ink-2)]">Draft a Note</span>,
+              Open any person to know, click{" "}
+              <span className="font-medium text-[var(--bh-ink-2)]">Draft a note</span>,
               write it up, and set the status to{" "}
-              <span className="font-medium text-[var(--bh-ink-2)]">Ready for Ryan review</span>.
+              <span className="font-medium text-[var(--bh-ink-2)]">Needs a look</span>.
               It will show up here.
             </p>
           </div>

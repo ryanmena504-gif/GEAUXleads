@@ -18,7 +18,7 @@ const missionCopy = {
   "Send Email":
     "Best for referrals and warm intros. Include a proof point.",
   "Research First":
-    "Enrich before outreach. Zoning, budget, and decision-maker.",
+    "Get one more piece of information before reaching out.",
   "Visit Property":
     "Scope-check with your eyes. Bring a business card.",
   "Prepare Estimate":
@@ -71,15 +71,12 @@ const Missions = () => {
           <Clock size={16} className="text-amber-400" />
           <div className="flex-1">
             <div className="text-sm text-[var(--bh-ink)] font-medium">
-              Daily operating plan
+              Today&rsquo;s plan
             </div>
             <div className="text-xs text-[var(--bh-ink-mute)]">
-              Follow-ups are ranked by priority score within each bucket. Complete
-              the highest-priority items first.
+              Follow-ups are ranked by priority within each bucket. Take the
+              high-priority ones first.
             </div>
-          </div>
-          <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
-            Score threshold · 0
           </div>
         </div>
 

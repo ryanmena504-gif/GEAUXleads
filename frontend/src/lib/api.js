@@ -33,8 +33,6 @@ export const api = {
   schema: () => client.get("/schema").then((r) => r.data),
   cacheStatus: () => client.get("/cache-status").then((r) => r.data),
   refreshCache: () => client.post("/cache-refresh").then((r) => r.data),
-  listOpportunities: (params = {}) =>
-    client.get("/opportunities", { params }).then((r) => r.data),
   laneBreakdown: () =>
     client.get("/opportunities/lanes").then((r) => r.data),
   topByLane: (limit = 4) =>
@@ -72,4 +70,10 @@ export const api = {
     client
       .get(`/opportunities/${opp_id}/handoffs`, { params: { limit } })
       .then((r) => r.data),
+
+  // User preferences — sender email that appears on mailto: drafts, etc.
+  getUserSettings: () =>
+    client.get("/settings/user").then((r) => r.data),
+  updateUserSettings: (patch) =>
+    client.patch("/settings/user", patch).then((r) => r.data),
 };

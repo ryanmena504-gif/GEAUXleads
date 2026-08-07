@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import LaneBadge from "@/components/LaneBadge";
-import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
+import OpenInMessages, { resolveContacts } from "@/components/OpenInMessages";
+import ContactBadge from "@/components/ContactBadge";
+import { PriorityBand } from "@/components/PriorityBadge";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import {
@@ -22,16 +24,17 @@ const SignalRow = ({ s }) => {
   const url = s.source_url;
   const source = s.source_category || s.source;
   const fit = s.project_type || s.opportunity_fit;
-  const confidence = s.evidence_confidence || s.contact_confidence;
+  const contacts = resolveContacts(s);
+  const hasPublicContact = !!(contacts.text || contacts.email);
   return (
     <div
       data-testid={`signal-row-${s.id}`}
       className="bh-surface rounded-md p-4 hover:bg-white/[0.03] transition-colors duration-150"
     >
       <div className="flex items-start gap-4">
-        <div className="hidden sm:flex flex-col items-center pt-1 w-14 shrink-0">
-          <PriorityScore score={s.priority_score} band={s.priority_band} size="md" />
-          <PriorityBand band={s.priority_band} className="mt-1.5" />
+        <div className="hidden sm:flex flex-col items-start pt-1 w-[110px] shrink-0 gap-2">
+          <PriorityBand band={s.priority_band} score={s.priority_score} />
+          <ContactBadge opportunity={s} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -40,15 +43,14 @@ const SignalRow = ({ s }) => {
               data-testid={`signal-open-${s.id}`}
               className="font-display font-semibold text-neutral-100 hover:text-amber-300 truncate"
             >
-              {s.name || "Unnamed signal"}
+              {s.name || "Unnamed"}
             </Link>
-            <span className="mono text-[10px] text-neutral-500">{s.opportunity_id}</span>
             <LaneBadge lane={s.lane || "non_permit"} />
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-neutral-400 flex-wrap">
             {source && (
               <span className="mono text-[10px] uppercase tracking-widest text-sky-300 border border-sky-500/30 rounded px-2 py-0.5">
-                {source}
+                Found on {source}
               </span>
             )}
             {fit && (
@@ -60,7 +62,7 @@ const SignalRow = ({ s }) => {
           {evidence && (
             <div className="mt-2 text-sm text-neutral-300 line-clamp-2">
               <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                Signal
+                What&rsquo;s happening
               </span>
               {evidence}
             </div>
@@ -68,7 +70,7 @@ const SignalRow = ({ s }) => {
           {why && (
             <div className="mt-2 text-[13px] text-neutral-400 line-clamp-2">
               <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                Why
+                Why it may fit
               </span>
               {why}
             </div>
@@ -76,17 +78,15 @@ const SignalRow = ({ s }) => {
           {next && (
             <div className="mt-2 text-[13px] text-amber-200/90 line-clamp-2">
               <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                Next
+                What to do next
               </span>
               {next}
             </div>
           )}
+          <div className="mt-3 flex items-center gap-2 flex-wrap sm:hidden">
+            <ContactBadge opportunity={s} />
+          </div>
           <div className="mt-3 flex items-center gap-2 flex-wrap">
-            {confidence && (
-              <span className="mono text-[10px] uppercase tracking-widest text-neutral-400 border bh-hairline rounded px-2 py-0.5">
-                Confidence · {confidence}
-              </span>
-            )}
             {url && (
               <a
                 href={url}
@@ -95,12 +95,18 @@ const SignalRow = ({ s }) => {
                 data-testid={`signal-evidence-${s.id}`}
                 className="mono text-[10px] uppercase tracking-widest text-sky-300 hover:text-sky-200 inline-flex items-center gap-1"
               >
-                <ExternalLink size={11} /> Evidence
+                <ExternalLink size={11} /> Found on
               </a>
             )}
-            <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-0.5 inline-flex items-center gap-1">
-              <Lock size={10} /> Public signal is not permission to contact
-            </span>
+            {hasPublicContact && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`signal-handoff-${s.id}`}
+                className="inline-flex"
+              >
+                <OpenInMessages opportunity={s} variant="pill" />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -137,8 +143,8 @@ const NonPermitSignals = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Market Notes"
-        subtitle={items === null ? "Loading" : `${items.length} non-permit signals worth reading`}
+        pageTitle="Projects to Watch"
+        subtitle={items === null ? "Loading" : `${items.length} projects that may turn into good work`}
       />
       <div className="px-4 lg:px-8 py-6 space-y-5">
         <section
@@ -148,20 +154,19 @@ const NonPermitSignals = () => {
           <div className="flex items-center gap-2">
             <Radar size={13} style={{ color: "#4b6b6f" }} strokeWidth={1.75} />
             <span className="bh-eyebrow" style={{ color: "#4b6b6f" }}>
-              Market notes
+              Projects to watch
             </span>
             <span className="bh-note ml-2 inline-flex items-center gap-1 py-0.5">
-              <Shield size={10} strokeWidth={1.75} /> Read-only · approval required before outreach
+              <Shield size={10} strokeWidth={1.75} /> Nothing sends until you press Send on your phone
             </span>
           </div>
           <h2 className="mt-3 font-display text-[26px] sm:text-[32px] text-[var(--bh-ink)] tracking-tight max-w-2xl">
-            Project signals from outside the permit feed.
+            Projects that may turn into good work.
           </h2>
           <p className="mt-2 text-[14px] text-[var(--bh-ink-3)] max-w-2xl leading-relaxed">
-            Website mentions, referral hints, and other non-permit evidence
-            the automation has qualified as project-relevant. A public signal
-            is not permission to contact — reach out only after a campaign is
-            approved.
+            Real signs of an upcoming project — website mentions, referral
+            hints, and other early leads. Follow them until it&rsquo;s worth
+            reaching out.
           </p>
         </section>
 
@@ -198,20 +203,16 @@ const NonPermitSignals = () => {
             <div className="flex items-center gap-2 text-neutral-300">
               <Sparkles size={14} className="text-sky-300" />
               <span className="font-display text-lg font-semibold">
-                No non-permit signals yet.
+                Nothing to watch yet.
               </span>
             </div>
             <p className="text-sm text-neutral-500 max-w-lg leading-relaxed">
-              Every current lead in Airtable is permit-sourced. Non-permit
-              signals will surface here the moment your automation writes any
-              of:
+              Early project signs will show up here as soon as we find them —
+              website mentions, referral hints, and other clues that a
+              renovation may be coming.
             </p>
-            <ul className="mono text-[11px] uppercase tracking-widest text-neutral-500 space-y-1 pl-1">
-              <li>· Source = Website / Referral / Nextdoor / Google Places / Social / …</li>
-              <li>· Source category = anything other than &quot;Permit&quot;</li>
-            </ul>
             <div className="inline-flex items-center gap-2 mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-1">
-              <AlertTriangle size={10} /> A public signal is not permission to contact
+              <AlertTriangle size={10} /> Nothing sends until you press Send on your phone
             </div>
           </div>
         ) : (
@@ -224,7 +225,7 @@ const NonPermitSignals = () => {
 
         <section className="text-xs text-neutral-500 flex items-center gap-2 justify-end pt-2">
           <ArrowRight size={11} />
-          <span>Airtable read-only projection · no writes performed on this page</span>
+          <span>Nothing sends automatically · you always press Send on your phone</span>
         </section>
       </div>
     </>

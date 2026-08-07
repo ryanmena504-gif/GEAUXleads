@@ -13,9 +13,9 @@ const LANE_STYLES = {
 
 // Softer, non-tactical labels shown in the UI. Backend key unchanged.
 const DISPLAY_LABEL = {
-  market_capture: "Projects",
-  partner: "Trade Network",
-  non_permit: "Market Notes",
+  market_capture: "Project",
+  partner: "Person to know",
+  non_permit: "Watching",
 };
 
 export const LaneBadge = ({ lane, size = "sm", className = "" }) => {

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight } from "lucide-react";
+import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight, Smartphone } from "lucide-react";
+import { api } from "@/lib/api";
+import { useUserSettings } from "@/hooks/useUserSettings";
 
 /**
  * OpenInMessages — approval-only lead-contact selector.
@@ -15,7 +17,11 @@ import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight } from "lucide-react
  * these buttons is tapped. Approval-only policy intact.
  */
 
-const RYAN_EMAIL = "ryanmena@theshirtlesshandyman.com";
+// Default sender identity — overridden per-account via Settings → Sender email.
+// Bloodhound never CONNECTS to this account; the value only shows up inside
+// the mailto: body so Ryan can see which address he's about to send from.
+const DEFAULT_SENDER_EMAIL = "ryanmena@theshirtlesshandyman.com";
+const DEFAULT_SENDER_NAME = "Ryan Mena";
 const EMAIL_SUBJECT = "Quick question about your project";
 
 // iOS is strict: sms: URLs must contain digits (with optional leading `+`)
@@ -47,14 +53,17 @@ const buildIosSmsHref = (phone, body) => {
   return `sms:${cleanPhone}${q}`;
 };
 
-// mailto: signature. Includes Ryan's sender email so it's visible in the
-// composed draft — iPhone Mail can't be forced to a specific From account
-// via mailto, so this at least surfaces the correct address to send from.
-const withSignature = (body) => {
+// mailto: signature. Includes the sender's email so it's visible in the
+// composed draft — iPhone/Mac Mail can't be forced to a specific From
+// account via mailto, so this at least surfaces the correct address to
+// send from. The sender identity is configurable in Settings.
+const withSignature = (body, senderName, senderEmail) => {
   const base = (body || "").trim();
-  const signature = `\n\nRyan Mena\nThe Shirtless Handyman\n${RYAN_EMAIL}`;
+  const name = (senderName || DEFAULT_SENDER_NAME).trim();
+  const email = (senderEmail || DEFAULT_SENDER_EMAIL).trim();
+  const signature = `\n\n${name}\nThe Shirtless Handyman\n${email}`;
   if (!base) return signature.trimStart();
-  if (base.endsWith(RYAN_EMAIL)) return base;
+  if (base.endsWith(email)) return base;
   return `${base}${signature}`;
 };
 
@@ -68,13 +77,13 @@ const buildMailtoHref = (email) => {
   return `mailto:${clean}?${params.join("&")}`;
 };
 
-const buildMailtoWithBody = (email, body) => {
+const buildMailtoWithBody = (email, body, senderName, senderEmail) => {
   if (!email) return null;
   const clean = String(email).trim();
   if (!clean.includes("@")) return null;
   const params = [
     `subject=${encodeURIComponent(EMAIL_SUBJECT)}`,
-    `body=${encodeURIComponent(withSignature(body))}`,
+    `body=${encodeURIComponent(withSignature(body, senderName, senderEmail))}`,
   ];
   return `mailto:${clean}?${params.join("&")}`;
 };
@@ -88,12 +97,14 @@ const cleanDisplayPhone = (p) => {
   return s || null;
 };
 
-export const resolveContacts = (opp) => {
+export const resolveContacts = (opp, senderIdentity) => {
   if (!opp) return { text: null, email: null };
   const iphoneFormula = (opp.open_approved_message_iphone || "").toString().trim();
   const phoneRaw = (opp.contact_phone || opp.phone || opp.phone_number || "").toString().trim();
   const emailRaw = (opp.contact_email || opp.email || "").toString().trim();
   const message = pickMessage(opp);
+  const senderName = senderIdentity?.name;
+  const senderEmail = senderIdentity?.email;
 
   let textHref = null;
   let textDisplay = null;
@@ -113,7 +124,7 @@ export const resolveContacts = (opp) => {
   let emailDisplay = null;
   if (emailRaw && emailRaw.includes("@")) {
     emailHref = message
-      ? buildMailtoWithBody(emailRaw, message)
+      ? buildMailtoWithBody(emailRaw, message, senderName, senderEmail)
       : buildMailtoHref(emailRaw);
     emailDisplay = emailRaw;
   }
@@ -160,10 +171,11 @@ const TextButton = ({ href, testid, label, onClick, styleOverride, size = "md" }
   </a>
 );
 
-const EmailButton = ({ href, testid, label, styleOverride, size = "md" }) => (
+const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md" }) => (
   <a
     href={href}
     data-testid={testid}
+    onClick={onClick}
     className={`${btnBase} ${SIZE[size]}`}
     style={styleOverride || primary}
   >
@@ -189,7 +201,12 @@ const DisabledButton = ({ size = "md" }) => (
  * @param {"pill"|"panel"|"row"} [props.variant]
  */
 export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
-  const contacts = resolveContacts(opportunity);
+  const { settings } = useUserSettings();
+  const senderIdentity = {
+    name: settings?.sender_name,
+    email: settings?.sender_email,
+  };
+  const contacts = resolveContacts(opportunity, senderIdentity);
   const hasText = !!contacts.text;
   const hasEmail = !!contacts.email;
   const hasBoth = hasText && hasEmail;
@@ -198,6 +215,35 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   // "Open email draft" primary button. Do NOT auto-launch Mail — the user
   // presses it themselves after returning from Messages.
   const [textedFirst, setTextedFirst] = useState(false);
+
+  // Fire-and-forget handoff logger. We deliberately do NOT block navigation
+  // (no preventDefault, no await), so iOS still receives the sms:/mailto:
+  // handoff on the same user gesture. If the POST fails we swallow it —
+  // this is a log, not a gate.
+  const logTap = (channel, recipient) => {
+    const oppId = opportunity?.id;
+    if (!oppId) return;
+    try {
+      api
+        .logHandoff(oppId, {
+          opportunity_id: oppId,
+          opportunity_name: opportunity?.name,
+          channel,
+          recipient: recipient || null,
+        })
+        .catch(() => {});
+    } catch {
+      /* never break the native handoff */
+    }
+  };
+
+  const onTextTap = () => {
+    logTap("text", contacts.text?.display);
+    if (hasBoth) setTextedFirst(true);
+  };
+  const onEmailTap = () => {
+    logTap("email", contacts.email?.display);
+  };
 
   if (!hasText && !hasEmail) {
     return (
@@ -209,13 +255,13 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
         <div className="flex items-center gap-2">
           <MessageSquare size={13} style={{ color: "var(--bh-ink-mute)" }} />
           <span className="bh-eyebrow" style={{ color: "var(--bh-ink-mute)" }}>
-            iPhone handoff
+            Contact them
           </span>
         </div>
         <DisabledButton />
         <div className="text-[12px] leading-relaxed text-[var(--bh-ink-3)]">
-          No verified public phone or email on this record. Add one in
-          Airtable (Contact phone or Contact email) and this will light up.
+          Add a phone number or email for this person and this button will
+          light up.
         </div>
       </div>
     );
@@ -258,7 +304,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       <div className="flex items-center gap-2">
         <MessageSquare size={13} style={{ color: "var(--bh-brass)" }} />
         <span className="bh-eyebrow" style={{ color: "var(--bh-brass)" }}>
-          iPhone handoff
+          Contact them
         </span>
         {hasBoth && (
           <span
@@ -282,14 +328,15 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             <TextButton
               href={contacts.text.href}
               testid="lead-contact-text"
-              label={textedFirst ? "Reopen text" : "Text first"}
-              onClick={() => setTextedFirst(true)}
+              label={textedFirst ? "Reopen text draft" : "Contact by text"}
+              onClick={onTextTap}
               styleOverride={textedFirst ? secondary : primary}
             />
             <EmailButton
               href={contacts.email.href}
               testid="lead-contact-email"
-              label={textedFirst ? "Now open email draft" : "Email"}
+              label={textedFirst ? "Now open email draft" : "Contact by email"}
+              onClick={onEmailTap}
               styleOverride={textedFirst ? primary : secondary}
             />
           </>
@@ -297,15 +344,27 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
           <TextButton
             href={contacts.text.href}
             testid="lead-contact-text"
-            label="Open text draft"
+            label="Contact them"
+            onClick={onTextTap}
           />
         ) : (
           <EmailButton
             href={contacts.email.href}
             testid="lead-contact-email"
-            label="Open email draft"
+            label="Contact them"
+            onClick={onEmailTap}
           />
         )}
+      </div>
+
+      <div className="space-y-1" data-testid="handoff-helper">
+        <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-3)]">
+          Opens a draft on your phone. You choose whether to send.
+        </div>
+        <div className="text-[11px] leading-relaxed text-[var(--bh-ink-3)] inline-flex items-center gap-1.5" data-testid="handoff-iphone-hint">
+          <Smartphone size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
+          Open Bloodhound on your iPhone to text from your phone.
+        </div>
       </div>
 
       {/* Verified recipient(s) */}
@@ -346,7 +405,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
 
       <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
         <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
-        Approval-only · never sends, schedules, or logs an outreach from these buttons
+        Nothing sends until you press Send on your phone.
       </div>
     </div>
   );

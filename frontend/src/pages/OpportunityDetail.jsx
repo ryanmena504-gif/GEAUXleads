@@ -232,18 +232,18 @@ const OpportunityDetail = () => {
 
             {/* Primary action panel */}
             <div className="bh-surface-2 rounded p-4 min-w-0">
-              <div className="bh-eyebrow">
-                Recommended action
-              </div>
-              <div className="mt-1.5">
-                <MissionBadge mission={opp.daily_mission} />
-              </div>
-              <div className="mt-3 font-display text-lg font-semibold text-[var(--bh-ink)] leading-snug">
-                {opp.recommended_action}
-              </div>
-              <div className="mt-2 text-sm text-amber-200/90">
-                → {opp.next_best_action}
-              </div>
+                <div className="bh-eyebrow">
+                  What to do next
+                </div>
+                <div className="mt-1.5">
+                  <MissionBadge mission={opp.daily_mission} />
+                </div>
+                <div className="mt-3 font-display text-lg font-semibold text-[var(--bh-ink)] leading-snug">
+                  {opp.recommended_action}
+                </div>
+                <div className="mt-2 text-sm text-amber-200/90">
+                  → {opp.next_best_action}
+                </div>
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
                 <OpenInMessages opportunity={opp} variant="panel" />
@@ -285,7 +285,7 @@ const OpportunityDetail = () => {
                           }}
                         >
                           <PenLine size={14} />
-                          Draft a Note
+                          Draft a note
                         </button>
                       )}
                     </React.Fragment>
@@ -385,8 +385,8 @@ const OpportunityDetail = () => {
                 <Meter label="Opportunity Fit" level={opp.opportunity_fit} />
                 <Meter label="Momentum" level={opp.momentum} />
                 <Meter label="Reachability" level={opp.reachability} />
-                <Meter label="Contact Confidence" level={opp.contact_confidence} />
-                <Meter label="Evidence Confidence" level={opp.evidence_confidence} />
+                <Meter label="Can I reach them?" level={opp.contact_confidence} />
+                <Meter label="How solid is the info" level={opp.evidence_confidence} />
               </div>
             </section>
 

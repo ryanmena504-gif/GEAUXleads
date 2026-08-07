@@ -19,11 +19,11 @@ import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 // architectural language. No two-letter call signs, no tactical rails.
 const nav = [
   { to: "/", label: "Today's Work", icon: Sun },
-  { to: "/opportunities", label: "Project Signals", icon: FileText },
+  { to: "/opportunities", label: "Project List", icon: FileText },
   { to: "/missions", label: "Follow-Ups", icon: ListChecks },
-  { to: "/relationships", label: "Trade Network", icon: Users },
-  { to: "/intelligence", label: "Market Notes", icon: BookOpen },
-  { to: "/review-queue", label: "Review Queue", icon: Inbox, showCount: true },
+  { to: "/relationships", label: "People to Know", icon: Users },
+  { to: "/intelligence", label: "Projects to Watch", icon: BookOpen },
+  { to: "/review-queue", label: "Needs a Look", icon: Inbox, showCount: true },
   { to: "/settings", label: "Settings", icon: Sliders },
 ];
 

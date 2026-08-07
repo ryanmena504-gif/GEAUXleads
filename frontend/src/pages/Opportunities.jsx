@@ -99,7 +99,7 @@ const Opportunities = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Project Signals"
+        pageTitle="Project List"
         subtitle={`${items.length} matching · ${activeFilterCount} filters applied`}
       />
 
@@ -116,9 +116,9 @@ const Opportunities = () => {
             />
             <div className="inline-flex items-center border bh-hairline rounded overflow-hidden" data-testid="opps-sort">
               {[
-                { k: "lead_score", label: "Lead Score" },
-                { k: "freshness",  label: "Freshness" },
-                { k: "confidence", label: "Confidence" },
+                { k: "lead_score", label: "Priority" },
+                { k: "freshness",  label: "Newest" },
+                { k: "confidence", label: "Can I reach them" },
               ].map((s) => (
                 <button
                   key={s.k}
@@ -209,24 +209,27 @@ const Opportunities = () => {
               ))}
             </FilterGroup>
 
-            <FilterGroup title="Priority Band">
-              {BANDS.map((b) => (
-                <FilterChip
-                  key={b}
-                  testId={`filter-band-${b}`}
-                  label={`Band ${b}`}
-                  active={filters.priority_band === b}
-                  onClick={() => setFilter("priority_band", b)}
-                />
-              ))}
+            <FilterGroup title="Priority">
+              {BANDS.map((b) => {
+                const labelMap = { A: "High", B: "Medium", C: "Low", D: "Low" };
+                return (
+                  <FilterChip
+                    key={b}
+                    testId={`filter-band-${b}`}
+                    label={labelMap[b] || b}
+                    active={filters.priority_band === b}
+                    onClick={() => setFilter("priority_band", b)}
+                  />
+                );
+              })}
             </FilterGroup>
 
-            <FilterGroup title="Daily Mission">
+            <FilterGroup title="Today's action">
               {MISSIONS.map((m) => (
                 <FilterChip
                   key={m}
                   testId={`filter-mission-${m}`}
-                  label={m}
+                  label={m === "Research First" ? "Get more info first" : m}
                   active={filters.daily_mission === m}
                   onClick={() => setFilter("daily_mission", m)}
                 />
@@ -247,7 +250,7 @@ const Opportunities = () => {
 
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">
-                Minimum Priority Score
+                Minimum priority score
               </div>
               <div className="flex items-center gap-3">
                 <input
@@ -302,7 +305,10 @@ const Opportunities = () => {
                   {o.project_address}
                 </div>
                 <div className="mt-3 text-[13px] text-amber-200/90 line-clamp-2">
-                  → {o.next_best_action}
+                  <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-1.5">
+                    Next
+                  </span>
+                  {o.next_best_action}
                 </div>
                 <div className="mt-auto pt-4 flex items-center flex-wrap gap-1.5">
                   <MissionBadge mission={o.daily_mission} size="sm" />
@@ -310,7 +316,7 @@ const Opportunities = () => {
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs">
                   <span className="text-[10.5px] text-[var(--bh-ink-mute)] tracking-tight">
-                    {sourceLabel(o.source)}
+                    Found on {sourceLabel(o.source)}
                   </span>
                   <span className="font-display font-semibold text-neutral-200">
                     {fmtMoney(o.estimated_value)}
