@@ -15,15 +15,11 @@ import {
   MapPin,
   Phone,
   Mail,
-  Building2,
-  User,
-  Hammer,
   FileText,
   ShieldAlert,
   Info,
   Sparkles,
   Search,
-  Network,
   Clock3,
   CheckCircle2,
   Send,
@@ -31,15 +27,14 @@ import {
   Trophy,
   XCircle,
   Gauge,
-  Signal,
   Target,
   PenLine,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
-  { label: "Mark Contacted", status: "Conversation started", icon: Send, tone: "primary" },
-  { label: "Needs Research", status: "Needs research", icon: Search, tone: "ghost" },
-  { label: "Estimate Requested", status: "Estimate requested", icon: ClipboardList, tone: "ghost" },
+  { label: "Mark contacted", status: "Conversation started", icon: Send, tone: "primary" },
+  { label: "Get more info first", status: "Needs research", icon: Search, tone: "ghost" },
+  { label: "Estimate requested", status: "Estimate requested", icon: ClipboardList, tone: "ghost" },
   { label: "Won", status: "Won", icon: Trophy, tone: "success" },
   { label: "Lost", status: "Lost", icon: XCircle, tone: "danger" },
 ];
@@ -60,14 +55,9 @@ const activityIcon = (t) => {
   return map[t] || Info;
 };
 
-const SectionHeading = ({ code, title, hint }) => (
+const SectionHeading = ({ title, hint }) => (
   <div className="flex items-baseline justify-between mb-3">
-    <div>
-      <div className="bh-eyebrow">
-        {code}
-      </div>
-      <h3 className="font-display text-lg font-bold text-[var(--bh-ink)]">{title}</h3>
-    </div>
+    <h3 className="font-display text-lg font-bold text-[var(--bh-ink)]">{title}</h3>
     {hint ? (
       <div className="bh-eyebrow">
         {hint}
@@ -157,7 +147,7 @@ const OpportunityDetail = () => {
     <>
       <TopHeader
         pageTitle={opp.name}
-        subtitle={`${opp.opportunity_id} · ${sourceLabel(opp.source)}`}
+        subtitle={`Found on ${sourceLabel(opp.source)}`}
       />
 
       <div className="px-4 lg:px-8 py-6 space-y-6">
@@ -166,7 +156,7 @@ const OpportunityDetail = () => {
           className="inline-flex items-center gap-1.5 text-xs text-[var(--bh-ink-mute)] hover:text-amber-400"
           data-testid="back-to-opps"
         >
-          <ArrowLeft size={13} /> Back to opportunities
+          <ArrowLeft size={13} /> Back to Project List
         </Link>
 
         {/* Hero */}
@@ -177,11 +167,8 @@ const OpportunityDetail = () => {
           <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="bh-eyebrow">
-                  {opp.opportunity_id}
-                </span>
                 <StatusBadge status={opp.status} />
-                <PriorityBand band={opp.priority_band} />
+                <PriorityBand band={opp.priority_band} score={opp.priority_score} />
               </div>
               <h1 className="mt-2 font-display text-3xl lg:text-4xl font-bold text-[var(--bh-ink)] tracking-tight">
                 {opp.name}
@@ -205,7 +192,7 @@ const OpportunityDetail = () => {
                 </div>
                 <div>
                   <div className="bh-eyebrow">
-                    Est. value
+                    Possible work value
                   </div>
                   <div className="font-display text-2xl lg:text-3xl font-bold text-[var(--bh-ink)] tabular-nums mt-1">
                     {fmtMoney(opp.estimated_value)}
@@ -213,7 +200,7 @@ const OpportunityDetail = () => {
                 </div>
                 <div>
                   <div className="bh-eyebrow">
-                    Source
+                    Found on
                   </div>
                   <div className="mt-1 text-[var(--bh-ink)] font-medium">
                     {sourceLabel(opp.source)}
@@ -311,9 +298,7 @@ const OpportunityDetail = () => {
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading
-                code="Section / 01"
-                title="Intelligence"
-                hint="AI reasoning"
+                title="Why this project matters"
               />
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
@@ -392,7 +377,7 @@ const OpportunityDetail = () => {
 
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading code="Section / 02" title="Contact" />
+              <SectionHeading title="Who to talk to" />
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
                 <KV label="Phone" value={opp.phone} mono testId="kv-phone" />
@@ -406,7 +391,7 @@ const OpportunityDetail = () => {
 
             {/* Property / Project */}
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading code="Section / 03" title="Property & Project" />
+              <SectionHeading title="The project" />
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Project address" value={opp.project_address} />
                 <KV label="Project type" value={opp.project_type} />
@@ -428,56 +413,10 @@ const OpportunityDetail = () => {
             <EditableDecisionPanel opp={opp} onUpdated={setOpp} />
           </div>
 
-          {/* Right col: Relationships + Activity */}
+          {/* Right col: Activity */}
           <div className="space-y-6">
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading
-                code="Section / 04"
-                title="Relationships"
-                hint="Preview"
-              />
-              <p className="text-xs text-[var(--bh-ink-mute)] mb-4 leading-relaxed">
-                Who is the strongest relationship path to help win this opportunity?
-              </p>
-              <div className="space-y-2">
-                {[
-                  { icon: User, label: "Direct relationship", val: "No prior contact" },
-                  { icon: Network, label: "Mutual connection", val: "1 possible via Sarah Delatte" },
-                  { icon: Building2, label: "Referral source", val: "—" },
-                  { icon: Signal, label: "Relationship confidence", val: "Low" },
-                  { icon: Hammer, label: "Recommended intro path", val: "Warm intro via prior client" },
-                ].map((r, i) => (
-                  <div
-                    key={i}
-                    className="bh-surface-2 rounded p-3 flex items-center gap-3"
-                  >
-                    <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
-                      <r.icon size={14} className="text-[var(--bh-ink-mute)]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="mono text-[9px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
-                        {r.label}
-                      </div>
-                      <div className="text-sm text-[var(--bh-ink-2)] truncate">
-                        {r.val}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 border-t bh-hairline pt-3">
-                <div className="bh-eyebrow">
-                  Coming next
-                </div>
-                <p className="text-xs text-[var(--bh-ink-mute)] mt-1 leading-relaxed">
-                  Relationship graph will map contractors, past clients, and mutual
-                  connections to surface the strongest intro path.
-                </p>
-              </div>
-            </section>
-
-            <section className="bh-surface rounded-md p-5">
-              <SectionHeading code="Section / 05" title="Activity Timeline" />
+              <SectionHeading title="Recent activity" />
               <ol className="relative border-l bh-hairline pl-5 space-y-4">
                 {(opp.activity_timeline || []).map((a, i) => {
                   const Icon = activityIcon(a.type);

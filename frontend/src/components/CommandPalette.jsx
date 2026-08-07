@@ -24,20 +24,21 @@ import {
 import { fmtMoney, sourceLabel } from "@/lib/formatters";
 
 const PAGES = [
-  { to: "/", label: "Command Center", icon: LayoutDashboard, hint: "Dashboard" },
-  { to: "/opportunities", label: "Opportunities", icon: Crosshair, hint: "All records" },
-  { to: "/missions", label: "Today's Missions", icon: Target, hint: "Daily plan" },
-  { to: "/relationships", label: "Relationships", icon: Network, hint: "Intro paths" },
-  { to: "/intelligence", label: "Intelligence", icon: Radar, hint: "Trends" },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Configuration" },
+  { to: "/", label: "Today's Work", icon: LayoutDashboard, hint: "Dashboard" },
+  { to: "/opportunities", label: "Project List", icon: Crosshair, hint: "All projects" },
+  { to: "/missions", label: "Follow-Ups", icon: Target, hint: "Today's plan" },
+  { to: "/relationships", label: "People to Know", icon: Network, hint: "Builders & designers" },
+  { to: "/intelligence", label: "Projects to Watch", icon: Radar, hint: "Early signs" },
+  { to: "/review-queue", label: "Needs a Look", icon: FileText, hint: "Drafts awaiting review" },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Preferences" },
 ];
 
 const QUICK_FILTERS = [
-  { to: "/opportunities?priority_band=A", label: "Show Band A opportunities" },
-  { to: "/opportunities?status=Ready", label: "Show Ready-to-contact" },
-  { to: "/opportunities?daily_mission=Call%20Today", label: "Show Call-Today missions" },
-  { to: "/opportunities?status=Estimate%20sent", label: "Show Estimates sent" },
-  { to: "/opportunities?status=Needs%20research", label: "Show Needs-research" },
+  { to: "/opportunities?priority_band=A", label: "Show high-priority projects" },
+  { to: "/opportunities?status=Ready", label: "Show ready-to-contact" },
+  { to: "/opportunities?daily_mission=Call%20Today", label: "Show call-today follow-ups" },
+  { to: "/opportunities?status=Estimate%20sent", label: "Show estimates sent" },
+  { to: "/opportunities?status=Needs%20research", label: "Show get-more-info-first" },
 ];
 
 export const CommandPalette = ({ open, onOpenChange }) => {
@@ -86,14 +87,14 @@ export const CommandPalette = ({ open, onOpenChange }) => {
       <CommandInput
         value={q}
         onValueChange={setQ}
-        placeholder="Search opportunities, addresses, permits, or jump to a page…"
+        placeholder="Search projects, addresses, or jump to a page…"
         data-testid="palette-input"
       />
       <CommandList data-testid="palette-list">
         <CommandEmpty>No matches found.</CommandEmpty>
 
         {filtered.length > 0 && (
-          <CommandGroup heading="Opportunities">
+          <CommandGroup heading="Projects">
             {filtered.map((o) => (
               <CommandItem
                 key={o.id}

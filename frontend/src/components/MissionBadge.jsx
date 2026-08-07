@@ -15,7 +15,13 @@ import {
 /**
  * Next-move chip — muted, sentence-case, no alarm reds/oranges.
  * Every color reads as a material tone against the bone canvas.
+ * Backend keeps "Research First" as the canonical mission name; the display
+ * label maps it to plain English so Ryan never sees jargon.
  */
+const DISPLAY_LABEL = {
+  "Research First": "Get more info first",
+};
+
 const cfg = {
   "Call Today":      { icon: Phone,        fg: "var(--bh-olive)", bg: "var(--bh-olive-mute)",       border: "rgba(107,122,85,0.32)" },
   "Send Text":       { icon: MessageSquare,fg: "#4b6b6f",         bg: "rgba(75,107,111,0.10)",       border: "rgba(75,107,111,0.30)" },
@@ -31,6 +37,7 @@ const cfg = {
 export const MissionBadge = ({ mission, className, size = "md" }) => {
   const c = cfg[mission] || cfg.Wait;
   const Icon = c.icon;
+  const label = DISPLAY_LABEL[mission] || mission;
   const sz = size === "sm" ? "text-[10.5px] px-2 py-0.5" : "text-[11.5px] px-2.5 py-1";
   return (
     <span
@@ -43,7 +50,7 @@ export const MissionBadge = ({ mission, className, size = "md" }) => {
       style={{ color: c.fg, background: c.bg, borderColor: c.border }}
     >
       <Icon size={size === "sm" ? 11 : 12} strokeWidth={1.75} />
-      {mission}
+      {label}
     </span>
   );
 };

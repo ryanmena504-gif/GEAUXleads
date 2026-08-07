@@ -1,78 +1,96 @@
 # BLOODHOUND: AI Opportunity Intelligence — PRD
 
 ## Original problem statement
-Build a premium full-stack app for The Shirtless Handyman (Ryan Mena) that
-discovers, understands, and prioritizes business opportunities, partners,
-and market signals from an Airtable base. **All outreach is native-only** —
-`sms:` and `mailto:` URLs. Nothing sends automatically; Ryan always presses
-Send on his own Apple device.
+Premium full-stack app for The Shirtless Handyman (Ryan Mena) that discovers,
+understands, and prioritizes business opportunities, partners, and market
+signals from an Airtable base. **All outreach is native-only** — `sms:` and
+`mailto:` URLs. Nothing sends automatically; Ryan always presses Send on his
+own Apple device.
 
-## Users
-- **Ryan** (Account Lead) — owner-operator contractor, uses iPhone + laptop.
+## User
+- **Ryan Mena** — owner-operator contractor. iPhone + Mac. Fixed sender identity:
+  ryanmena@theshirtlesshandyman.com · (504) 264-4919.
 
-## Core requirements (unchanged)
-- Airtable is the source of truth (Leads table).
-- Real-time updates via Airtable webhook → backend SSE → frontend refetch.
-- No automated sending. No Resend, no Twilio, no Gmail API, no messaging
-  provider, no Apple account integration.
-- All outreach flows through `sms:` and `mailto:` links only.
-- Approval-only. Nothing sends from any screen.
+## Core rules
+- Airtable Leads table is the source of truth.
+- Live via webhook → SSE → frontend refetch.
+- No provider sending. No Resend/Twilio/Gmail/iMessage APIs. No Apple account
+  integration. Approval-only, always.
+- Every outreach flows through `<a href="sms:...">` or `<a href="mailto:...">`.
 
 ## Tech stack
-- Frontend: React 18 + Tailwind + Shadcn/UI
+- Frontend: React 18 + Tailwind + Shadcn/UI + Motion for React
 - Backend: FastAPI + PyAirtable + Motor (MongoDB)
-- Data: Airtable (leads, playbooks) + MongoDB (drafts, handoff log, user settings)
+- Data: Airtable (leads, playbooks) + MongoDB (drafts, handoffs, user_settings)
 
-## Implemented (2026 session log)
-- ✅ Command Center dashboard (Today's Work, metrics, follow-ups, top picks, pipeline)
-- ✅ Airtable read-through with SSE live updates
-- ✅ Slack alerting for Band-A leads
-- ✅ Draft a Note drawer + Playbook editor
-- ✅ Review Queue (renamed "Needs a Look")
-- ✅ Native iPhone handoff via `sms:` / `mailto:` (OpenInMessages.jsx)
-- ✅ Row-level Text/Email pills on People to Know + Projects to Watch
-- ✅ Handoff logger — every tap logs one event to Mongo `contact_handoffs`
-- ✅ **UX/wording rewrite** — plain English throughout (see below)
-- ✅ **Sender email in Settings** — MongoDB-backed user preference; injected
-     into every `mailto:` body so Ryan sees the right From address
-- ✅ Removed leftover "Approve & Send" button from Today's top action
-- ✅ Priority displayed as **High / Medium / Low** (numeric score hidden behind hover)
-- ✅ Contact readiness badge — green / yellow / gray / red
+## Session log — implemented
+### Foundation
+- Command Center dashboard (Today's Work + metric strip + lanes + follow-ups + top picks + pipeline)
+- Airtable read-through with SSE live updates
+- Slack alerts for high-priority leads
+- Draft-a-Note drawer + Playbook editor
+- Review queue
 
-## Plain-English terminology map (applied everywhere Ryan sees it)
-| Old / technical         | New / plain-English            |
-|-------------------------|--------------------------------|
-| Partner Intelligence    | People to Know                 |
-| Project Signals         | Projects to Watch              |
-| Signal Source           | Found on                       |
-| Contact confidence      | Can I reach them?              |
-| Review Queue            | Needs a Look                   |
-| Recommended Next Move   | What to do next                |
-| Daily Mission           | Today's action                 |
-| Lead score              | Priority                       |
-| Opportunity Registry    | Project List                   |
-| Research first          | Get more info first            |
-| Pipeline value          | Possible work value            |
-| Approve & Send          | (removed entirely)             |
+### Native handoff
+- `sms:` / `mailto:` URLs only. iPhone-safe phone sanitization.
+- Handoff logger — every Text/Email tap logs one row to Mongo `contact_handoffs`
+- Row-level Text/Email pills on People to Know + Projects to Watch
+- Removed the leftover "Approve & Send" button entirely
+- iPhone hint under every panel: "Open Bloodhound on your iPhone to text from your phone."
 
-## API surface (new/relevant)
-- `GET  /api/settings/user` — get sender identity + prefs
-- `PATCH /api/settings/user` — update sender_email / sender_name (validated)
-- `POST /api/opportunities/{id}/handoff` — log a Text/Email tap
-- `GET  /api/opportunities/{id}/handoffs` — recent handoffs for one lead
-- `GET  /api/handoffs/recent` — global recent handoffs
+### Sender identity (fixed for Ryan)
+- Mongo-backed singleton `user_settings` (`sender_email` / `sender_name` / `sender_phone`)
+- Settings → "Your sender identity" with three inputs, seeded with Ryan's real values
+- Signature auto-added to every mailto: body: `Ryan Mena` · `The Shirtless Handyman` · `(504) 264-4919` · `ryanmena@theshirtlesshandyman.com`
+
+### Plain-English UX pass (this session)
+| Old (technical / marketing)       | New (contractor English)              |
+|-----------------------------------|---------------------------------------|
+| Partner Intelligence              | People to Know                        |
+| Project Signals                   | Projects to Watch                     |
+| Signal Source                     | Found on                              |
+| Contact confidence                | Can I reach them?                     |
+| Review Queue                      | Needs a Look                          |
+| Recommended Next Move             | What to do next                       |
+| Daily Mission                     | Today's action                        |
+| Lead score                        | Priority                              |
+| Opportunity Registry              | Project List                          |
+| Research first                    | Get more info first                   |
+| Approval gate                     | Ready for your approval               |
+| Pipeline value                    | Possible work value                   |
+| Approve & Send                    | (removed entirely)                    |
+| Intelligence (section)            | Why this project matters              |
+| Contact (section)                 | Who to talk to                        |
+| Property & Project                | The project                           |
+| Activity Timeline                 | Recent activity                       |
+| Missing information               | Still need to know                    |
+| Risk flags                        | Watch out for                         |
+| Evidence summary                  | What we found                         |
+| Section / 01 (etc.)               | (dropped — sections have real titles) |
+| Mock Relationships preview        | (removed)                             |
+
+### Modernization
+- Priority is displayed as **High / Medium / Low** with numeric score only in hover.
+- Contact readiness badge (green/yellow/gray/red) shown on every lead.
+- Status badge maps `Needs research` → **Need more info**, `Disqualified` → **Not a fit**, etc.
+- Lane names swapped to plain English (Projects · People to Know · Watching).
+- Command palette rebuilt with new plain-English labels.
+- Empty states and helper copy all rewritten.
 
 ## Data models (Mongo)
 - `outreach_drafts` — Draft-a-Note storage
-- `contact_handoffs` — one row per Text/Email tap (opp_id, channel, recipient, device_hint, at)
-- `user_settings` — singleton doc: `{ sender_email, sender_name, updated_at }`
+- `contact_handoffs` — {opp_id, channel, recipient, device_hint, at}
+- `user_settings` — singleton {sender_email, sender_name, sender_phone, updated_at}
+
+## API surface
+- `GET  /api/settings/user` · `PATCH /api/settings/user`
+- `POST /api/opportunities/{id}/handoff` · `GET /api/opportunities/{id}/handoffs`
+- `GET  /api/handoffs/recent`
+- (+ existing opportunities / drafts / playbook / lane / pipeline endpoints)
 
 ## Backlog / Next
-- P1 · Persist the Airtable webhook manager state to Mongo so preview
-       reloads don't hijack production's webhook.
-- P2 · Consolidate remaining "Section /XX" numbering across
-       Opportunities.jsx and OpportunityDetail.jsx (mostly done).
-- P2 · Add a "Handoffs today" strip on the Command Center so Ryan can see
-       what he's already texted/emailed without leaving the dashboard.
-- P3 · Offer more built-in sender identities (business vs personal email)
-       if Ryan wants a one-tap toggle instead of editing Settings.
+- **Handoffs Today Strip** on Today's Work
+- **Signature preview** in Settings
+- **Sender email presets** (business vs personal one-tap toggle)
+- **Webhook persistence** to Mongo so preview reloads don't hijack production
+- **Per-lead sender note** (drop business tagline for one specific reply)

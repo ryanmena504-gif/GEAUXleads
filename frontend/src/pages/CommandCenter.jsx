@@ -165,11 +165,6 @@ const CommandCenter = () => {
             >
               <div className="flex items-center gap-2">
                 <LaneBadge lane={row.lane} />
-                {row.top_score != null && (
-                  <span className="mono text-[9px] uppercase tracking-widest text-neutral-500 ml-auto">
-                    Top score {Math.round(row.top_score)}
-                  </span>
-                )}
               </div>
               <div className="mt-2 flex items-baseline gap-2">
                 <div className="font-display text-2xl font-bold text-neutral-100 tabular-nums">
@@ -180,7 +175,7 @@ const CommandCenter = () => {
                 </div>
               </div>
               <div className="mt-1 mono text-[10px] uppercase tracking-widest text-neutral-500">
-                Pipeline · {fmtMoney(row.pipeline_value || 0)}
+                Possible work value · {fmtMoney(row.pipeline_value || 0)}
               </div>
             </button>
           ))}
@@ -223,6 +218,7 @@ const CommandCenter = () => {
               const c = missionCount(missions, m);
               if (c === 0) return null;
               const active = activeMission === m;
+              const label = m === "Research First" ? "Get more info first" : m;
               return (
                 <button
                   key={m}
@@ -235,7 +231,7 @@ const CommandCenter = () => {
                       : "bh-hairline text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.03]")
                   }
                 >
-                  {m} ({c})
+                  {label} ({c})
                 </button>
               );
             })}
@@ -244,7 +240,7 @@ const CommandCenter = () => {
           <div className="space-y-2 bh-fade-in">
             {missionList.length === 0 ? (
               <div className="bh-surface rounded p-8 text-center text-neutral-500 text-sm">
-                No missions in this bucket.
+                No follow-ups in this bucket.
               </div>
             ) : (
               missionList.slice(0, 8).map((o) => (

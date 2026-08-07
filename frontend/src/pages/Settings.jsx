@@ -55,7 +55,7 @@ const SenderIdentitySection = () => {
   return (
     <section data-testid="section-sender-identity">
       <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
-        <Mail size={11} /> Section · Your sender identity
+        <Mail size={11} /> Your sender identity
       </div>
       <div className="bh-surface rounded p-5 space-y-4">
         <p className="text-sm text-neutral-400 leading-relaxed">
@@ -209,10 +209,10 @@ const Settings = () => {
       <TopHeader pageTitle="Settings" subtitle="Configure your account preferences" />
       <div className="px-4 lg:px-8 py-6 space-y-6 max-w-5xl">
         <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-              Section / 01 · Data Sources
-            </div>
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
+            Data sources
+          </div>
+          <div className="flex items-baseline justify-end mb-3">
             <button
               onClick={reload}
               disabled={reloading}
@@ -259,7 +259,7 @@ const Settings = () => {
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            Section / 02 · Airtable Connection
+            How Bloodhound connects to Airtable
           </div>
           <div className="bh-surface rounded p-5 space-y-3">
             <p className="text-sm text-neutral-400 leading-relaxed">
@@ -284,7 +284,7 @@ const Settings = () => {
         {isLive && schema && (
           <section data-testid="section-schema">
             <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-              Section / 03 · Live Airtable Schema
+              Live Airtable schema
             </div>
             <div className="bh-surface rounded p-5">
               <div className="grid md:grid-cols-3 gap-4 mb-4">
@@ -359,14 +359,14 @@ const Settings = () => {
 
         <section data-testid="section-playbooks">
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
-            <BookMarked size={11} /> Section · Message playbooks
+            <BookMarked size={11} /> Message playbooks
           </div>
           <PlaybookEditor />
         </section>
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            Section 04 · Account preferences
+            Your account
           </div>
           <div className="bh-surface rounded p-5 space-y-4">
             <div>

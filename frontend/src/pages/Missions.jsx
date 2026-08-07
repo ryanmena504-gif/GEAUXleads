@@ -61,10 +61,7 @@ const Missions = () => {
 
   return (
     <>
-      <TopHeader
-        pageTitle="Follow-Ups"
-        subtitle={`${doneCount} of ${total} complete`}
-      />
+      <TopHeader pageTitle="Follow-Ups" subtitle={`${doneCount} of ${total} done`} />
 
       <div className="px-4 lg:px-8 py-6 space-y-6">
         <div className="bh-surface rounded p-4 flex items-center gap-3 border-t border-t-amber-500/60">
@@ -170,7 +167,7 @@ const Missions = () => {
 
         {total === 0 && (
           <div className="bh-surface rounded p-12 text-center text-[var(--bh-ink-mute)] text-sm">
-            No active missions right now.
+            No follow-ups right now.
           </div>
         )}
       </div>
