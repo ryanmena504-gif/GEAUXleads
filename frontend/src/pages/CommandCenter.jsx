@@ -7,6 +7,8 @@ import StatusPipeline from "@/components/StatusPipeline";
 import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import MissionBadge from "@/components/MissionBadge";
 import NextBestAction from "@/components/NextBestAction";
+import TimeToNudge from "@/components/TimeToNudge";
+import WonThisMonth from "@/components/WonThisMonth";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtRelative, sourceLabel } from "@/lib/formatters";
 import { LANES, LANE_LABEL, MISSIONS } from "@/lib/constants";
@@ -87,8 +89,14 @@ const CommandCenter = () => {
       />
 
       <div className="px-5 lg:px-10 py-8 space-y-10">
+        {/* Business trend at a glance — Won this month + active pipeline */}
+        <WonThisMonth />
+
         {/* Next Best Action — dominant top section */}
         <NextBestAction />
+
+        {/* Leads you touched but haven't nudged — highest-ROI follow-ups */}
+        <TimeToNudge />
 
         {/* Metric row */}
         <section

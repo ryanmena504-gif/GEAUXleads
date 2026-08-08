@@ -71,6 +71,12 @@ export const api = {
       .get(`/opportunities/${opp_id}/handoffs`, { params: { limit } })
       .then((r) => r.data),
 
+  // Follow-ups + monthly KPIs — surface the leads Ryan touched but never
+  // nudged, and show how the pipeline is trending.
+  dueFollowUps: (limit = 20) =>
+    client.get("/follow-ups/due", { params: { limit } }).then((r) => r.data),
+  monthlyKpis: () => client.get("/kpis/monthly").then((r) => r.data),
+
   // User preferences — sender email that appears on mailto: drafts, etc.
   getUserSettings: () =>
     client.get("/settings/user").then((r) => r.data),

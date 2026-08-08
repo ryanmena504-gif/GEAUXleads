@@ -9,7 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
@@ -787,6 +787,190 @@ async def list_recent_handoffs(limit: int = 100):
         return {"available": False, "handoffs": []}
     handoffs = await svc.list_recent(limit=limit)
     return {"available": True, "handoffs": handoffs}
+
+
+# ============================================================================
+# Follow-up sequencing — cross-references the handoff_log with the opportunity
+# list to find leads that were touched days ago and never nudged again.
+# Owners buy from whoever is still present; this endpoint keeps Ryan present.
+# ============================================================================
+@api_router.get("/follow-ups/due")
+async def follow_ups_due(limit: int = 20):
+    """Leads Ryan touched but hasn't nudged recently.
+
+    Buckets (evaluated in order — first match wins):
+      • estimate_check  · status = Estimate requested / Estimate sent AND
+                          last touch ≥ 7 days ago
+      • email_nudge     · last touch was email AND ≥ 5 days ago
+      • text_nudge      · last touch was text  AND ≥ 3 days ago
+    """
+    hsvc = get_handoff_service()
+    osvc = get_opportunity_service()
+    if not hsvc or not osvc:
+        return {"available": False, "items": []}
+
+    from datetime import datetime, timezone as _tz
+    now = datetime.now(_tz.utc)
+
+    # Pull the last 500 handoffs and reduce to the most-recent per opportunity.
+    handoffs = await hsvc.list_recent(limit=500)
+    last_by_opp: Dict[str, Dict[str, Any]] = {}
+    for h in handoffs:
+        opp_id = h.get("opportunity_id")
+        if not opp_id:
+            continue
+        # handoffs come back sorted DESC by `at`; keep first per opp.
+        if opp_id in last_by_opp:
+            continue
+        last_by_opp[opp_id] = h
+
+    if not last_by_opp:
+        return {"available": True, "items": []}
+
+    # Index all opportunities so we can join without an N+1 pattern.
+    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    by_id = {o.get("id"): o for o in all_ops if o.get("id")}
+
+    ACTIVE_CLOSED = {"Won", "Lost", "Disqualified"}
+    ESTIMATE_STATUSES = {"Estimate requested", "Estimate sent"}
+    out: List[Dict[str, Any]] = []
+
+    for opp_id, h in last_by_opp.items():
+        opp = by_id.get(opp_id)
+        if not opp:
+            continue
+        status = (opp.get("status") or "").strip()
+        if status in ACTIVE_CLOSED:
+            continue
+        # Parse the ISO timestamp; skip if unparseable.
+        raw_at = h.get("at") or ""
+        try:
+            last_at = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        days_since = (now - last_at).total_seconds() / 86400.0
+        channel = (h.get("channel") or "").lower()
+
+        bucket = None
+        threshold = None
+        if status in ESTIMATE_STATUSES and days_since >= 7:
+            bucket, threshold = "estimate_check", 7
+        elif channel == "email" and days_since >= 5:
+            bucket, threshold = "email_nudge", 5
+        elif channel == "text" and days_since >= 3:
+            bucket, threshold = "text_nudge", 3
+        if not bucket:
+            continue
+
+        reason = (
+            f"{int(days_since)} days since your last {channel or 'touch'}"
+            if bucket != "estimate_check"
+            else f"{int(days_since)} days since estimate was requested"
+        )
+
+        out.append({
+            "opportunity_id": opp_id,
+            "opportunity": {
+                "id": opp_id,
+                "name": opp.get("name"),
+                "status": status,
+                "lane": opp.get("lane"),
+                "priority_band": opp.get("priority_band"),
+                "priority_score": opp.get("priority_score"),
+                "estimated_value": opp.get("estimated_value"),
+                "contact_phone": opp.get("contact_phone") or opp.get("phone"),
+                "contact_email": opp.get("contact_email") or opp.get("email"),
+                "first_message": opp.get("first_message") or opp.get("first_contact_message"),
+            },
+            "last_touch": {
+                "channel": channel or "unknown",
+                "at": raw_at,
+                "days_ago": round(days_since, 1),
+                "device_hint": h.get("device_hint"),
+            },
+            "bucket": bucket,
+            "threshold_days": threshold,
+            "reason": reason,
+        })
+
+    # Rank: estimate_check first, then by priority_score desc, then days desc.
+    BUCKET_ORDER = {"estimate_check": 0, "text_nudge": 1, "email_nudge": 2}
+    out.sort(key=lambda r: (
+        BUCKET_ORDER.get(r["bucket"], 99),
+        -(r["opportunity"].get("priority_score") or 0),
+        -(r["last_touch"].get("days_ago") or 0),
+    ))
+    return {"available": True, "items": out[: max(1, min(limit, 100))]}
+
+
+# ============================================================================
+# Monthly KPIs — "Won this month" + active pipeline value, so Ryan can see
+# how the business is trending at a glance. Uses `last_reviewed` when set,
+# else `created_time`, as the "settled at" proxy. All-time Won is included
+# as a stable fallback for periods with few dated records.
+# ============================================================================
+@api_router.get("/kpis/monthly")
+async def monthly_kpis():
+    from datetime import datetime, timezone as _tz
+    osvc = get_opportunity_service()
+    all_ops = osvc.all() if hasattr(osvc, "all") else []
+
+    now = datetime.now(_tz.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    def _settled_at(o):
+        raw = o.get("last_reviewed") or o.get("created_time") or ""
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    won_month = 0
+    won_month_value = 0.0
+    won_all_time = 0
+    won_all_time_value = 0.0
+    active_count = 0
+    active_value = 0.0
+    ESTIMATE_STATUSES = {"Estimate requested", "Estimate sent"}
+    est_out_count = 0
+    est_out_value = 0.0
+
+    for o in all_ops:
+        status = (o.get("status") or "").strip()
+        value = float(o.get("estimated_value") or 0)
+        if status == "Won":
+            won_all_time += 1
+            won_all_time_value += value
+            settled = _settled_at(o)
+            if settled and settled >= month_start:
+                won_month += 1
+                won_month_value += value
+        elif status not in ("Lost", "Disqualified"):
+            active_count += 1
+            active_value += value
+            if status in ESTIMATE_STATUSES:
+                est_out_count += 1
+                est_out_value += value
+
+    return {
+        "month_start": month_start.isoformat(),
+        "won_this_month": {
+            "count": won_month,
+            "value": round(won_month_value, 2),
+        },
+        "won_all_time": {
+            "count": won_all_time,
+            "value": round(won_all_time_value, 2),
+        },
+        "active_pipeline": {
+            "count": active_count,
+            "value": round(active_value, 2),
+        },
+        "estimates_out": {
+            "count": est_out_count,
+            "value": round(est_out_value, 2),
+        },
+    }
 
 
 # ============================================================================
