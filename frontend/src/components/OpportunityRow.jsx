@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { fmtMoneyOrStatus, sourceLabel } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
 
 export const OpportunityRow = ({ opp }) => (
@@ -62,10 +62,16 @@ export const OpportunityRow = ({ opp }) => (
 
       <div className="flex-col items-end text-right hidden md:flex">
         <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-          Est. value
+          Possible work for us
         </div>
         <div className="font-display text-lg font-semibold text-neutral-100 tabular-nums">
-          {fmtMoney(opp.estimated_value)}
+          {fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
+        </div>
+        <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mt-2">
+          Official project value
+        </div>
+        <div className="text-xs text-neutral-300 tabular-nums">
+          {fmtMoneyOrStatus(opp.construction_value, "Not public")}
         </div>
         {opp.decision_maker && (
           <div className="text-xs text-neutral-400 mt-1 truncate max-w-[180px]">

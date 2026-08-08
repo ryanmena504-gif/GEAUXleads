@@ -14,6 +14,15 @@ export const fmtMoneyFull = (v) => {
   return `$${n.toLocaleString()}`;
 };
 
+// A missing or zero estimate is not a zero-dollar job. Bloodhound uses zero
+// when the public record or AI does not support a responsible estimate.
+export const fmtMoneyOrStatus = (v, unavailableLabel) => {
+  if (v === null || v === undefined || v === "") return unavailableLabel;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return unavailableLabel;
+  return fmtMoney(v);
+};
+
 export const fmtDate = (iso) => {
   if (!iso) return "—";
   try {

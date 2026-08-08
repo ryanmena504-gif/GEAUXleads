@@ -61,6 +61,10 @@ LIVE_FIELDS: Dict[str, str] = {
     "Opportunity type": "project_type",
     "Permit number": "permit_number",
     "Permit description": "permit_description",
+    # Keep the two money concepts separate. A permit amount is the published
+    # total project value, while the AI estimate is only the possible portion
+    # of that project that could become Shirtless Handyman work.
+    "Permit project value": "construction_value",
     "Estimated job value": "estimated_value",
 
     # Contact block
@@ -549,8 +553,8 @@ class AirtableOpportunityService:
                 opp[k] = _first(opp[k])
 
         # Ensure numeric types where sensible
-        for k in ("lead_score", "confidence_score", "estimated_value",
-                  "closed_revenue", "estimated_gross_profit"):
+        for k in ("lead_score", "confidence_score", "construction_value",
+                  "estimated_value", "closed_revenue", "estimated_gross_profit"):
             v = opp.get(k)
             if isinstance(v, list):
                 v = _first(v)

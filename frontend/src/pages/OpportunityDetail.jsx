@@ -8,7 +8,7 @@ import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
 import PreviewNotice from "@/components/PreviewNotice";
 import { api } from "@/lib/api";
-import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
+import { fmtMoneyOrStatus, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import {
   ArrowLeft,
   MapPin,
@@ -187,7 +187,7 @@ const OpportunityDetail = () => {
                 <MapPin size={14} className="text-neutral-500" />
                 {opp.project_address}
               </div>
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-4">
                 <div>
                   <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
                     Priority
@@ -202,10 +202,18 @@ const OpportunityDetail = () => {
                 </div>
                 <div>
                   <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-                    Est. value
+                    Official project value
                   </div>
                   <div className="font-display text-2xl lg:text-3xl font-bold text-neutral-100 tabular-nums mt-1">
-                    {fmtMoney(opp.estimated_value)}
+                    {fmtMoneyOrStatus(opp.construction_value, "Not public")}
+                  </div>
+                </div>
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Possible work for us
+                  </div>
+                  <div className="font-display text-2xl lg:text-3xl font-bold text-neutral-100 tabular-nums mt-1">
+                    {fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
                   </div>
                 </div>
                 <div>
@@ -380,8 +388,13 @@ const OpportunityDetail = () => {
                 <KV label="Permit source" value={opp.permit_source} />
                 <KV label="Filing date" value={fmtDate(opp.permit_filing_date)} mono />
                 <KV
-                  label="Construction value"
-                  value={opp.construction_value ? fmtMoneyFull(opp.construction_value) : null}
+                  label="Official project value"
+                  value={fmtMoneyOrStatus(opp.construction_value, "Not public")}
+                  mono
+                />
+                <KV
+                  label="Possible work for us"
+                  value={fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
                   mono
                 />
                 <KV
