@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight, Smartphone } from "lucide-react";
+import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight, Smartphone, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUserSettings } from "@/hooks/useUserSettings";
 
@@ -25,7 +25,70 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 const DEFAULT_SENDER_EMAIL = "ryanmena@theshirtlesshandyman.com";
 const DEFAULT_SENDER_NAME = "Ryan Mena";
 const DEFAULT_SENDER_PHONE = "(504) 264-4919";
+const DEFAULT_EMAIL_PROVIDER = "gmail";
 const EMAIL_SUBJECT = "Quick question about your project";
+
+/**
+ * Build the email-compose URL for the configured provider.
+ *
+ * Gmail  — https://mail.google.com/mail/?authuser=<sender>&view=cm&... — the
+ *          `authuser` parameter forces Gmail Web to compose from Ryan's
+ *          business account regardless of which browser or device he uses.
+ *          On mobile, this URL deep-links into the Gmail app with the same
+ *          account pinned.
+ * Outlook — https://outlook.office.com/mail/deeplink/compose?... — opens
+ *          Outlook Web with the recipient / subject / body pre-filled.
+ *          Uses whichever Microsoft account is signed in; if multiple, the
+ *          user picks. There is no reliable equivalent of Gmail's authuser.
+ * Apple / mailto — the classic behaviour: uses whatever default mail app is
+ *          set on the current device. Correct for iPhone (uses Ryan's
+ *          business email if that's his default account), unpredictable on
+ *          laptops. Included as a fallback and for Apple-Mail-only users.
+ */
+const buildEmailComposeUrl = (recipient, body, subject, sender, provider) => {
+  if (!recipient) return { href: null, external: false };
+  const clean = String(recipient).trim();
+  if (!clean.includes("@")) return { href: null, external: false };
+  const finalBody = withSignature(body, sender?.name, sender?.email, sender?.phone);
+  const finalSubject = subject || EMAIL_SUBJECT;
+  const mode = (provider || DEFAULT_EMAIL_PROVIDER).toLowerCase();
+
+  if (mode === "gmail" && sender?.email) {
+    const params = new URLSearchParams({
+      authuser: sender.email,
+      view: "cm",
+      fs: "1",
+      tf: "1",
+      to: clean,
+      su: finalSubject,
+      body: finalBody,
+    });
+    return {
+      href: `https://mail.google.com/mail/?${params.toString()}`,
+      external: true,
+    };
+  }
+  if (mode === "outlook") {
+    const params = new URLSearchParams({
+      to: clean,
+      subject: finalSubject,
+      body: finalBody,
+    });
+    return {
+      href: `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`,
+      external: true,
+    };
+  }
+  // Apple Mail / default mail app — plain mailto:.
+  const mailtoParts = [
+    `subject=${encodeURIComponent(finalSubject)}`,
+    `body=${encodeURIComponent(finalBody)}`,
+  ];
+  return {
+    href: `mailto:${clean}?${mailtoParts.join("&")}`,
+    external: false,
+  };
+};
 
 // iOS is strict: sms: URLs must contain digits (with optional leading `+`)
 // only — no parens, no spaces, no dashes. Otherwise Safari throws
@@ -104,7 +167,7 @@ const cleanDisplayPhone = (p) => {
   return s || null;
 };
 
-export const resolveContacts = (opp, senderIdentity) => {
+export const resolveContacts = (opp, senderIdentity, emailProvider) => {
   if (!opp) return { text: null, email: null };
   const iphoneFormula = (opp.open_approved_message_iphone || "").toString().trim();
   const phoneRaw = (opp.contact_phone || opp.phone || opp.phone_number || "").toString().trim();
@@ -113,6 +176,7 @@ export const resolveContacts = (opp, senderIdentity) => {
   const senderName = senderIdentity?.name;
   const senderEmail = senderIdentity?.email;
   const senderPhone = senderIdentity?.phone;
+  const provider = emailProvider || DEFAULT_EMAIL_PROVIDER;
 
   let textHref = null;
   let textDisplay = null;
@@ -128,18 +192,24 @@ export const resolveContacts = (opp, senderIdentity) => {
     textDisplay = cleanDisplayPhone(phoneRaw);
   }
 
-  let emailHref = null;
+  let emailBundle = { href: null, external: false };
   let emailDisplay = null;
   if (emailRaw && emailRaw.includes("@")) {
-    emailHref = message
-      ? buildMailtoWithBody(emailRaw, message, senderName, senderEmail, senderPhone)
-      : buildMailtoHref(emailRaw);
+    emailBundle = buildEmailComposeUrl(
+      emailRaw,
+      message,
+      EMAIL_SUBJECT,
+      { name: senderName, email: senderEmail, phone: senderPhone },
+      provider,
+    );
     emailDisplay = emailRaw;
   }
 
   return {
     text: textHref ? { href: textHref, display: textDisplay } : null,
-    email: emailHref ? { href: emailHref, display: emailDisplay } : null,
+    email: emailBundle.href
+      ? { href: emailBundle.href, display: emailDisplay, external: emailBundle.external }
+      : null,
   };
 };
 
@@ -179,15 +249,17 @@ const TextButton = ({ href, testid, label, onClick, styleOverride, size = "md" }
   </a>
 );
 
-const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md" }) => (
+const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md", external = false }) => (
   <a
     href={href}
     data-testid={testid}
     onClick={onClick}
     className={`${btnBase} ${SIZE[size]}`}
     style={styleOverride || primary}
+    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
   >
     <Mail size={size === "sm" ? 12 : 14} /> {label}
+    {external && <ExternalLink size={size === "sm" ? 10 : 11} className="opacity-70" />}
   </a>
 );
 
@@ -215,10 +287,16 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
     email: settings?.sender_email,
     phone: settings?.sender_phone,
   };
-  const contacts = resolveContacts(opportunity, senderIdentity);
+  const emailProvider = (settings?.email_provider || DEFAULT_EMAIL_PROVIDER).toLowerCase();
+  const contacts = resolveContacts(opportunity, senderIdentity, emailProvider);
   const hasText = !!contacts.text;
   const hasEmail = !!contacts.email;
   const hasBoth = hasText && hasEmail;
+  const emailIsExternal = !!contacts.email?.external;
+  const providerLabel =
+    emailProvider === "gmail" ? "Gmail"
+    : emailProvider === "outlook" ? "Outlook"
+    : "Apple Mail";
 
   // Once the user taps a TEXT handoff on a BOTH lead, reveal a follow-up
   // "Open email draft" primary button. Do NOT auto-launch Mail — the user
@@ -226,8 +304,8 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const [textedFirst, setTextedFirst] = useState(false);
 
   // Fire-and-forget handoff logger. We deliberately do NOT block navigation
-  // (no preventDefault, no await), so iOS still receives the sms:/mailto:
-  // handoff on the same user gesture. If the POST fails we swallow it —
+  // (no preventDefault, no await), so the sms:/mailto:/Gmail-compose URL
+  // still opens on the same user gesture. If the POST fails we swallow it —
   // this is a log, not a gate.
   const logTap = (channel, recipient) => {
     const oppId = opportunity?.id;
@@ -347,6 +425,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
               label={textedFirst ? "Now open email draft" : "Contact by email"}
               onClick={onEmailTap}
               styleOverride={textedFirst ? primary : secondary}
+              external={emailIsExternal}
             />
           </>
         ) : hasText ? (
@@ -362,18 +441,33 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             testid="lead-contact-email"
             label="Contact them"
             onClick={onEmailTap}
+            external={emailIsExternal}
           />
         )}
       </div>
 
       <div className="space-y-1" data-testid="handoff-helper">
-        <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-3)]">
-          Opens a draft on your phone. You choose whether to send.
-        </div>
-        <div className="text-[11px] leading-relaxed text-[var(--bh-ink-3)] inline-flex items-center gap-1.5" data-testid="handoff-iphone-hint">
-          <Smartphone size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
-          Open Bloodhound on your iPhone to text from your phone.
-        </div>
+        {hasEmail && emailIsExternal && (
+          <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)] inline-flex items-center gap-1.5" data-testid="handoff-email-pin">
+            <Mail size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
+            Emails always send from{" "}
+            <strong className="font-medium">{senderIdentity.email || DEFAULT_SENDER_EMAIL}</strong>{" "}
+            via {providerLabel}.
+          </div>
+        )}
+        {hasEmail && !emailIsExternal && (
+          <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-3)]" data-testid="handoff-email-mailto">
+            Opens a draft in your default mail app. Make sure it&rsquo;s signed
+            into <strong className="font-medium">{senderIdentity.email || DEFAULT_SENDER_EMAIL}</strong>.
+          </div>
+        )}
+        {hasText && (
+          <div className="text-[11px] leading-relaxed text-[var(--bh-ink-3)] inline-flex items-center gap-1.5" data-testid="handoff-iphone-hint">
+            <Smartphone size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
+            Texts open Messages on this device. Open Bloodhound on your iPhone to text from{" "}
+            {senderIdentity.phone || DEFAULT_SENDER_PHONE}.
+          </div>
+        )}
       </div>
 
       {/* Verified recipient(s) */}
@@ -414,7 +508,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
 
       <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
         <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
-        Nothing sends until you press Send on your phone.
+        Nothing sends until you press Send yourself.
       </div>
     </div>
   );

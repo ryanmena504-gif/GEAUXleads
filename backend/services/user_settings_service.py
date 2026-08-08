@@ -20,15 +20,21 @@ SINGLETON_KEY = "singleton"
 
 # Whitelist of keys Ryan can update. Anything else is silently dropped so
 # the endpoint can never be used as a general document editor.
-EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone"}
+EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"}
 
-# Ryan's fixed sender identity for The Shirtless Handyman. These are the
-# defaults every draft is seeded with; overrides are honoured if Ryan ever
-# edits them in Settings, but for the current setup this is the identity.
+# Allowed email-provider modes for building compose URLs. Gmail's compose
+# URL supports `authuser` which pins the sending account. Outlook Web has
+# a similar deeplink. Apple Mail falls back to plain mailto:.
+ALLOWED_EMAIL_PROVIDERS = {"gmail", "outlook", "apple"}
+
+# Ryan's fixed sender identity for The Shirtless Handyman. Custom domain +
+# Google Workspace, so Gmail is the default provider; the "compose" web
+# URL forces every draft to open pre-signed-into ryanmena@theshirtlesshandyman.com.
 DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
+    "email_provider": "gmail",
 }
 
 
@@ -69,6 +75,13 @@ class UserSettingsService:
                 # is either an accidental keystroke or an attack vector.
                 if s and ("@" not in s or "." not in s.split("@")[-1]):
                     raise ValueError("sender_email must look like an email address")
+            if k == "email_provider":
+                low = s.lower()
+                if low and low not in ALLOWED_EMAIL_PROVIDERS:
+                    raise ValueError(
+                        f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
+                    )
+                s = low
             clean[k] = s or None
         if not clean:
             return await self.get()

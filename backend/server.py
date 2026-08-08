@@ -798,6 +798,7 @@ class UserSettingsPatch(BaseModel):
     sender_email: Optional[str] = None
     sender_name: Optional[str] = None
     sender_phone: Optional[str] = None
+    email_provider: Optional[str] = None
 
 
 @api_router.get("/settings/user")
