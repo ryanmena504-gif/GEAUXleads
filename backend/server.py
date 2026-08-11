@@ -361,24 +361,21 @@ async def leads_readiness(lead_id: str):
 
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
+    action = (body.action or "").lower()
+    if action == "approve":
+        # Bloodhound is approval-only. The dashboard may create a device-native
+        # draft, but it must never approve or deliver outreach through a provider.
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Direct email delivery is disabled. Open a device-native draft, "
+                "send it yourself, then record the result in Bloodhound."
+            ),
+        )
+
     svc = _require_leads_service()
     if svc.get(lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
-    action = (body.action or "").lower()
-    if action == "approve":
-        if not body.confirm:
-            raise HTTPException(
-                status_code=400,
-                detail="Confirmation required for Approve — the operator must "
-                       "acknowledge the recipient and any warnings.",
-            )
-        try:
-            return svc.approve(lead_id,
-                               idempotency_key=body.idempotency_key,
-                               actor=body.actor,
-                               acknowledged_warnings=body.acknowledged_warnings)
-        except OutreachBlocked as exc:
-            return _blocked_response(exc)
     if action == "revert_approval":
         return svc.revert_approval(lead_id, actor=body.actor, reason=body.reason)
     if action == "hold":
