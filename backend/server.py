@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import get_leads_service, reset_leads_service
 from services.airtable_service import AirtableWriteError
-from services.email_service import send_outreach_email, EmailSendError
 from services.slack_service import (
     get_slack_alerter,
     is_configured as slack_is_configured,
@@ -354,7 +353,7 @@ async def cache_refresh():
 # ---------- Leads / Next Best Action ----------
 
 class LeadAction(BaseModel):
-    action: str  # approve | hold | skip | do_not_contact
+    action: str  # approve (disabled) | hold | skip | do_not_contact
     confirm: Optional[bool] = False
 
 
@@ -383,50 +382,23 @@ async def leads_next_best_action():
 
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
+    action = (body.action or "").lower()
+    if action == "approve":
+        # Bloodhound is approval-only. A dashboard approval must never become
+        # provider delivery: use the device-native draft handoff instead.
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Direct email delivery is disabled. Open a device-native draft, "
+                "send it yourself, then record the result in Bloodhound."
+            ),
+        )
+
     svc = get_leads_service()
     if not svc:
         raise HTTPException(status_code=503, detail="Leads service not available")
     if svc.get(lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
-    action = (body.action or "").lower()
-    if action == "approve":
-        # Two-phase: mark session-approved, then actually send the email.
-        session = svc.approve(lead_id)
-        gate = svc.can_send(lead_id)
-        if not gate["ok"]:
-            raise HTTPException(status_code=422, detail=gate["reason"])
-        lead = gate["lead"]
-        recipient = gate["recipient"]
-        email = svc.compose_email(lead)
-        try:
-            provider = await send_outreach_email(
-                recipient_email=recipient,
-                subject=email["subject"],
-                html_body=email["html"],
-                text_body=email["text"],
-                reply_to=os.environ.get("EMAIL_REPLY_TO"),
-            )
-        except EmailSendError as e:
-            # DO NOT mark sent — leave the lead in the approval queue.
-            raise HTTPException(status_code=e.status_code,
-                                detail=f"Email send failed: {e}")
-        persisted = svc.mark_sent(
-            lead_id,
-            sent_at_iso=session["approved_at"],
-            channel="Email",
-            first_message_written=email["text"] if email["used_fallback"] else None,
-        )
-        return {
-            "lead_id": lead_id,
-            "state": "sent",
-            "approved_at": session["approved_at"],
-            "channel": "Email",
-            "recipient": recipient,
-            "used_fallback_template": email["used_fallback"],
-            "provider_id": provider.get("id"),
-            "persisted": persisted,
-            "note": "Email sent to lead.",
-        }
     if action == "hold":
         return svc.hold(lead_id)
     if action == "skip":
