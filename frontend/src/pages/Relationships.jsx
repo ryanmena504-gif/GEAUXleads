@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import ContactBadge from "@/components/ContactBadge";
-import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import { PriorityBand } from "@/components/PriorityBadge";
 import { api } from "@/lib/api";
@@ -13,7 +12,6 @@ import {
   Handshake,
   Instagram,
   MapPin,
-  PenLine,
   PhoneCall,
 } from "lucide-react";
 
@@ -60,7 +58,7 @@ const PublicLinks = ({ person }) => {
   );
 };
 
-const PartnerCard = ({ person, linkedProjects, onDraft }) => {
+const PartnerCard = ({ person, linkedProjects }) => {
   const hasContact = Boolean(
     person.contact_phone || person.phone || person.contact_email || person.email,
   );
@@ -153,19 +151,6 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
                 <PhoneCall size={11} /> Needs a public phone or email
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => onDraft(person)}
-              data-testid={`partner-draft-${person.id}`}
-              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors"
-              style={{
-                background: "var(--bh-brass-mute)",
-                borderColor: "var(--bh-hair-warm)",
-                color: "var(--bh-brass)",
-              }}
-            >
-              <PenLine size={12} /> Draft a note
-            </button>
           </div>
         </div>
       </div>
@@ -175,7 +160,6 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
 
 const PartnerIntelligence = () => {
   const [items, setItems] = useState(null);
-  const [draftOpp, setDraftOpp] = useState(null);
 
   const load = useCallback(() => {
     api.listOpportunities().then(setItems).catch(() => setItems([]));
@@ -226,11 +210,10 @@ const PartnerIntelligence = () => {
           <div className="space-y-3">
             {partners.map((person) => (
               <PartnerCard
-                key={person.id}
-                person={person}
-                linkedProjects={projectMatchesFor(person, items)}
-                onDraft={setDraftOpp}
-              />
+              key={person.id}
+              person={person}
+              linkedProjects={projectMatchesFor(person, items)}
+            />
             ))}
           </div>
         ) : (

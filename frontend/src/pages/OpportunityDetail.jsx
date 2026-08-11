@@ -6,7 +6,6 @@ import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
-import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
@@ -28,7 +27,6 @@ import {
   XCircle,
   Gauge,
   Target,
-  PenLine,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -113,7 +111,6 @@ const OpportunityDetail = () => {
   const { id } = useParams();
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
-  const [draftOpen, setDraftOpen] = useState(false);
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
@@ -260,35 +257,11 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
-                {opp.lane === "partner" && (
-                  <button
-                    type="button"
-                    onClick={() => setDraftOpen(true)}
-                    data-testid="action-draft-note"
-                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
-                    style={{
-                      background: "var(--bh-brass-mute)",
-                      borderColor: "var(--bh-hair-warm)",
-                      color: "var(--bh-brass)",
-                    }}
-                  >
-                    <PenLine size={14} />
-                    Draft a note
-                  </button>
-                )}
                 </div>
               </div>
             </div>
           </div>
         </section>
-
-        {opp.lane === "partner" && (
-          <DraftNoteDrawer
-            open={draftOpen}
-            onOpenChange={setDraftOpen}
-            opportunity={opp}
-          />
-        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left col: Intelligence + Contact + Property */}
