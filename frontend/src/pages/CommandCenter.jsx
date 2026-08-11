@@ -73,14 +73,16 @@ const CommandCenter = () => {
     }
 
     const active = items.filter((opp) => !CLOSED_STATUSES.has(opp.status));
-    const contactToday = sortByPriority(
-      active.filter((opp) => opp.lane !== "partner" && hasPublicContact(opp)),
-    ).slice(0, 5);
+    // A public phone or email makes this actionable now, regardless of whether
+    // the record began life as a partner relationship or a project signal.
+    // Keep the home list mutually exclusive so the same business is not shown
+    // in several places at once.
+    const contactToday = sortByPriority(active.filter(hasPublicContact)).slice(0, 5);
     const projectsToWatch = sortByPriority(
       active.filter((opp) => opp.lane !== "partner" && !hasPublicContact(opp)),
     ).slice(0, 5);
     const peopleToKnow = sortByPriority(
-      active.filter((opp) => opp.lane === "partner"),
+      active.filter((opp) => opp.lane === "partner" && !hasPublicContact(opp)),
     ).slice(0, 4);
 
     return { contactToday, projectsToWatch, peopleToKnow };
