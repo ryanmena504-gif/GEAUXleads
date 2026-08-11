@@ -137,3 +137,32 @@ agent_communication:
     -message: "READ-ONLY smoke test only. Allowed (GET): /api/, /api/health, /api/config, /api/schema, /api/cache-status, /api/opportunities, /api/opportunities/lanes, /api/opportunities/top-by-lane, /api/opportunities/summary, /api/opportunities/missions, /api/opportunities/pipeline, /api/opportunities/recent, /api/opportunities/top, /api/opportunities/{id}, /api/leads/next-best-action, /api/live/status, /api/slack/alerts/status, /api/message-playbooks, /api/drafts, /api/drafts/queue, /api/drafts/{id}, /api/opportunities/{id}/handoffs, /api/handoffs/recent, /api/follow-ups/due, /api/kpis/monthly, /api/settings/user. FORBIDDEN (do NOT call): every POST/PATCH/PUT/DELETE incl. status/mission/activity/fields/result, cache-refresh, leads action, leads message, admin reload, airtable webhook, live reregister, playbook patch, draft create/patch/delete, handoff POST, settings PATCH. For /api/live/stream (SSE) only confirm it connects then disconnect immediately; do not hold open."
     -agent: "testing"
     -message: "READ-ONLY smoke test completed successfully. All 26 GET endpoints tested. 25/26 passed with 200 status codes and valid JSON responses. The /drafts endpoint requires opportunity_id query parameter by design (not a bug). All critical functionality verified: opportunities data retrieval (49 opportunities found), lanes (3 lanes), pipeline views, KPIs, settings, live status, SSE streaming, Slack integration status, message playbooks (3 playbooks), drafts queue, handoffs, and follow-ups. No write operations performed. Production Airtable data remains untouched. STRICT READ-ONLY constraint maintained. Backend API is fully operational."
+
+## ---- Safety commit edea355 verification (branch computer/simplified-relationship-flow) ----
+backend:
+  - task: "Disable direct provider outreach delivery (approve -> HTTP 410)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Safety commit edea355 applied. POST /api/leads/{lead_id}/action with {'action':'approve'} must return HTTP 410 (Gone) and MUST NOT send. No send_outreach_email import or Resend call should exist in server.py. All other actions (hold/skip/do_not_contact) unchanged. Outreach must remain approval-only + device-draft-only."
+        -working: true
+        -agent: "testing"
+        -comment: "SAFETY VERIFICATION PASSED (5/5 tests). PRIMARY: (1) POST /api/leads/fake123/action with {\"action\":\"approve\"} returned HTTP 410 with detail 'Direct email delivery is disabled. Open a device-native draft, send it yourself, then record the result in Bloodhound.' (2) POST /api/leads/recsiUt5bi7BtY9W2/action with {\"action\":\"approve\"} returned HTTP 410 with same detail message. CRITICAL CONFIRMATION: Both fake and real lead IDs return 410, proving approve is rejected BEFORE any lead lookup. No email delivery possible. SECONDARY: (3) hold action returned 200, (4) skip action returned 200, (5) do_not_contact without confirm returned 400 (confirmation required). All other actions work normally. Device-native draft handoff is enforced. Email delivery is DISABLED as expected."
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: "Verify safety fix. 1) POST /api/leads/{lead_id}/action with body {\"action\":\"approve\"} returns HTTP 410 and NOTHING is sent (no email delivery). Use any lead_id (even a made-up one is fine since approve is rejected before lookup). 2) Confirm hold/skip still behave (GET /api/leads/next-best-action to get a real lead id first; hold/skip return 200 or appropriate). 3) Do NOT trigger any real send. Report exact HTTP status codes."
+    -agent: "testing"
+    -message: "SAFETY VERIFICATION COMPLETE. All critical tests passed (5/5). The approve action correctly returns HTTP 410 for both fake and real lead IDs, confirming the rejection happens BEFORE any lead lookup. Response detail message clearly indicates 'Direct email delivery is disabled. Open a device-native draft, send it yourself, then record the result in Bloodhound.' No email sending is possible through this endpoint. All other actions (hold, skip, do_not_contact validation) work as expected. No writes to Airtable performed. Production data untouched. Safety fix is working correctly."
