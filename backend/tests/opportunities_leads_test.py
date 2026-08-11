@@ -8,7 +8,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hound-priorities.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://branch-verify-build.preview.emergentagent.com").rstrip("/")
 
 SAMPLE_NAMES = {"Uptown Colonial Rehab", "Warehouse District Loft"}
 
