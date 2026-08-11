@@ -1,92 +1,255 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
-import PreviewNotice from "@/components/PreviewNotice";
-import { Network, Users, GitBranch, Handshake } from "lucide-react";
+import ContactBadge from "@/components/ContactBadge";
+import DraftNoteDrawer from "@/components/DraftNoteDrawer";
+import OpenInMessages from "@/components/OpenInMessages";
+import { PriorityBand } from "@/components/PriorityBadge";
+import { api } from "@/lib/api";
+import { useLiveUpdates } from "@/hooks/useLiveUpdates";
+import {
+  ExternalLink,
+  Globe,
+  Handshake,
+  Instagram,
+  MapPin,
+  PenLine,
+  PhoneCall,
+} from "lucide-react";
 
-const Card = ({ icon: Icon, title, body }) => (
-  <div className="bh-surface rounded p-5">
-    <div className="w-9 h-9 rounded bh-surface-2 flex items-center justify-center">
-      <Icon size={16} className="text-amber-400" />
-    </div>
-    <div className="mt-3 font-display text-lg font-semibold text-neutral-100">
-      {title}
-    </div>
-    <p className="mt-1 text-sm text-neutral-400 leading-relaxed">{body}</p>
-  </div>
-);
+const normalizeCompany = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
-const Relationships = () => (
-  <>
-    <TopHeader
-      pageTitle="Relationships"
-      subtitle="The strongest path to every opportunity"
-    />
-    <div className="px-4 lg:px-8 py-6 space-y-6">
-      <section
-        data-testid="relationships-hero"
-        className="bh-surface rounded p-6 border-t border-t-amber-500/60"
-      >
-        <div className="mono text-[10px] uppercase tracking-widest text-amber-400">
-          Coming soon
+const projectMatchesFor = (partner, allItems) => {
+  const key = normalizeCompany(partner.company);
+  if (!key) return [];
+  return allItems.filter(
+    (item) =>
+      item.id !== partner.id &&
+      item.lane !== "partner" &&
+      normalizeCompany(item.company) === key,
+  );
+};
+
+const PublicLinks = ({ person }) => {
+  const links = [
+    { label: "Website", url: person.contact_website || person.website, icon: Globe },
+    { label: "Instagram", url: person.contact_instagram || person.instagram, icon: Instagram },
+    { label: "Public record", url: person.source_url, icon: ExternalLink },
+  ].filter((link) => link.url);
+
+  if (!links.length) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2">
+      {links.map(({ label, url, icon: Icon }) => (
+        <a
+          key={`${label}-${url}`}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid={`partner-link-${label.toLowerCase()}-${person.id}`}
+          className="inline-flex items-center gap-1 text-[12px] text-sky-300 hover:text-sky-200"
+        >
+          <Icon size={12} /> {label}
+        </a>
+      ))}
+    </div>
+  );
+};
+
+const PartnerCard = ({ person, linkedProjects, onDraft }) => {
+  const hasContact = Boolean(
+    person.contact_phone || person.phone || person.contact_email || person.email,
+  );
+
+  return (
+    <article
+      data-testid={`partner-row-${person.id}`}
+      className="bh-surface rounded-md p-5 border-t border-t-emerald-500/50"
+    >
+      <div className="flex items-start gap-4">
+        <div className="hidden sm:flex w-[110px] shrink-0 flex-col gap-2 pt-0.5">
+          <PriorityBand band={person.priority_band} score={person.priority_score} />
+          <ContactBadge opportunity={person} />
         </div>
-        <h2 className="mt-2 font-display text-3xl font-bold text-neutral-100 tracking-tight max-w-2xl">
-          Who is the strongest relationship path to help win this opportunity?
-        </h2>
-        <p className="mt-3 text-sm text-neutral-400 max-w-2xl leading-relaxed">
-          A living graph of your past clients, subs, suppliers, and mutual
-          connections — Bloodhound will surface the warmest introduction path to
-          any lead so you never have to cold-outreach a high-value opportunity again.
-        </p>
-      </section>
 
-      <section className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
-        <Card
-          icon={Users}
-          title="Past Clients"
-          body="Every past client becomes a node. Bloodhound looks for shared streets, ZIPs, and property types with new opportunities."
-        />
-        <Card
-          icon={Network}
-          title="Mutual Connections"
-          body="Find the one person who can send a text and turn a cold lead into a warm intro."
-        />
-        <Card
-          icon={GitBranch}
-          title="Referral Paths"
-          body="Ranked intro paths with an estimated close-rate lift for each."
-        />
-        <Card
-          icon={Handshake}
-          title="Trade Partners"
-          body="Track subs, architects, and suppliers who consistently push work your way."
-        />
-      </section>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={`/opportunities/${person.id}`}
+              data-testid={`partner-open-${person.id}`}
+              className="font-display text-[18px] font-semibold tracking-tight text-[var(--bh-ink)] hover:text-amber-300"
+            >
+              {person.name || person.company || "Unnamed business"}
+            </Link>
+            {person.company && person.company !== person.name && (
+              <span className="text-[12px] text-[var(--bh-ink-mute)]">{person.company}</span>
+            )}
+          </div>
 
-      <section className="bh-surface rounded p-6" data-testid="relationships-mock">
-        <PreviewNotice detail="Fictional names and a fictional intro path, shown to illustrate the intended layout. No relationship graph is computed yet.">
-          <h3 className="font-display text-xl font-bold text-neutral-400">
-            Example opportunity
-          </h3>
-          <div className="mt-4 flex items-center gap-3 flex-wrap">
-            {["You", "Example contact", "Example owner"].map((n, i) => (
-              <React.Fragment key={n}>
-                <div className="bh-surface-2 rounded px-3 py-2 min-w-[140px]">
-                  <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
-                    Node {i + 1}
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-[var(--bh-ink-mute)]">
+            {person.project_type && <span>{person.project_type}</span>}
+            {person.project_address && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin size={12} /> {person.project_address}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="bh-eyebrow">Why this matters</div>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--bh-ink-2)]">
+                {person.recommendation_reason || person.evidence_summary || "Public business record saved for review."}
+              </p>
+            </div>
+            <div>
+              <div className="bh-eyebrow">Public project connection</div>
+              {linkedProjects.length ? (
+                <div className="mt-1 text-sm leading-relaxed text-[var(--bh-ink-2)]">
+                  {linkedProjects.length} public project{linkedProjects.length === 1 ? "" : "s"} tied to
+                  this exact company name:
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                    {linkedProjects.slice(0, 3).map((project) => (
+                      <Link
+                        key={project.id}
+                        to={`/opportunities/${project.id}`}
+                        className="text-sky-300 hover:text-sky-200"
+                      >
+                        {project.name}
+                      </Link>
+                    ))}
                   </div>
-                  <div className="text-sm text-neutral-400">{n}</div>
                 </div>
-                {i < 2 && <div className="text-amber-400/50 mono text-xs">──▶</div>}
-              </React.Fragment>
+              ) : (
+                <p className="mt-1 text-sm leading-relaxed text-[var(--bh-ink-3)]">
+                  No exact company-to-project match has been saved yet. This stays a business
+                  relationship to watch, not a claimed job connection.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {person.recommended_action || person.next_best_action ? (
+            <div className="mt-3 rounded-md bg-[var(--bh-surface-2)] px-3 py-2 text-[13px] text-[var(--bh-ink-2)]">
+              <span className="bh-eyebrow mr-2">What to do next</span>
+              {person.recommended_action || person.next_best_action}
+            </div>
+          ) : null}
+
+          <PublicLinks person={person} />
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="sm:hidden">
+              <ContactBadge opportunity={person} />
+            </div>
+            {hasContact ? (
+              <OpenInMessages opportunity={person} variant="pill" />
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full border bh-hairline px-2.5 py-1 text-[11px] text-[var(--bh-ink-mute)]">
+                <PhoneCall size={11} /> Needs a public phone or email
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => onDraft(person)}
+              data-testid={`partner-draft-${person.id}`}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors"
+              style={{
+                background: "var(--bh-brass-mute)",
+                borderColor: "var(--bh-hair-warm)",
+                color: "var(--bh-brass)",
+              }}
+            >
+              <PenLine size={12} /> Draft a note
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+};
+
+const PartnerIntelligence = () => {
+  const [items, setItems] = useState(null);
+  const [draftOpp, setDraftOpp] = useState(null);
+
+  const load = useCallback(() => {
+    api.listOpportunities().then(setItems).catch(() => setItems([]));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+  useLiveUpdates(load);
+
+  const partners = useMemo(
+    () =>
+      (items || [])
+        .filter((item) => item.lane === "partner")
+        .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0)),
+    [items],
+  );
+
+  return (
+    <>
+      <TopHeader
+        pageTitle="People to Know"
+        subtitle="Business relationships that may bring repeat work."
+      />
+      <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-5">
+        <section
+          data-testid="partner-hero"
+          className="bh-surface rounded-md p-5 border-t border-t-emerald-500/60"
+        >
+          <div className="bh-eyebrow inline-flex items-center gap-1.5">
+            <Handshake size={12} /> Relationship map
+          </div>
+          <h2 className="mt-2 font-display text-xl font-semibold tracking-tight text-[var(--bh-ink)]">
+            People, proof, and the next step in one place.
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--bh-ink-3)]">
+            Bloodhound only shows a project connection when the exact public business name
+            matches a saved public project record. A public website or social link stays visible
+            so you can judge the fit yourself.
+          </p>
+        </section>
+
+        {items === null ? (
+          <div className="bh-surface rounded-md p-8 text-sm text-[var(--bh-ink-mute)]">
+            Loading people to know…
+          </div>
+        ) : partners.length ? (
+          <div className="space-y-3">
+            {partners.map((person) => (
+              <PartnerCard
+                key={person.id}
+                person={person}
+                linkedProjects={projectMatchesFor(person, items)}
+                onDraft={setDraftOpp}
+              />
             ))}
           </div>
-          <div className="mt-4 text-xs text-neutral-600">
-            Each path will carry a computed confidence once the graph is built.
+        ) : (
+          <div
+            data-testid="partner-empty"
+            className="bh-surface rounded-md p-8 text-sm text-[var(--bh-ink-mute)]"
+          >
+            No business partners are ready to review yet.
           </div>
-        </PreviewNotice>
-      </section>
-    </div>
-  </>
-);
+        )}
 
-export default Relationships;
+        <DraftNoteDrawer
+          open={Boolean(draftOpp)}
+          onOpenChange={(open) => !open && setDraftOpp(null)}
+          opportunity={draftOpp}
+        />
+      </main>
+    </>
+  );
+};
+
+export default PartnerIntelligence;
