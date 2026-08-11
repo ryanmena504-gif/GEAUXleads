@@ -101,3 +101,39 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+user_problem_statement: "Pulled branch computer/simplified-relationship-flow into preview. User requested a READ-ONLY automated smoke test of backend endpoints. STRICT constraint: no writes/updates/creates to Airtable, no drafts, no message sends, no outreach activation. Production must remain untouched."
+
+backend:
+  - task: "Read-only smoke test of GET endpoints"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Requesting READ-ONLY smoke test. Test ONLY GET endpoints listed in test_plan. DO NOT call any POST/PATCH/PUT/DELETE endpoints. DO NOT write to Airtable, create/open drafts, send messages, log handoffs, or activate outreach."
+        -working: true
+        -agent: "testing"
+        -comment: "READ-ONLY smoke test completed successfully. Tested 26 GET endpoints. Results: 25/26 passed. All critical endpoints working. Base endpoints (/, /health, /config, /schema, /cache-status) all return 200. Opportunities endpoints (list, lanes, top-by-lane, summary, missions, pipeline, recent, top, detail, handoffs) all working. Leads next-best-action working. Live status and SSE stream working (connected and immediately disconnected as required). Slack alerts status working. Message playbooks working. Drafts queue working. Handoffs recent working. Follow-ups due working. KPIs monthly working. Settings user working. Note: /drafts endpoint requires opportunity_id query parameter (returns 422 without it) - this is expected API design, not a bug. When tested with parameter (?opportunity_id=recCGVbFaQ48Vd3C5), returns 200 with empty drafts array. No write operations performed. Production data untouched. STRICT READ-ONLY constraint maintained throughout testing."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Read-only smoke test of GET endpoints"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: "READ-ONLY smoke test only. Allowed (GET): /api/, /api/health, /api/config, /api/schema, /api/cache-status, /api/opportunities, /api/opportunities/lanes, /api/opportunities/top-by-lane, /api/opportunities/summary, /api/opportunities/missions, /api/opportunities/pipeline, /api/opportunities/recent, /api/opportunities/top, /api/opportunities/{id}, /api/leads/next-best-action, /api/live/status, /api/slack/alerts/status, /api/message-playbooks, /api/drafts, /api/drafts/queue, /api/drafts/{id}, /api/opportunities/{id}/handoffs, /api/handoffs/recent, /api/follow-ups/due, /api/kpis/monthly, /api/settings/user. FORBIDDEN (do NOT call): every POST/PATCH/PUT/DELETE incl. status/mission/activity/fields/result, cache-refresh, leads action, leads message, admin reload, airtable webhook, live reregister, playbook patch, draft create/patch/delete, handoff POST, settings PATCH. For /api/live/stream (SSE) only confirm it connects then disconnect immediately; do not hold open."
+    -agent: "testing"
+    -message: "READ-ONLY smoke test completed successfully. All 26 GET endpoints tested. 25/26 passed with 200 status codes and valid JSON responses. The /drafts endpoint requires opportunity_id query parameter by design (not a bug). All critical functionality verified: opportunities data retrieval (49 opportunities found), lanes (3 lanes), pipeline views, KPIs, settings, live status, SSE streaming, Slack integration status, message playbooks (3 playbooks), drafts queue, handoffs, and follow-ups. No write operations performed. Production Airtable data remains untouched. STRICT READ-ONLY constraint maintained. Backend API is fully operational."
