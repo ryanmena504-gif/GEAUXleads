@@ -83,6 +83,13 @@ class FieldUpdate(BaseModel):
     outcome: Optional[str] = None
 
 
+class ResultUpdate(BaseModel):
+    """A human-confirmed outcome. This never opens or sends a message."""
+    event: str
+    channel: Optional[str] = None
+    note: Optional[str] = None
+
+
 @api_router.get("/")
 async def root():
     return {"service": "Bloodhound Intelligence API", "status": "online"}
@@ -254,6 +261,57 @@ async def update_fields(opp_id: str, body: FieldUpdate):
         for k in ("ryans_decision", "next_follow_up", "outcome"):
             if k in payload and updated is not None:
                 updated[k] = payload[k]
+    if not updated:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    return updated
+
+
+@api_router.post("/opportunities/{opp_id}/result")
+async def record_result(opp_id: str, body: ResultUpdate):
+    """Persist a result only after Ryan explicitly confirms it in the app."""
+    event = (body.event or "").strip().lower()
+    channel = (body.channel or "").strip()
+    if event not in {"sent", "replied", "estimate_requested", "not_interested", "no_response"}:
+        raise HTTPException(status_code=422, detail="Unknown result")
+    if channel and channel not in {"Text", "Email", "Call", "Other"}:
+        raise HTTPException(status_code=422, detail="Unknown contact method")
+
+    now = datetime.now(timezone.utc).isoformat()
+    updates: Dict[str, Any] = {}
+    if event == "sent":
+        updates = {
+            "outreach_status": "Sent",
+            "outreach_channel": channel or "Other",
+            "message_sent_date": now,
+            "date_contacted": now,
+        }
+    elif event == "replied":
+        updates = {
+            "outreach_status": "Replied",
+            "reply_classification": "Needs more information",
+            "reply_summary": body.note or "Reply received",
+            "date_replied": now,
+        }
+    elif event == "estimate_requested":
+        updates = {
+            "reply_classification": "Interested",
+            "reply_summary": body.note or "Estimate requested",
+            "date_replied": now,
+        }
+    elif event == "not_interested":
+        updates = {
+            "reply_classification": "Not interested",
+            "reply_summary": body.note or "Not interested",
+            "date_replied": now,
+        }
+    elif event == "no_response":
+        updates = {"outreach_status": "No response"}
+
+    svc = get_opportunity_service()
+    try:
+        updated = svc.update_fields(opp_id, updates) if hasattr(svc, "update_fields") else None
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated

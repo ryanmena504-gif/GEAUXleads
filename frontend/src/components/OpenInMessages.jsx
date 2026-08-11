@@ -13,8 +13,8 @@ import { useUserSettings } from "@/hooks/useUserSettings";
  *             first; a follow-up "Open email draft" button appears so the
  *             user can hand off to Mail themselves after returning.
  *
- * ZERO backend writes. Nothing is sent, scheduled, or logged when any of
- * these buttons is tapped. Approval-only policy intact.
+ * Draft handoffs are logged separately from confirmed results. Nothing is
+ * sent, scheduled, or marked sent when a draft is opened.
  */
 
 // Default sender identity — Ryan's fixed business phone + email for The
@@ -25,7 +25,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 const DEFAULT_SENDER_EMAIL = "ryanmena@theshirtlesshandyman.com";
 const DEFAULT_SENDER_NAME = "Ryan Mena";
 const DEFAULT_SENDER_PHONE = "(504) 264-4919";
-const DEFAULT_EMAIL_PROVIDER = "gmail";
+const DEFAULT_EMAIL_PROVIDER = "apple";
 const EMAIL_SUBJECT = "Quick question about your project";
 
 /**
@@ -176,7 +176,9 @@ export const resolveContacts = (opp, senderIdentity, emailProvider) => {
   const senderName = senderIdentity?.name;
   const senderEmail = senderIdentity?.email;
   const senderPhone = senderIdentity?.phone;
-  const provider = emailProvider || DEFAULT_EMAIL_PROVIDER;
+  // Native Mail is deliberate. The previous Gmail web default sometimes
+  // opened an inbox in Safari rather than a compose screen on iPhone.
+  const provider = emailProvider === "outlook" ? "outlook" : "apple";
 
   let textHref = null;
   let textDisplay = null;
@@ -287,7 +289,9 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
     email: settings?.sender_email,
     phone: settings?.sender_phone,
   };
-  const emailProvider = (settings?.email_provider || DEFAULT_EMAIL_PROVIDER).toLowerCase();
+  const emailProvider = (settings?.email_provider || DEFAULT_EMAIL_PROVIDER).toLowerCase() === "outlook"
+    ? "outlook"
+    : "apple";
   const contacts = resolveContacts(opportunity, senderIdentity, emailProvider);
   const hasText = !!contacts.text;
   const hasEmail = !!contacts.email;

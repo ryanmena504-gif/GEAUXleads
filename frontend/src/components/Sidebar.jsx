@@ -1,49 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
   Sun,
   FileText,
-  ListChecks,
   Users,
-  BookOpen,
   Sliders,
-  Inbox,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
-import { api } from "@/lib/api";
-import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 
-// Route paths preserved; visible labels rebranded to owner-operated,
-// architectural language. No two-letter call signs, no tactical rails.
 const nav = [
-  { to: "/", label: "Today's Work", icon: Sun },
-  { to: "/opportunities", label: "Project List", icon: FileText },
-  { to: "/missions", label: "Follow-Ups", icon: ListChecks },
+  { to: "/", label: "Today", icon: Sun },
+  { to: "/opportunities", label: "All Projects", icon: FileText },
   { to: "/relationships", label: "People to Know", icon: Users },
-  { to: "/intelligence", label: "Projects to Watch", icon: BookOpen },
-  { to: "/review-queue", label: "Needs a Look", icon: Inbox, showCount: true },
   { to: "/settings", label: "Settings", icon: Sliders },
 ];
 
 export const Sidebar = () => {
-  const [readyCount, setReadyCount] = useState(0);
-
-  const refreshCount = React.useCallback(() => {
-    api
-      .listDraftQueue("Ready for Ryan review", 1)
-      .then((d) => setReadyCount(d?.counts?.["Ready for Ryan review"] || 0))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    refreshCount();
-    const t = setInterval(refreshCount, 45000);
-    return () => clearInterval(t);
-  }, [refreshCount]);
-  useLiveUpdates(refreshCount);
-
   return (
     <aside
       data-testid="sidebar"
@@ -72,19 +46,6 @@ export const Sidebar = () => {
           >
             <item.icon size={15} strokeWidth={1.75} />
             <span className="flex-1 font-medium tracking-tight">{item.label}</span>
-            {item.showCount && readyCount > 0 && (
-              <span
-                data-testid="nav-review-queue-count"
-                className="text-[10.5px] font-medium tabular-nums px-1.5 py-0.5 rounded-full"
-                style={{
-                  background: "var(--bh-brass-mute)",
-                  color: "var(--bh-brass)",
-                  border: "1px solid var(--bh-hair-warm)",
-                }}
-              >
-                {readyCount}
-              </span>
-            )}
           </NavLink>
         ))}
       </nav>

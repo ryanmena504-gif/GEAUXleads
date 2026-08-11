@@ -8,6 +8,7 @@ import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
+import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import {
@@ -23,7 +24,6 @@ import {
   Clock3,
   CheckCircle2,
   Send,
-  ClipboardList,
   Trophy,
   XCircle,
   Gauge,
@@ -32,9 +32,7 @@ import {
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
-  { label: "Mark contacted", status: "Conversation started", icon: Send, tone: "primary" },
   { label: "Get more info first", status: "Needs research", icon: Search, tone: "ghost" },
-  { label: "Estimate requested", status: "Estimate requested", icon: ClipboardList, tone: "ghost" },
   { label: "Won", status: "Won", icon: Trophy, tone: "success" },
   { label: "Lost", status: "Lost", icon: XCircle, tone: "danger" },
 ];
@@ -234,9 +232,9 @@ const OpportunityDetail = () => {
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
                 <OpenInMessages opportunity={opp} variant="panel" />
+                <ContactResults opportunity={opp} onSaved={setOpp} />
                 <div className="space-y-1.5 pt-1">
                 {ACTION_BUTTONS.map((a) => {
-                  const isMarkContacted = a.label === "Mark Contacted";
                   return (
                     <React.Fragment key={a.status}>
                       <button
@@ -259,25 +257,25 @@ const OpportunityDetail = () => {
                         <a.icon size={14} />
                         {a.label}
                       </button>
-                      {isMarkContacted && opp.lane === "partner" && (
-                        <button
-                          type="button"
-                          onClick={() => setDraftOpen(true)}
-                          data-testid="action-draft-note"
-                          className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
-                          style={{
-                            background: "var(--bh-brass-mute)",
-                            borderColor: "var(--bh-hair-warm)",
-                            color: "var(--bh-brass)",
-                          }}
-                        >
-                          <PenLine size={14} />
-                          Draft a note
-                        </button>
-                      )}
                     </React.Fragment>
                   );
                 })}
+                {opp.lane === "partner" && (
+                  <button
+                    type="button"
+                    onClick={() => setDraftOpen(true)}
+                    data-testid="action-draft-note"
+                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
+                    style={{
+                      background: "var(--bh-brass-mute)",
+                      borderColor: "var(--bh-hair-warm)",
+                      color: "var(--bh-brass)",
+                    }}
+                  >
+                    <PenLine size={14} />
+                    Draft a note
+                  </button>
+                )}
                 </div>
               </div>
             </div>

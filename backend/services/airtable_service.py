@@ -181,15 +181,8 @@ EXPLICIT_READONLY: set = {
     "Confidence score",
     "Lead score",
     "Enrichment status",
-    "Reply summary",
-    "Reply classification",
     "Verified opportunity",
     "Qualified opportunity",
-    "Outreach sent",
-    "Reply received",
-    "Positive conversation",
-    "Estimate opportunity",
-    "Job won",
     "Closed revenue",
     "Estimated gross profit",
     "SMS Permission",
@@ -210,6 +203,12 @@ EDITABLE_FIELDS = {
     "Notes",
     "Approval status",
     "Outreach status",
+    "Outreach channel",
+    "Message sent date",
+    "Date contacted",
+    "Reply classification",
+    "Reply summary",
+    "Date replied",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -223,6 +222,12 @@ WRITE_ALIAS: Dict[str, str] = {
     "notes": "Notes",
     "approval_status": "Approval status",
     "outreach_status": "Outreach status",
+    "outreach_channel": "Outreach channel",
+    "message_sent_date": "Message sent date",
+    "date_contacted": "Date contacted",
+    "reply_classification": "Reply classification",
+    "reply_summary": "Reply summary",
+    "date_replied": "Date replied",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.

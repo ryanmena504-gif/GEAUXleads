@@ -27,14 +27,14 @@ EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"
 # a similar deeplink. Apple Mail falls back to plain mailto:.
 ALLOWED_EMAIL_PROVIDERS = {"gmail", "outlook", "apple"}
 
-# Ryan's fixed sender identity for The Shirtless Handyman. Custom domain +
-# Google Workspace, so Gmail is the default provider; the "compose" web
-# URL forces every draft to open pre-signed-into ryanmena@theshirtlesshandyman.com.
+# Ryan's fixed sender identity for The Shirtless Handyman. Native device
+# handoff is the default: it opens the mail composer configured on the iPhone
+# Ryan is actually using instead of a web inbox on a borrowed tablet.
 DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
-    "email_provider": "gmail",
+    "email_provider": "apple",
 }
 
 
@@ -59,7 +59,13 @@ class UserSettingsService:
 
     async def get(self) -> Dict[str, Any]:
         doc = await self._col.find_one({"key": SINGLETON_KEY})
-        return self._serialize(doc)
+        settings = self._serialize(doc)
+        # Gmail was a legacy default that can open an inbox instead of a
+        # compose window on iPhone. Move that default to native Mail. An
+        # explicit future Outlook choice is still respected.
+        if settings.get("email_provider") == "gmail":
+            settings["email_provider"] = "apple"
+        return settings
 
     async def update(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         clean: Dict[str, Any] = {}

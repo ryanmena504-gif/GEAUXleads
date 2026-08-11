@@ -25,6 +25,8 @@ export const api = {
       .then((r) => r.data),
   updateFields: (id, patch) =>
     client.patch(`/opportunities/${id}/fields`, patch).then((r) => r.data),
+  recordResult: (id, payload) =>
+    client.post(`/opportunities/${id}/result`, payload).then((r) => r.data),
   addActivity: (id, type, note) =>
     client
       .post(`/opportunities/${id}/activity`, { type, note })
