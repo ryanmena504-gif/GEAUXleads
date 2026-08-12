@@ -10,6 +10,7 @@ import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
+import { needsConfirmation } from "@/lib/priority";
 import {
   ArrowLeft,
   MapPin,
@@ -29,14 +30,18 @@ import {
   Gauge,
   Target,
   PenLine,
+  AlertTriangle,
 } from "lucide-react";
 
-const ACTION_BUTTONS = [
-  { label: "Mark contacted", status: "Conversation started", icon: Send, tone: "primary" },
-  { label: "Get more info first", status: "Needs research", icon: Search, tone: "ghost" },
-  { label: "Estimate requested", status: "Estimate requested", icon: ClipboardList, tone: "ghost" },
-  { label: "Won", status: "Won", icon: Trophy, tone: "success" },
-  { label: "Lost", status: "Lost", icon: XCircle, tone: "danger" },
+// Five manual result buttons — Ryan taps AFTER a real-world action.
+// Opening a draft never touches these; only a deliberate tap sends the
+// result to Airtable via /api/opportunities/{id}/result.
+const RESULT_BUTTONS = [
+  { label: "I sent it",          result: "sent",               icon: Send,          tone: "primary" },
+  { label: "They replied",       result: "replied",            icon: CheckCircle2,  tone: "success" },
+  { label: "Estimate requested", result: "estimate_requested", icon: ClipboardList, tone: "ghost" },
+  { label: "No reply yet",       result: "no_reply",           icon: Search,        tone: "ghost" },
+  { label: "Not interested",     result: "not_interested",     icon: XCircle,       tone: "danger" },
 ];
 
 const activityIcon = (t) => {
@@ -134,6 +139,20 @@ const OpportunityDetail = () => {
     }
   };
 
+  const handleResult = async (result, label) => {
+    setBusy(result);
+    try {
+      const res = await api.recordResult(id, result);
+      if (res?.opportunity) setOpp(res.opportunity);
+      toast.success(`Saved: ${label}`);
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Could not save result";
+      toast.error(msg);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!opp) {
     return (
       <>
@@ -158,6 +177,30 @@ const OpportunityDetail = () => {
         >
           <ArrowLeft size={13} /> Back to Project List
         </Link>
+
+        {/* Needs confirmation — Airtable history says something was sent but
+            Ryan never tapped a result button. Prompt him to resolve. */}
+        {needsConfirmation(opp) && (
+          <div
+            data-testid="needs-confirmation-banner"
+            className="rounded-md border p-4 flex items-start gap-3"
+            style={{
+              background: "var(--bh-brass-mute)",
+              borderColor: "var(--bh-hair-warm)",
+              color: "var(--bh-brass)",
+            }}
+          >
+            <AlertTriangle size={16} strokeWidth={1.75} className="shrink-0 mt-0.5" />
+            <div className="text-[13.5px] leading-relaxed">
+              <div className="font-medium">Needs confirmation</div>
+              <div className="text-[12.5px] text-[var(--bh-ink-2)] mt-0.5">
+                The record shows outreach history, but nothing has been
+                confirmed. Tap one of the result buttons below (I sent it,
+                They replied, No reply yet, etc.) to keep the tracker honest.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Hero */}
         <section
@@ -235,49 +278,50 @@ const OpportunityDetail = () => {
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
                 <OpenInMessages opportunity={opp} variant="panel" />
                 <div className="space-y-1.5 pt-1">
-                {ACTION_BUTTONS.map((a) => {
-                  const isMarkContacted = a.label === "Mark Contacted";
+                {RESULT_BUTTONS.map((a) => {
                   return (
-                    <React.Fragment key={a.status}>
-                      <button
-                        data-testid={`action-${a.status}`}
-                        disabled={busy === a.status || opp.status === a.status}
-                        onClick={() => handleStatus(a.status)}
-                        className={
-                          "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
-                          (a.tone === "primary"
-                            ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
-                            : a.tone === "success"
-                              ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
-                              : a.tone === "danger"
-                                ? "border bh-hairline text-red-300 hover:bg-red-500/10"
-                                : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
-                          (opp.status === a.status ? " opacity-40" : "") +
-                          " disabled:cursor-not-allowed"
-                        }
-                      >
-                        <a.icon size={14} />
-                        {a.label}
-                      </button>
-                      {isMarkContacted && opp.lane === "partner" && (
-                        <button
-                          type="button"
-                          onClick={() => setDraftOpen(true)}
-                          data-testid="action-draft-note"
-                          className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
-                          style={{
-                            background: "var(--bh-brass-mute)",
-                            borderColor: "var(--bh-hair-warm)",
-                            color: "var(--bh-brass)",
-                          }}
-                        >
-                          <PenLine size={14} />
-                          Draft a note
-                        </button>
-                      )}
-                    </React.Fragment>
+                    <button
+                      key={a.result}
+                      data-testid={`result-${a.result}`}
+                      disabled={busy === a.result}
+                      onClick={() => handleResult(a.result, a.label)}
+                      className={
+                        "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
+                        (a.tone === "primary"
+                          ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
+                          : a.tone === "success"
+                            ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
+                            : a.tone === "danger"
+                              ? "border bh-hairline text-red-300 hover:bg-red-500/10"
+                              : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
+                        " disabled:cursor-not-allowed disabled:opacity-50"
+                      }
+                    >
+                      <a.icon size={14} />
+                      {a.label}
+                    </button>
                   );
                 })}
+                <p className="text-[11px] text-[var(--bh-ink-3)] leading-relaxed pt-1">
+                  Only tap these after you personally sent, received a reply,
+                  or heard back. Opening a draft never records anything.
+                </p>
+                {opp.lane === "partner" && (
+                  <button
+                    type="button"
+                    onClick={() => setDraftOpen(true)}
+                    data-testid="action-draft-note"
+                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150 mt-3"
+                    style={{
+                      background: "var(--bh-brass-mute)",
+                      borderColor: "var(--bh-hair-warm)",
+                      color: "var(--bh-brass)",
+                    }}
+                  >
+                    <PenLine size={14} />
+                    Draft a note
+                  </button>
+                )}
                 </div>
               </div>
             </div>

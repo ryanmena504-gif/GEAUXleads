@@ -62,6 +62,10 @@ export const api = {
     client.patch(`/drafts/${id}`, patch).then((r) => r.data),
   deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
 
+  // Manual result-tracking — Ryan taps AFTER a real-world touch.
+  recordResult: (opp_id, result) =>
+    client.post(`/opportunities/${opp_id}/result`, { result }).then((r) => r.data),
+
   logHandoff: (opp_id, payload) =>
     client
       .post(`/opportunities/${opp_id}/handoff`, payload)

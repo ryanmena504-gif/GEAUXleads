@@ -1,88 +1,79 @@
-# BLOODHOUND: AI Opportunity Intelligence — PRD
+# BLOODHOUND — AI Opportunity Intelligence · PRD
 
-## Original problem statement
-Premium full-stack app for The Shirtless Handyman (Ryan Mena) that discovers,
-understands, and prioritizes business opportunities, partners, and market
-signals from an Airtable base. **All outreach is native-only** — `sms:`,
-`mailto:`, and provider compose URLs (Gmail/Outlook Web). Nothing sends
-automatically; Ryan always presses Send himself.
+## Original problem
+A premium full-stack app for contractors (Ryan) that discovers, understands, and
+prioritizes business opportunities and partners. Airtable `Leads` table is the
+source of truth. Everything outbound is **native iOS handoff only** (`sms:` and
+`mailto:`). **No automated backend sending** (no Resend, Twilio, Gmail APIs).
 
-## User
-- **Ryan Mena** — owner-operator contractor. iPhone + Mac. Fixed sender identity:
-  ryanmena@theshirtlesshandyman.com · (504) 264-4919 · Gmail (Google Workspace).
+## Product principles
+- Plain English everywhere. Hide scores/bands/database jargon.
+- Manual result buttons are the ONLY way outreach status advances.
+- Opening a draft NEVER writes to Airtable.
+- Strict "Contact ready" evidence gate on the Today page.
+- Ryan's identity is locked; other users are read-only.
 
-## Core rules
-- Airtable Leads table is the source of truth.
-- Live via webhook → SSE → frontend refetch.
-- No provider sending. No Resend/Twilio/Gmail API/iMessage APIs. No Apple
-  account integration. Approval-only, always.
-- Every outreach flows through a plain `sms:`, `mailto:`, or provider
-  compose URL (Gmail authuser= or Outlook deeplink).
+## Core requirements (implemented)
+- **4-item navigation** (Sidebar + BottomNav): Today · All Projects · People to
+  Know · Settings.
+- **Today page = exactly 3 sections** (above them: a "Won this month" KPI strip):
+  1. People to contact today — strict contact-ready gate: verified public phone
+     or email + premium-fit evidence + source URL + date checked + no history
+     conflict.
+  2. Projects to watch — premium fit but no verified phone/email yet.
+  3. People to know — partners (lane=partner) preview → link to /relationships.
+- **Manual result buttons** on `/opportunities/:id`:
+  - `sent` → Outreach status="Sent by Ryan" · status intentionally NOT advanced
+  - `replied` → Outreach status="Reply received" · status="Conversation started"
+  - `estimate_requested` → status="Estimate requested"
+  - `no_reply` → Outreach status="No reply yet" · status unchanged
+  - `not_interested` → Outreach status="Not interested" · status="Disqualified"
+- **Needs confirmation banner** on detail page: shown when the record has
+  outreach history (flag_outreach_sent OR outreach_status contains sent/reply/
+  no reply) AND status is still ambiguous (New / Needs research / Ready).
+- **No auto-save on draft open**: writes are gated by `EDITABLE_FIELDS`
+  allowlist in `airtable_service.py`; handoff endpoint writes to Mongo only.
+- **Follow-up sequencing** ("Time to nudge") + monthly KPIs endpoint exist and
+  are usable across the app (still surfaced within detail flow / kpi strip).
 
-## Tech stack
-- Frontend: React 18 + Tailwind + Shadcn/UI
-- Backend: FastAPI + PyAirtable + Motor (MongoDB)
-- Data: Airtable (leads, playbooks) + MongoDB (drafts, handoffs, user_settings)
+## Recent changelog
+- 2026-02-11 — Feature branch `feature/bloodhound-production-cleanup`
+  - Rewrote `CommandCenter.jsx` into strict 3-section layout.
+  - Added `contactReady`, `hasPremiumFit`, `needsConfirmation` helpers in
+    `frontend/src/lib/priority.js`.
+  - Added Needs confirmation banner to `OpportunityDetail.jsx`.
+  - Fixed `_derive_status` in `airtable_service.py` to honor `outreach_status`
+    so manual result taps (replied/not_interested/estimate_requested) are not
+    silently overridden by other signal flags on the read path.
+- 2026-02 (prior sessions) — 4-item nav rewired · POST /api/opportunities/{id}/
+  result endpoint · handoff logger (Mongo) · sender-identity settings ·
+  WonThisMonth KPI strip · Time-to-Nudge follow-ups.
 
-## Implemented (major features)
-### Discovery + prioritisation
-- Command Center dashboard with Won-this-month KPI hero, Today's top action,
-  Time to nudge, metric strip, follow-ups, top picks, pipeline
-- Airtable read-through with SSE live updates
-- Slack alerts for high-priority leads
-- Priority as High/Medium/Low pill (score hidden behind hover)
-- Contact readiness badge (green/yellow/gray/red) on every lead
+## Backlog
+### P1 — AI contact enrichment
+- Daily background sweep using Emergent LLM Key + Gemini with Google Search
+  grounding to fill missing phone/email fields on `Leads`.
+- 5-day soft-archive of leads that stay empty.
 
-### Outreach — native + provider-locked
-- `sms:` / `mailto:` URLs with iPhone-safe phone sanitization
-- **Email provider lock** — Gmail compose URL with `authuser=` param forces
-  every email to send from Ryan's business account on every device
-- Configurable in Settings → Your sender identity (Name / Email / Phone / Provider)
-- Handoff logger — every Text/Email tap logs one row to Mongo `contact_handoffs`
-- Row-level Text/Email pills on People to Know + Projects to Watch
-- Removed leftover "Approve & Send" button
+### P2 — Webhook persistence
+- Persist Airtable webhook state to Mongo so preview reloads don't hijack the
+  production webhook.
 
-### Follow-up sequencing (2026-08 session)
-- `GET /api/follow-ups/due` — joins handoff_log with opportunity list to
-  surface leads Ryan touched but never nudged, bucketed by:
-    · estimate_check (7+ days since Estimate requested/sent)
-    · text_nudge     (3+ days since last text)
-    · email_nudge    (5+ days since last email)
-- Ranked estimate → text → email, then by priority score, then by days idle
-- Time to nudge section on Today's Work shows top 8 with one-tap Contact them
+### P3 — Small polish
+- Add a reason chip on Section 1 rows (parity with Section 2's yellow pill).
+- Consider unifying BottomNav testids to `nav-*` prefix (currently
+  `bottomnav-*`).
+- `outreach_status` in FieldUpdate model is intentionally omitted — it is
+  only writable via POST /result. Document this in the OpenAPI/README.
 
-### Business trend at a glance (2026-08 session)
-- `GET /api/kpis/monthly` — Won this month, Active pipeline, Estimates out,
-  Won all-time (count + value each)
-- WonThisMonth hero strip at the very top of Today's Work
-
-### Plain-English UX
-- Full rebrand (Partner Intelligence → People to Know, Lead score → Priority,
-  Pipeline value → Possible work value, Research First → Get more info first,
-  etc.)
-- Status labels ("Need more info", "Talking", "Not a fit")
-- Section /XX numbering removed; sections have real titles
-
-## Data models (Mongo)
-- `outreach_drafts` — Draft-a-Note storage
-- `contact_handoffs` — {opp_id, channel, recipient, device_hint, at}
-- `user_settings` — {sender_email, sender_name, sender_phone, email_provider, updated_at}
-
-## API surface (relevant/new)
-- `GET  /api/follow-ups/due` — leads needing a nudge
-- `GET  /api/kpis/monthly` — Won this month + pipeline value
-- `GET  /api/settings/user` · `PATCH /api/settings/user`
-- `POST /api/opportunities/{id}/handoff` · `GET /api/opportunities/{id}/handoffs`
-- `GET  /api/handoffs/recent`
-- (+ existing opportunities / drafts / playbook / lane / pipeline endpoints)
-
-## Backlog / Next
-- **Signature preview** in Settings (see the exact email signature before sending)
-- **Provider test** button — send yourself a Gmail compose to verify authuser lock
-- **Won streak widget** — small streak counter on the dashboard
-- **Voice-to-note capture** — job-site dictation into any lead
-- **Photo / estimate upload** — attach property photos and estimate PDFs to a lead
-- **Referral prompt** — after Won status, prompt a text to ask for a referral
-- **Weekly recap email** — "you contacted X, Y replied, Z estimates out"
-- **Webhook persistence** to Mongo so preview reloads don't hijack production
-- **iPad hint** — small nudge saying "open on iPhone to text"
+## Files of interest
+- `/app/frontend/src/pages/CommandCenter.jsx` — 3-section Today page.
+- `/app/frontend/src/pages/OpportunityDetail.jsx` — manual result buttons +
+  Needs-confirmation banner.
+- `/app/frontend/src/lib/priority.js` — contactReady / hasPremiumFit /
+  needsConfirmation.
+- `/app/frontend/src/components/Sidebar.jsx` + `BottomNav.jsx` — 4 items.
+- `/app/backend/server.py` — /api/opportunities/{id}/result, /kpis/monthly,
+  /follow-ups/due, /handoff, /settings/user.
+- `/app/backend/services/airtable_service.py` — read/write to Leads; strict
+  EDITABLE_FIELDS allowlist. `_derive_status` now honors outreach_status.

@@ -447,25 +447,17 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       </div>
 
       <div className="space-y-1" data-testid="handoff-helper">
-        {hasEmail && emailIsExternal && (
-          <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)] inline-flex items-center gap-1.5" data-testid="handoff-email-pin">
-            <Mail size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
-            Emails always send from{" "}
-            <strong className="font-medium">{senderIdentity.email || DEFAULT_SENDER_EMAIL}</strong>{" "}
-            via {providerLabel}.
-          </div>
-        )}
-        {hasEmail && !emailIsExternal && (
+        {hasEmail && (
           <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-3)]" data-testid="handoff-email-mailto">
-            Opens a draft in your default mail app. Make sure it&rsquo;s signed
-            into <strong className="font-medium">{senderIdentity.email || DEFAULT_SENDER_EMAIL}</strong>.
+            Opens a draft in your device&rsquo;s default mail app. Whichever
+            account is set as default there is what sends — the message
+            itself is prefilled and stays editable.
           </div>
         )}
         {hasText && (
           <div className="text-[11px] leading-relaxed text-[var(--bh-ink-3)] inline-flex items-center gap-1.5" data-testid="handoff-iphone-hint">
             <Smartphone size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
-            Texts open Messages on this device. Open Bloodhound on your iPhone to text from{" "}
-            {senderIdentity.phone || DEFAULT_SENDER_PHONE}.
+            Texts open the Messages app on this device.
           </div>
         )}
       </div>

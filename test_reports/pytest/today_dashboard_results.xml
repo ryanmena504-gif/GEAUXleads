@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="10" time="7.584" timestamp="2026-08-12T00:42:26.271616+00:00" hostname="agent-env-d38f23d4-ffcc-4195-8832-0ee65956de25"><testcase classname="tests.today_dashboard_test.TestRegression" name="test_opportunities_list" time="0.837" /><testcase classname="tests.today_dashboard_test.TestRegression" name="test_summary" time="0.155" /><testcase classname="tests.today_dashboard_test.TestRegression" name="test_kpis_monthly" time="0.112" /><testcase classname="tests.today_dashboard_test.TestRegression" name="test_followups_due" time="0.116" /><testcase classname="tests.today_dashboard_test.TestRegression" name="test_settings_user" time="0.096" /><testcase classname="tests.today_dashboard_test.TestManualResult" name="test_unknown_key_422" time="0.102" /><testcase classname="tests.today_dashboard_test.TestManualResult" name="test_sent_sets_outreach_only" time="2.539" /><testcase classname="tests.today_dashboard_test.TestManualResult" name="test_replied_sets_status_conversation_started" time="1.074"><failure message="AssertionError: assert 'Needs research' == 'Conversation started'&#10;  &#10;  - Conversation started&#10;  + Needs research">backend/tests/today_dashboard_test.py:133: in test_replied_sets_status_conversation_started
+    assert opp.get("status") == "Conversation started"
+E   AssertionError: assert 'Needs research' == 'Conversation started'
+E     
+E     - Conversation started
+E     + Needs research</failure></testcase><testcase classname="tests.today_dashboard_test.TestManualResult" name="test_not_interested_sets_disqualified" time="1.130"><failure message="AssertionError: assert 'Needs research' == 'Disqualified'&#10;  &#10;  - Disqualified&#10;  + Needs research">backend/tests/today_dashboard_test.py:153: in test_not_interested_sets_disqualified
+    assert opp.get("status") == "Disqualified"
+E   AssertionError: assert 'Needs research' == 'Disqualified'
+E     
+E     - Disqualified
+E     + Needs research</failure></testcase><testcase classname="tests.today_dashboard_test.TestHandoffNoAutoSave" name="test_handoff_does_not_change_outreach_status" time="1.331" /></testsuite></testsuites>

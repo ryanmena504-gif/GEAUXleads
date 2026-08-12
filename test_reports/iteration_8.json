@@ -1,0 +1,55 @@
+{
+  "summary": "End-to-end review of the Bloodhound production-cleanup (feature/bloodhound-production-cleanup). Frontend is clean and matches the spec: Sidebar (data-testid='sidebar') exposes exactly 4 items (nav-today, nav-all-projects, nav-people-to-know, nav-settings), Today page renders the KPI strip section-won-this-month PLUS the 3 required sections (section-people-to-contact, section-projects-to-watch, section-people-to-know) in order, and NONE of the forbidden testids (metric-strip, lane-breakdown, section-missions, section-pipeline, nba-card, section-time-to-nudge) are present. The contact-empty state shows the strict-gate copy 'No leads meet the strict \u201ccontact ready\u201d bar...' — confirmed intentional because 49 real leads fail at least one criterion. Watch rows = 0, partner rows = 6, partners-see-all links to /relationships. OpportunityDetail /opportunities/{id} shows all 5 manual result buttons (result-sent/replied/estimate_requested/no_reply/not_interested) and the needs-confirmation-banner correctly appears on a record with outreach history + ambiguous status. Backend: 8/10 pytest cases PASS. Regressions clean (/api/opportunities, /summary, /kpis/monthly, /follow-ups/due, /settings/user all 200). Unknown result key returns 422. POST /api/opportunities/{id}/result with {result:'sent'} correctly sets outreach_status='Sent by Ryan' and does NOT advance status. Handoff endpoint does NOT mutate outreach_status. CRITICAL BUG: POST /result with {result:'replied'} or {result:'not_interested'} writes Airtable's Status column correctly (verified via pyairtable direct read) but the API DTO's `status` field is DERIVED by _derive_status() from other flags (flag_won, flag_reply_received, flag_outreach_sent, approval_status, enrichment_status). Result: the returned/re-fetched opportunity keeps status='Needs research' instead of 'Conversation started' / 'Disqualified' — the spec explicitly requires the re-fetch to show the new status.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/opportunities/{id}/result (replied, estimate_requested, not_interested)",
+        "issue": "The endpoint writes Status='Conversation started' / 'Estimate requested' / 'Disqualified' to Airtable successfully, but the DTO's `status` field is derived by _derive_status() in airtable_service.py (line 309) from flag_won/outcome/flag_estimate/flag_reply_received/flag_outreach_sent/approval_status/enrichment_status — NOT from Airtable's Status column. Consequence: re-fetching returns the pre-existing derived status (e.g. 'Needs research'), which violates the spec 'POST with {result:replied} ... verify by re-fetching the opportunity'. Fix options: (a) have record_manual_result also flip the correct source-of-truth flags (flag_reply_received=True for replied, flag_won for won, outcome=<something> for not_interested), OR (b) make _derive_status() honor outreach_status (e.g. 'Reply received' -> 'Conversation started', 'Not interested' -> 'Disqualified'), OR (c) treat the Airtable Status column as the canonical value once outreach_status is set by Ryan (i.e., short-circuit derivation when a manual result exists). Repro: POST {result:'replied'} to opp recw6vvVARAtJVywy -> response outreach_status='Reply received' (correct) but status='Needs research' (expected 'Conversation started'). Verified underlying Airtable row Status was actually set to 'Conversation started' via pyairtable direct read.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "PATCH /api/opportunities/{id}/fields",
+        "issue": "FieldUpdate Pydantic model (server.py:79) only accepts status/ryans_decision/next_follow_up/outcome — outreach_status is NOT in the model, so external callers cannot restore/edit outreach_status via this endpoint. It IS allowed in EDITABLE_FIELDS on the service, so this is a Pydantic gap not a policy gap. Consider adding it, or document that outreach_status can only be mutated via the /result endpoint (which is the design intent)."
+      },
+      {
+        "endpoint": "GET /api/opportunities/{id}",
+        "issue": "Same DTO derivation issue means 'status' is not reliably reflective of Airtable's Status column. Any external Airtable edit of Status is silently overridden by derived logic on read. Confirmed by direct pyairtable update setting Status='Conversation started' then API GET returning 'Needs research'."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/today_dashboard_test.py",
+    "/app/test_reports/pytest/today_dashboard_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Make POST /api/opportunities/{id}/result cause the *derived* DTO `status` to reflect the intended value. Either write the correct source-of-truth flag (e.g. flag_reply_received=True for 'replied', outcome for 'not_interested') via update_fields, or teach _derive_status() to trust outreach_status ('Reply received' -> 'Conversation started'; 'Not interested' -> 'Disqualified'; 'Estimate requested' -> 'Estimate requested').",
+    "Add outreach_status: Optional[str] to FieldUpdate in server.py:79 OR document that outreach_status is only mutable via the /result endpoint."
+  ],
+  "critical_code_review_comments": [
+    "airtable_service.py:309 _derive_status — the derivation ignores the Airtable Status column when other signal flags exist; this makes the manual-result endpoint's `status_hint` cosmetic (Airtable is written but DTO recomputes). Highest impact latent bug in this iteration.",
+    "server.py:271-336 record_manual_result — for 'replied'/'estimate_requested'/'not_interested' the endpoint only writes outreach_status + status to Airtable. It does NOT flip the derivation flags (flag_reply_received / flag_outreach_sent / outcome / flag_estimate) that _derive_status actually reads. Result: the returned DTO's status is stale.",
+    "server.py:79 FieldUpdate — allowlist model missing outreach_status. Not a bug per se (that field is owned by /result) but blocks tests/restore paths.",
+    "CommandCenter.jsx uses OpportunityRow for section 1 but a bespoke WatchRow for section 2 — fine, but the two look visually different and section 2 rows carry a hard-coded 'Needs a phone or email' pill while section 1 does not surface why it qualified. Consider a small `reason chip` on section 1 rows too for parity.",
+    "BottomNav uses testid prefix `bottomnav-` instead of the same `nav-` prefix as Sidebar. Spec says 'BottomNav mirrors those 4' — arguably fine, but if any downstream test asserts `nav-today` presence on mobile it will fail. Consider unifying."
+  ],
+  "updated_files": [
+    "/app/backend/tests/today_dashboard_test.py"
+  ],
+  "success_rate": {
+    "backend": "80% (8/10 pytest cases). 1 CRITICAL functional bug on the derived-status side of POST /result.",
+    "frontend": "100% for structural + testid checks (sidebar, sections, forbidden absence, empty states, detail buttons, needs-confirmation banner)."
+  },
+  "test_credentials": "N/A — no auth. Airtable creds already in /app/backend/.env.",
+  "seed_data_creation": "Mutations targeted recw6vvVARAtJVywy (Signal: Jacqueline Court). Restored to Status='Needs research', Outreach status='Not sent' at end of run via pyairtable direct write. No other records touched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test opportunity used: recw6vvVARAtJVywy — safe to mutate. It has outreach history so needs-confirmation-banner is expected to appear on its detail page. The status-derivation bug means POST /result affects outreach_status reliably but NOT the DTO's status field for replied/estimate_requested/not_interested. To verify a status-hint fix, retest with pytest backend/tests/today_dashboard_test.py -v -o addopts='' and confirm test_replied_sets_status_conversation_started + test_not_interested_sets_disqualified both pass. Frontend is stable — no rework needed there.",
+  "rca of the issue": "Root cause: server.py:record_manual_result routes the manual `status_hint` through svc.update_fields({'status': ...}), which correctly writes Airtable's Status column. However, the read path (airtable_service.py:681 -> _derive_status at line 309) OVERWRITES the DTO's status by re-deriving it from other Airtable flags: flag_won/outcome/flag_estimate/flag_reply_received/flag_positive_conversation/flag_outreach_sent/approval_status/enrichment_status/status_raw. For a lead where those flags remain unset, the derivation returns 'Needs research' regardless of what Status column was written. Verified by direct pyairtable read after update: Airtable's Status is 'Conversation started' but /api/opportunities/{id} returns status='Needs research'. Fix must either (a) additionally flip the corresponding derivation flag inside /result, or (b) teach _derive_status to trust outreach_status ('Reply received' -> Conversation started, 'Not interested' -> Disqualified, 'Estimate requested' -> Estimate requested), or (c) short-circuit derivation when the Airtable Status column contains one of the terminal manual-tracked values."
+}

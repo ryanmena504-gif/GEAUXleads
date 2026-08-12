@@ -27,14 +27,14 @@ EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"
 # a similar deeplink. Apple Mail falls back to plain mailto:.
 ALLOWED_EMAIL_PROVIDERS = {"gmail", "outlook", "apple"}
 
-# Ryan's fixed sender identity for The Shirtless Handyman. Custom domain +
-# Google Workspace, so Gmail is the default provider; the "compose" web
-# URL forces every draft to open pre-signed-into ryanmena@theshirtlesshandyman.com.
+# Ryan's fixed sender identity for The Shirtless Handyman. Default provider
+# is Apple Mail (mailto:) — the device's default mail app decides which
+# account the message sends from. Bloodhound never claims control over that.
 DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
-    "email_provider": "gmail",
+    "email_provider": "apple",
 }
 
 

@@ -306,7 +306,22 @@ PIPELINE_STATUSES = [
 ]
 
 # Derive a dashboard-pipeline stage from the Leads workflow state.
+# IMPORTANT: `outreach_status` is Ryan's manual source of truth — the five
+# result buttons on the detail page write to it. If it's set to one of the
+# terminal manual values we honor it BEFORE re-deriving from signal flags,
+# otherwise the read path would silently override what the write path just
+# stored (bug caught 2026-02: replied/not_interested/estimate_requested
+# taps were being overridden back to 'Needs research').
 def _derive_status(opp: Dict[str, Any]) -> str:
+    outreach = opp.get("outreach_status")
+    if isinstance(outreach, str) and outreach.strip():
+        ol = outreach.lower().strip()
+        if "not interested" in ol or "do not contact" in ol:
+            return "Disqualified"
+        if "estimate requested" in ol:
+            return "Estimate requested"
+        if "reply received" in ol:
+            return "Conversation started"
     if opp.get("flag_won"):
         return "Won"
     if opp.get("outcome"):

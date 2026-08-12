@@ -1,20 +1,14 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
-import {
-  LayoutDashboard,
-  Target,
-  Crosshair,
-  Network,
-  Radar,
-} from "lucide-react";
+import { Sun, FileText, Users, Sliders } from "lucide-react";
 
+// Mobile bottom nav — mirrors the desktop sidebar exactly (four items).
 const nav = [
-  { to: "/", label: "Today", icon: LayoutDashboard },
-  { to: "/opportunities", label: "Projects", icon: Crosshair },
-  { to: "/missions", label: "Follow-Ups", icon: Target },
-  { to: "/relationships", label: "People", icon: Network },
-  { to: "/intelligence", label: "Watch", icon: Radar },
+  { to: "/",              label: "Today",    icon: Sun },
+  { to: "/opportunities", label: "All",      icon: FileText },
+  { to: "/relationships", label: "People",   icon: Users },
+  { to: "/settings",      label: "Settings", icon: Sliders },
 ];
 
 export const BottomNav = () => (
@@ -23,7 +17,7 @@ export const BottomNav = () => (
     className="lg:hidden fixed bottom-0 inset-x-0 z-30 bh-surface border-t bh-hairline"
     style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
   >
-    <div className="grid grid-cols-5">
+    <div className="grid grid-cols-4">
       {nav.map((item) => (
         <NavLink
           key={item.to}

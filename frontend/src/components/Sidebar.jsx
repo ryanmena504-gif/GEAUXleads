@@ -4,27 +4,27 @@ import clsx from "clsx";
 import {
   Sun,
   FileText,
-  ListChecks,
   Users,
-  BookOpen,
   Sliders,
-  Inbox,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 
-// Route paths preserved; visible labels rebranded to owner-operated,
-// architectural language. No two-letter call signs, no tactical rails.
+// Bloodhound sidebar navigation. Exactly four sections — every screen
+// folds into one of these:
+//   • Today          — the daily "what to do now" screen (contact today,
+//                      projects to watch, people to know previews)
+//   • All Projects   — every lead + filters (was Project List, Follow-Ups,
+//                      Needs a Look)
+//   • People to Know — legit partners (was Trade Network)
+//   • Settings       — sender identity + playbooks
 const nav = [
-  { to: "/", label: "Today's Work", icon: Sun },
-  { to: "/opportunities", label: "Project List", icon: FileText },
-  { to: "/missions", label: "Follow-Ups", icon: ListChecks },
+  { to: "/",              label: "Today",          icon: Sun },
+  { to: "/opportunities", label: "All Projects",   icon: FileText },
   { to: "/relationships", label: "People to Know", icon: Users },
-  { to: "/intelligence", label: "Projects to Watch", icon: BookOpen },
-  { to: "/review-queue", label: "Needs a Look", icon: Inbox, showCount: true },
-  { to: "/settings", label: "Settings", icon: Sliders },
+  { to: "/settings",      label: "Settings",       icon: Sliders },
 ];
 
 export const Sidebar = () => {

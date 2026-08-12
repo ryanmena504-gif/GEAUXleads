@@ -259,6 +259,83 @@ async def update_fields(opp_id: str, body: FieldUpdate):
     return updated
 
 
+# ============================================================================
+# Manual result-tracking — five buttons Ryan taps AFTER personally sending
+# or hearing back. Opening a draft never touches this. Only a deliberate
+# button press records outreach state so Airtable stays honest.
+# ============================================================================
+class ManualResult(BaseModel):
+    result: str  # "sent" | "replied" | "estimate_requested" | "no_reply" | "not_interested"
+
+
+_RESULT_TO_FIELDS = {
+    "sent": {
+        "outreach_status": "Sent by Ryan",
+        "status_hint": None,  # do NOT auto-advance to Conversation started
+        "activity_type": "sent",
+        "note": "Manually marked: I sent it",
+    },
+    "replied": {
+        "outreach_status": "Reply received",
+        "status_hint": "Conversation started",
+        "activity_type": "reply",
+        "note": "Manually marked: they replied",
+    },
+    "estimate_requested": {
+        "outreach_status": "Estimate requested",
+        "status_hint": "Estimate requested",
+        "activity_type": "estimate",
+        "note": "Manually marked: estimate requested",
+    },
+    "no_reply": {
+        "outreach_status": "No reply yet",
+        "status_hint": None,
+        "activity_type": "no_reply",
+        "note": "Manually marked: no reply yet",
+    },
+    "not_interested": {
+        "outreach_status": "Not interested",
+        "status_hint": "Disqualified",
+        "activity_type": "closed",
+        "note": "Manually marked: not interested",
+    },
+}
+
+
+@api_router.post("/opportunities/{opp_id}/result")
+async def record_manual_result(opp_id: str, body: ManualResult):
+    """Ryan explicitly presses one of the five result buttons. Never called
+    automatically — opening a draft or sending a Text/Email link does NOT
+    hit this endpoint. Only a deliberate tap after real-world action does."""
+    key = (body.result or "").strip().lower()
+    if key not in _RESULT_TO_FIELDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"result must be one of {list(_RESULT_TO_FIELDS.keys())}",
+        )
+    plan = _RESULT_TO_FIELDS[key]
+    svc = get_opportunity_service()
+    updates: Dict[str, Any] = {"outreach_status": plan["outreach_status"]}
+    if plan["status_hint"]:
+        updates["status"] = plan["status_hint"]
+    if not hasattr(svc, "update_fields"):
+        raise HTTPException(status_code=503, detail="Airtable write unavailable")
+    try:
+        updated = svc.update_fields(opp_id, updates)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    # Add activity timeline entry
+    try:
+        if hasattr(svc, "add_activity"):
+            svc.add_activity(opp_id, plan["activity_type"], plan["note"])
+    except Exception:
+        # Non-fatal — the write above already succeeded.
+        pass
+    return {"opportunity": updated, "result": key}
+
+
 @api_router.get("/config")
 async def config():
     svc = get_opportunity_service()
