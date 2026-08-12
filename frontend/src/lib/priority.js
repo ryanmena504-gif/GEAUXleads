@@ -78,6 +78,27 @@ export const contactState = (opp) => {
 };
 
 /**
+ * isBusinessContact — is the contact on this record a *business* contact
+ * (not a homeowner / private owner tied to a permit)? Ryan explicitly does
+ * NOT want homeowner phones/emails routed to Contact Now — those get
+ * treated as Watch until a proper business channel is found.
+ *
+ * Signals: partner lane is always business; a `company` field OR a
+ * `contact_website` field (or business-looking website) are strong tells.
+ */
+export const isBusinessContact = (opp) => {
+  if (!opp) return false;
+  if (opp.lane === "partner") return true;
+  const company = String(opp.company || "").trim();
+  if (company.length >= 2) return true;
+  const website = String(opp.website || opp.website_alt || "").trim();
+  if (website.startsWith("http")) return true;
+  // Otherwise: assume homeowner / permit-address contact until proven
+  // business.
+  return false;
+};
+
+/**
  * hasPremiumFit — is there evidence this is the kind of premium remodel work
  * Ryan wants? Sourced from Airtable's `Premium property or client` checkbox,
  * the AI-derived Opportunity Fit ("Strong"), or a High revenue potential.
@@ -93,7 +114,29 @@ export const hasPremiumFit = (opp) => {
 };
 
 /**
- * contactReady — strict evidence gate for "People to contact today".
+ * isClosedOrBlocked — the record is either terminal (Won/Lost/Disqualified)
+ * or explicitly blocked (Do Not Contact / Not interested). Used to route to
+ * the Not-a-Fit bucket.
+ */
+export const isClosedOrBlocked = (opp) => {
+  if (!opp) return false;
+  const status = String(opp.status || "").toLowerCase();
+  if (["disqualified", "lost"].some((s) => status.includes(s))) return true;
+  const outreach = String(opp.outreach_status || "").toLowerCase();
+  const approval = String(opp.approval_status || "").toLowerCase();
+  if (
+    outreach.includes("do not contact") ||
+    outreach.includes("not interested") ||
+    approval.includes("do not contact") ||
+    approval.includes("blocked")
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * contactReady — strict evidence gate for the "Contact Now" bucket.
  * Every rule must be satisfied. Returns { ready, reasons } so the UI can
  * hide or explain what's missing.
  *
@@ -104,6 +147,8 @@ export const hasPremiumFit = (opp) => {
  *  5. No history conflict:
  *      - not closed (Won / Lost / Disqualified)
  *      - not blocked (Do Not Contact / Not interested)
+ *  6. It's a BUSINESS or PROFESSIONAL contact, not a homeowner / permit-
+ *     address personal contact. See isBusinessContact.
  */
 export const contactReady = (opp) => {
   if (!opp) return { ready: false, reasons: ["empty"] };
@@ -134,6 +179,7 @@ export const contactReady = (opp) => {
   if (!hasPremiumFit(opp)) reasons.push("not_premium");
   if (!opp.source_url) reasons.push("no_source_url");
   if (!(opp.last_reviewed || opp.created_time)) reasons.push("not_checked");
+  if (!isBusinessContact(opp)) reasons.push("not_business_contact");
 
   return { ready: reasons.length === 0, reasons };
 };

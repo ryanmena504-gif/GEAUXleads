@@ -198,7 +198,7 @@ const EnrichmentSection = () => {
           const l = s?.last_run;
           if (l) {
             toast.success(
-              `Enrichment done · ${l.enriched ?? 0} filled · ${l.archived ?? 0} archived · ${l.failed ?? 0} failed`,
+              `Enrichment done · ${l.enriched ?? 0} filled · ${l.failed ?? 0} failed`,
             );
           }
           setRunning(false);
@@ -230,14 +230,12 @@ const EnrichmentSection = () => {
       </div>
       <div className="bh-surface rounded p-5 space-y-4">
         <p className="text-sm text-neutral-400 leading-relaxed">
-          When a new lead lands with no phone or email, tap <span className="text-amber-300">Enrich now</span> and
-          Bloodhound will use Gemini with Google Search grounding to find their
-          public business phone or email and write it straight to Airtable.
-          Leads that stay blank for 5+ days get soft-archived with an{" "}
-          <span className="mono text-[11px] px-1 py-0.5 rounded bh-hairline">
-            Archived — no contact found
-          </span>{" "}
-          tag so they leave the Today page but stay searchable.
+          When a new lead lands with no phone or email, tap{" "}
+          <span className="text-amber-300">Enrich now</span> and Bloodhound
+          will use Gemini with Google Search grounding to find their public
+          business phone or email and write it straight to Airtable. Leads
+          without a hit stay in the pool so the AI can keep re-trying them on
+          the next sweep — nothing gets archived automatically.
         </p>
         <p className="text-[12px] text-neutral-500 leading-relaxed">
           Runs manually only. Only targets leads missing BOTH phone and email.
@@ -297,7 +295,7 @@ const EnrichmentSection = () => {
         {last && (
           <div
             data-testid="settings-enrichment-last-run"
-            className="border-t bh-hairline pt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]"
+            className="border-t bh-hairline pt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-[13px]"
           >
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
@@ -330,16 +328,8 @@ const EnrichmentSection = () => {
                 {last.enriched ?? 0}
               </div>
             </div>
-            <div>
-              <div className="mono text-[10px] uppercase tracking-widest text-amber-300">
-                Archived
-              </div>
-              <div className="text-amber-200 mt-0.5 tabular-nums">
-                {last.archived ?? 0}
-              </div>
-            </div>
             {(last.failed ?? 0) > 0 && (
-              <div className="col-span-2 sm:col-span-4 text-[12px] text-red-300">
+              <div className="col-span-2 sm:col-span-3 text-[12px] text-red-300">
                 {last.failed} failed · {last.errors?.[0] || "check backend logs"}
               </div>
             )}

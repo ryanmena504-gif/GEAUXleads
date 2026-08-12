@@ -1,16 +1,27 @@
 """
 AI Contact Enrichment — Gemini + Google Search grounding.
 
-Fills missing `Contact phone` / `Contact email` on Airtable Leads that have
-neither on file. Only manual — runs when Ryan taps "Enrich now" in Settings.
+Fills missing *business* Contact phone / Contact email on Airtable Leads that
+have neither on file. Manual only — runs when Ryan taps "Enrich now" in
+Settings or "Find public business contact" on a lead's detail page.
 
-Rules:
-  • Target only leads missing BOTH phone AND email (and not closed / blocked).
-  • Use Gemini 2.5 Flash with the built-in `googleSearch` tool (verifiable,
-    grounded output). Never fabricate — the prompt forbids guessing.
-  • If the lead is 5+ days old (based on Airtable createdTime) AND the sweep
-    still turned up nothing, soft-archive it by setting
-    Outreach status = "Archived — no contact found".
+Rules (final, 2026-02-11):
+  • Target only leads missing BOTH phone AND email that are still active
+    (not Won/Lost/Disqualified, not Do Not Contact, not Not Interested).
+  • Use Gemini 2.5 Flash with the built-in `googleSearch` tool. Verified
+    public BUSINESS or PROFESSIONAL sources only — homeowner / private-owner /
+    permit-address contacts are explicitly forbidden.
+  • The model returns one of three outcomes:
+        contact_found                 — phone or email confirmed
+        no_public_business_contact    — nothing found from public sources
+        needs_review                  — ambiguous / conflicting sources
+  • Records without a hit are NEVER archived, hidden, or retired. Instead
+    we write:
+        Notes         ← "No public business contact found yet · checked YYYY-MM-DD"
+        Next followup ← today + 30 days
+    so Ryan can see the state at a glance and manually retry later.
+  • SMS Permission is never touched. Outreach sent / Conversation started /
+    Message sent date / Reply flags are never touched by enrichment.
   • Writes go through AirtableOpportunityService.update_fields so the
     EDITABLE_FIELDS allowlist is respected.
 """
@@ -21,15 +32,15 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("bloodhound.enrichment")
 
 CLOSED_STATUSES = {"Won", "Lost", "Disqualified"}
-BLOCKED_OUTREACH = {"do not contact", "not interested", "archived"}
-SOFT_ARCHIVE_VALUE = "Archived — no contact found"
-STALE_DAYS = 5
+BLOCKED_OUTREACH = {"do not contact", "not interested"}
+RECHECK_DAYS = 30
+NO_CONTACT_NOTE_PREFIX = "No public business contact found yet"
 
 
 def _has_phone(opp: Dict[str, Any]) -> bool:
@@ -59,23 +70,6 @@ def _is_blocked(opp: Dict[str, Any]) -> bool:
         if any(tok in s for tok in BLOCKED_OUTREACH):
             return True
     return False
-
-
-def _parse_dt(raw: Any) -> Optional[datetime]:
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-def _is_stale(opp: Dict[str, Any]) -> bool:
-    created = _parse_dt(opp.get("created_time"))
-    if not created:
-        return False
-    age = datetime.now(timezone.utc) - created
-    return age.days >= STALE_DAYS
 
 
 PHONE_RE = re.compile(r"[+\d][\d\-\.\s\(\)]{6,}\d")
@@ -109,16 +103,13 @@ def _clean_url(v: Any) -> Optional[str]:
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
-    """Pull the last balanced JSON object from a mixed prose+JSON response."""
     if not text:
         return None
-    # Try direct parse first
     stripped = text.strip().strip("`")
     try:
         return json.loads(stripped)
     except Exception:
         pass
-    # Then find every {...} candidate and try the last one first
     candidates = JSON_RE.findall(text)
     for cand in reversed(candidates):
         try:
@@ -129,7 +120,6 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _build_query(opp: Dict[str, Any]) -> str:
-    """Build a compact search prompt for the LLM using every identity clue we have."""
     parts: List[str] = []
     for key, label in (
         ("name", "Business/lead name"),
@@ -146,6 +136,31 @@ def _build_query(opp: Dict[str, Any]) -> str:
     return "\n".join(parts) if parts else "Unnamed lead"
 
 
+def _no_contact_note(existing: Any) -> str:
+    """Append (or set) a plain-English note that this lead has been checked
+    and no public business contact was found yet. Preserves any prior notes."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    line = f"{NO_CONTACT_NOTE_PREFIX} · checked {today}"
+    prior = str(existing or "").strip()
+    if not prior:
+        return line
+    # Avoid duplicating the same message on repeat sweeps.
+    if NO_CONTACT_NOTE_PREFIX in prior:
+        # Replace the earlier "checked YYYY-MM-DD" fragment.
+        prior = re.sub(
+            rf"{re.escape(NO_CONTACT_NOTE_PREFIX)}[^\n]*",
+            line,
+            prior,
+            count=1,
+        )
+        return prior
+    return f"{prior}\n{line}"
+
+
+def _recheck_date() -> str:
+    return (datetime.now(timezone.utc).date() + timedelta(days=RECHECK_DAYS)).isoformat()
+
+
 class EnrichmentService:
     """Manual enrichment sweep. Only runs when explicitly kicked off."""
 
@@ -156,7 +171,6 @@ class EnrichmentService:
         self._running = False
         self._lock = asyncio.Lock()
         self._last_run: Optional[Dict[str, Any]] = None
-        # Cap per sweep so a single click can't hammer the API.
         self._max_targets = 15
 
     def status(self) -> Dict[str, Any]:
@@ -164,14 +178,13 @@ class EnrichmentService:
             "running": self._running,
             "last_run": self._last_run,
             "model": self._model,
-            "stale_days": STALE_DAYS,
+            "recheck_days": RECHECK_DAYS,
             "max_per_sweep": self._max_targets,
         }
 
     async def enrich_lead(self, opp_id: str) -> Dict[str, Any]:
-        """Run enrichment on a single lead by id. Returns the same shape as
-        _enrich_one plus updated opportunity DTO. Never runs while a full
-        sweep is in progress (would compete for the same LLM budget)."""
+        """Run enrichment on a single lead. Returns the outcome dict plus the
+        updated opportunity DTO. Never runs while a full sweep is in flight."""
         if self._running:
             return {"error": "sweep_in_progress"}
         if not hasattr(self._airtable, "get"):
@@ -182,7 +195,6 @@ class EnrichmentService:
         if _is_blocked(opp):
             return {"error": "blocked", "opportunity": opp}
         result = await self._enrich_one(opp)
-        # Re-fetch so the UI receives the newly-written contact info.
         updated = self._airtable.get(opp_id) or opp
         return {"result": result, "opportunity": updated}
 
@@ -193,8 +205,9 @@ class EnrichmentService:
             self._running = True
             started = datetime.now(timezone.utc)
             scanned = 0
-            enriched = 0
-            archived = 0
+            contact_found = 0
+            no_contact = 0
+            needs_review = 0
             failed = 0
             errors: List[str] = []
             try:
@@ -203,7 +216,6 @@ class EnrichmentService:
                     o for o in all_ops
                     if not _has_phone(o) and not _has_email(o) and not _is_blocked(o)
                 ]
-                # Prefer freshest first — older leads are more likely already worked.
                 targets.sort(key=lambda o: o.get("created_time") or "", reverse=True)
                 targets = targets[: self._max_targets]
 
@@ -211,21 +223,16 @@ class EnrichmentService:
                     scanned += 1
                     try:
                         result = await self._enrich_one(opp)
-                        if result.get("phone") or result.get("email"):
-                            enriched += 1
-                        elif _is_stale(opp):
-                            try:
-                                self._airtable.update_fields(
-                                    opp["id"],
-                                    {"outreach_status": SOFT_ARCHIVE_VALUE},
-                                )
-                                archived += 1
-                            except Exception as ae:
-                                failed += 1
-                                errors.append(f"{opp.get('id')}: archive failed — {ae}")
+                        outcome = result.get("outcome")
+                        if outcome == "contact_found":
+                            contact_found += 1
+                        elif outcome == "needs_review":
+                            needs_review += 1
+                        else:
+                            no_contact += 1
                     except Exception as e:  # noqa: BLE001
                         failed += 1
-                        errors.append(f"{opp.get('id')}: {e}")[:180] if False else errors.append(f"{opp.get('id')}: {str(e)[:140]}")
+                        errors.append(f"{opp.get('id')}: {str(e)[:140]}")
 
                 finished = datetime.now(timezone.utc)
                 self._last_run = {
@@ -233,21 +240,21 @@ class EnrichmentService:
                     "finished_at": finished.isoformat(),
                     "duration_seconds": round((finished - started).total_seconds(), 1),
                     "scanned": scanned,
-                    "enriched": enriched,
-                    "archived": archived,
+                    "contact_found": contact_found,
+                    "no_public_business_contact": no_contact,
+                    "needs_review": needs_review,
                     "failed": failed,
                     "errors": errors[:5],
                 }
                 log.info(
-                    "enrichment: sweep done · scanned=%d enriched=%d archived=%d failed=%d",
-                    scanned, enriched, archived, failed,
+                    "enrichment: sweep done · scanned=%d found=%d no_contact=%d review=%d failed=%d",
+                    scanned, contact_found, no_contact, needs_review, failed,
                 )
                 return self._last_run
             finally:
                 self._running = False
 
     async def _enrich_one(self, opp: Dict[str, Any]) -> Dict[str, Any]:
-        # Import lazily so the module still loads if emergentintegrations is absent.
         from emergentintegrations.llm.chat import (
             LlmChat,
             UserMessage,
@@ -257,31 +264,51 @@ class EnrichmentService:
 
         query = _build_query(opp)
         session_id = f"enrich-{opp.get('id')}-{int(datetime.now(timezone.utc).timestamp())}"
+        system_message = (
+            "You extract verifiable public BUSINESS or PROFESSIONAL contact "
+            "information for a contractor's lead pipeline. Use Google Search "
+            "results only. HARD RULES:\n"
+            "  • Never return a private homeowner, permit-owner, resident, "
+            "or personal-cell contact. Only public business or professional "
+            "channels: company website contact page, business licensing "
+            "records, public business directories (e.g. state contractor "
+            "board, chamber of commerce, verified LinkedIn Company page).\n"
+            "  • Never guess or fabricate. If not clearly stated on a public "
+            "source, do NOT include the value.\n"
+            "  • If the lead looks like an individual homeowner (residential "
+            "permit, no business name, no company), return outcome "
+            "'no_public_business_contact'.\n"
+            "  • If two public sources conflict, return outcome 'needs_review'.\n"
+        )
         chat = (
             LlmChat(
                 api_key=self._key,
                 session_id=session_id,
-                system_message=(
-                    "You extract verifiable public business contact information. "
-                    "Use Google Search results only. Never guess or fabricate. "
-                    "If a value is not clearly supported by a public source, return null."
-                ),
+                system_message=system_message,
             )
             .with_model("gemini", self._model)
             .with_tools([{"googleSearch": {}}])
         )
 
-        prompt = f"""Find the current public business phone number and email address for this lead.
+        prompt = f"""Find the current public BUSINESS phone number or email address for this lead.
 
 {query}
 
 Rules:
-- Use only verifiable public sources (their own website, licensing boards,
-  verified business directories). Do NOT use random third-party listings.
-- Do NOT guess. If you can't find a value with a clear source, return null.
-- Return ONLY a compact JSON object on the last line, no markdown fences,
-  no explanation:
-{{"phone": "<10-digit US phone or null>", "email": "<email or null>", "website": "<https url or null>", "source_url": "<url where you found it or null>"}}
+- Only use verifiable public business sources (company website, licensing
+  boards, verified directories). NO homeowner, resident, or private
+  numbers. NO permit-address personal cells.
+- Do NOT guess. If you can't find a value with a clear public source,
+  return outcome "no_public_business_contact".
+- If sources disagree, return outcome "needs_review".
+- Return ONLY a compact JSON object on the last line, no markdown, no
+  explanation:
+{{"outcome": "contact_found" | "no_public_business_contact" | "needs_review",
+  "phone": "<10-digit US business phone or null>",
+  "email": "<business email or null>",
+  "website": "<https url or null>",
+  "source_url": "<url where the value was found or null>",
+  "reason": "<one short sentence why this contact is business-relevant, or empty>"}}
 """
         text = ""
         try:
@@ -292,29 +319,70 @@ Rules:
                     break
         except Exception as e:  # noqa: BLE001
             log.warning("enrichment: LLM error for %s: %s", opp.get("id"), e)
-            return {}
+            return {"outcome": "needs_review", "error": str(e)[:120]}
 
         parsed = _extract_json(text) or {}
+        outcome = (parsed.get("outcome") or "").strip().lower()
         phone = _clean_phone(parsed.get("phone"))
         email = _clean_email(parsed.get("email"))
         website = _clean_url(parsed.get("website"))
+        source_url = _clean_url(parsed.get("source_url"))
+        reason = (parsed.get("reason") or "").strip()[:220]
 
-        updates: Dict[str, Any] = {}
-        if phone:
-            updates["phone"] = phone
-        if email:
-            updates["email"] = email
-        if website and not opp.get("website"):
-            updates["website"] = website
+        # Normalize the outcome enum from the LLM's response.
+        if outcome not in ("contact_found", "no_public_business_contact", "needs_review"):
+            outcome = "contact_found" if (phone or email) else "no_public_business_contact"
 
-        if updates:
+        if outcome == "contact_found" and (phone or email):
+            updates: Dict[str, Any] = {}
+            if phone:
+                updates["phone"] = phone
+            if email:
+                updates["email"] = email
+            if website and not opp.get("website"):
+                updates["website"] = website
+            # Notes: append the source + reason so Ryan can trace where this
+            # came from. Never overwrite prior notes silently.
+            note_line = f"Enrichment found business contact · {datetime.now(timezone.utc).date().isoformat()}"
+            if source_url:
+                note_line += f" · source {source_url}"
+            if reason:
+                note_line += f" · {reason}"
+            prior = str(opp.get("notes") or "").strip()
+            updates["notes"] = f"{prior}\n{note_line}".strip() if prior else note_line
             try:
                 self._airtable.update_fields(opp["id"], updates)
-                log.info("enrichment: %s → wrote %s", opp.get("id"), list(updates.keys()))
+                log.info("enrichment: %s → wrote %s", opp.get("id"), sorted(updates.keys()))
             except Exception as e:  # noqa: BLE001
                 log.warning("enrichment: write failed for %s: %s", opp.get("id"), e)
-                return {}
-        return {"phone": phone, "email": email, "website": website}
+                return {"outcome": "needs_review", "error": str(e)[:120]}
+            return {
+                "outcome": "contact_found",
+                "phone": phone,
+                "email": email,
+                "website": website,
+                "source_url": source_url,
+                "reason": reason,
+            }
+
+        # No hit or needs review — keep the record in the pool, mark the
+        # date checked and the next recheck date. Never archive.
+        updates = {
+            "notes": _no_contact_note(opp.get("notes")),
+            "next_follow_up": _recheck_date(),
+        }
+        try:
+            self._airtable.update_fields(opp["id"], updates)
+        except Exception as e:  # noqa: BLE001
+            log.warning("enrichment: recheck-tag write failed for %s: %s", opp.get("id"), e)
+        return {
+            "outcome": outcome,
+            "phone": None,
+            "email": None,
+            "website": None,
+            "source_url": source_url,
+            "reason": reason,
+        }
 
 
 _singleton: Optional[EnrichmentService] = None

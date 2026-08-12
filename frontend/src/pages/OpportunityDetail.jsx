@@ -156,20 +156,28 @@ const OpportunityDetail = () => {
 
   const handleFindContact = async () => {
     if (enriching) return;
+    if (!window.confirm(
+      "Find public business contact for this lead?\n\n" +
+      "Bloodhound will search Google for a verified BUSINESS phone or email — never a private homeowner number. " +
+      "Nothing is sent, drafted, or archived. If nothing is found, this record stays in Watch."
+    )) return;
     setEnriching(true);
-    toast.info("Searching for public contact info…");
+    toast.info("Searching public business sources…");
     try {
       const res = await api.enrichLead(id);
       if (res?.opportunity) setOpp(res.opportunity);
       const r = res?.result || {};
-      const found = [];
-      if (r.phone) found.push("phone");
-      if (r.email) found.push("email");
-      if (r.website) found.push("website");
-      if (found.length) {
-        toast.success(`Found: ${found.join(", ")}`);
+      const outcome = r.outcome;
+      if (outcome === "contact_found") {
+        const found = [];
+        if (r.phone) found.push("phone");
+        if (r.email) found.push("email");
+        if (r.website) found.push("website");
+        toast.success(`Contact found · ${found.join(", ") || "written to Airtable"}`);
+      } else if (outcome === "needs_review") {
+        toast.warning("Needs human review — sources conflict or are unclear.");
       } else {
-        toast.warning("Nothing publicly verifiable was found for this lead.");
+        toast.info("No public business contact found yet. Stays in Watch.");
       }
     } catch (e) {
       const msg = e?.response?.data?.detail || "Enrichment failed";
@@ -465,7 +473,7 @@ const OpportunityDetail = () => {
                     }}
                   >
                     <Sparkles size={13} />
-                    {enriching ? "Searching…" : "Find contact"}
+                    {enriching ? "Searching…" : "Find public business contact"}
                   </button>
                 )}
               </div>
