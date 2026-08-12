@@ -86,4 +86,10 @@ export const api = {
     client.get("/settings/user").then((r) => r.data),
   updateUserSettings: (patch) =>
     client.patch("/settings/user", patch).then((r) => r.data),
+
+  // AI Contact Enrichment — Gemini + Google Search grounding, manual only.
+  enrichmentStatus: () =>
+    client.get("/enrichment/status").then((r) => r.data),
+  runEnrichment: () =>
+    client.post("/enrichment/run").then((r) => r.data),
 };

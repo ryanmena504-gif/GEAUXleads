@@ -210,6 +210,10 @@ EDITABLE_FIELDS = {
     "Notes",
     "Approval status",
     "Outreach status",
+    # Contact enrichment writes (AI-filled from Google Search grounding).
+    "Contact phone",
+    "Contact email",
+    "Contact website",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -223,6 +227,9 @@ WRITE_ALIAS: Dict[str, str] = {
     "notes": "Notes",
     "approval_status": "Approval status",
     "outreach_status": "Outreach status",
+    "phone": "Contact phone",
+    "email": "Contact email",
+    "website": "Contact website",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.

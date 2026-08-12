@@ -24,6 +24,7 @@ from services.playbook_service import get_playbook_service
 from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.handoff_service import get_handoff_service
 from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
+from services.enrichment_service import get_enrichment_service
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -1060,6 +1061,7 @@ class UserSettingsPatch(BaseModel):
     sender_name: Optional[str] = None
     sender_phone: Optional[str] = None
     email_provider: Optional[str] = None
+    enrichment_enabled: Optional[bool] = None
 
 
 @api_router.get("/settings/user")
@@ -1080,6 +1082,58 @@ async def update_user_settings(patch: UserSettingsPatch):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"settings": settings, "persisted": True}
+
+
+# ============================================================================
+# AI Contact Enrichment — Gemini + Google Search grounding. Manual only.
+# Runs when Ryan taps "Enrich now" in Settings AND enrichment_enabled=True.
+# Fills missing Contact phone / Contact email on Leads that have neither,
+# and soft-archives any lead 5+ days old with no results.
+# ============================================================================
+@api_router.get("/enrichment/status")
+async def enrichment_status():
+    esvc = get_enrichment_service()
+    ssvc = get_user_settings_service()
+    enabled = False
+    if ssvc:
+        s = await ssvc.get()
+        enabled = bool(s.get("enrichment_enabled"))
+    if not esvc:
+        return {
+            "available": False,
+            "enabled": enabled,
+            "reason": "EMERGENT_LLM_KEY missing or Airtable backend inactive",
+        }
+    return {"available": True, "enabled": enabled, **esvc.status()}
+
+
+@api_router.post("/enrichment/run")
+async def enrichment_run():
+    """Kick off a one-shot enrichment sweep in the BACKGROUND. Returns 202
+    immediately; the client should poll GET /api/enrichment/status until
+    running=false. Requires the enrichment_enabled toggle in user settings."""
+    ssvc = get_user_settings_service()
+    if ssvc:
+        s = await ssvc.get()
+        if not s.get("enrichment_enabled"):
+            raise HTTPException(
+                status_code=409,
+                detail="Enrichment is disabled. Turn it on in Settings first.",
+            )
+    esvc = get_enrichment_service()
+    if not esvc:
+        raise HTTPException(
+            status_code=503,
+            detail="Enrichment unavailable (EMERGENT_LLM_KEY missing or Airtable backend inactive).",
+        )
+    if esvc.status().get("running"):
+        return JSONResponse(
+            status_code=202,
+            content={"started": False, "reason": "already_running", **esvc.status()},
+        )
+    # Fire-and-forget — sweep updates its own last_run + running flag.
+    asyncio.create_task(esvc.run_sweep())
+    return JSONResponse(status_code=202, content={"started": True, **esvc.status()})
 
 
 app.include_router(api_router)

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
 import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save, Sparkles, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
 
@@ -128,6 +128,223 @@ const SenderIdentitySection = () => {
             {saving ? "Saving…" : "Save sender identity"}
           </button>
         </div>
+      </div>
+    </section>
+  );
+};
+
+/**
+ * AI Contact Enrichment — Gemini + Google Search grounding sweep that fills
+ * missing phone / email on Leads that have neither. Manual only:
+ *   • Toggle turns the feature on/off (persisted in user_settings)
+ *   • Enrich now button kicks off one sweep against the current Airtable data
+ *   • Status card shows the last run's numbers
+ */
+const EnrichmentSection = () => {
+  const [enabled, setEnabled] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+
+  const refreshStatus = React.useCallback(() => {
+    api
+      .enrichmentStatus()
+      .then((r) => setStatus(r))
+      .catch(() => setStatus({ available: false }));
+  }, []);
+
+  useEffect(() => {
+    Promise.all([fetchUserSettings(), api.enrichmentStatus().catch(() => ({ available: false }))])
+      .then(([s, e]) => {
+        setEnabled(Boolean(s?.enrichment_enabled));
+        setStatus(e);
+        setLoaded(true);
+      });
+  }, []);
+
+  const toggle = async () => {
+    const next = !enabled;
+    setSaving(true);
+    setEnabled(next);
+    try {
+      await saveUserSettings({ enrichment_enabled: next });
+      toast.success(next ? "AI enrichment enabled" : "AI enrichment disabled");
+      refreshStatus();
+    } catch (err) {
+      setEnabled(!next);
+      const msg = err?.response?.data?.detail || "Save failed";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const run = async () => {
+    if (running) return;
+    setRunning(true);
+    toast.info("Enrichment started · this may take a minute or two.");
+    try {
+      const r = await api.runEnrichment();
+      if (r?.reason === "already_running") {
+        toast.warning("A sweep is already running.");
+      }
+      // Poll status until it finishes (or 5 minutes elapses, whichever first).
+      const started = Date.now();
+      const poll = async () => {
+        const s = await api.enrichmentStatus().catch(() => null);
+        setStatus(s);
+        if (!s?.running) {
+          const l = s?.last_run;
+          if (l) {
+            toast.success(
+              `Enrichment done · ${l.enriched ?? 0} filled · ${l.archived ?? 0} archived · ${l.failed ?? 0} failed`,
+            );
+          }
+          setRunning(false);
+          return;
+        }
+        if (Date.now() - started > 5 * 60 * 1000) {
+          toast.warning("Sweep still running — check back shortly.");
+          setRunning(false);
+          return;
+        }
+        setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 2500);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Enrichment run failed";
+      toast.error(msg);
+      setRunning(false);
+    }
+  };
+
+  const available = status?.available !== false;
+  const last = status?.last_run;
+  const modelLabel = status?.model || "gemini-2.5-flash";
+
+  return (
+    <section data-testid="section-ai-enrichment">
+      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+        <Sparkles size={11} /> AI contact enrichment
+      </div>
+      <div className="bh-surface rounded p-5 space-y-4">
+        <p className="text-sm text-neutral-400 leading-relaxed">
+          When a new lead lands with no phone or email, tap <span className="text-amber-300">Enrich now</span> and
+          Bloodhound will use Gemini with Google Search grounding to find their
+          public business phone or email and write it straight to Airtable.
+          Leads that stay blank for 5+ days get soft-archived with an{" "}
+          <span className="mono text-[11px] px-1 py-0.5 rounded bh-hairline">
+            Archived — no contact found
+          </span>{" "}
+          tag so they leave the Today page but stay searchable.
+        </p>
+        <p className="text-[12px] text-neutral-500 leading-relaxed">
+          Runs manually only. Only targets leads missing BOTH phone and email.
+          Uses <span className="mono">{modelLabel}</span> · powered by your
+          Emergent LLM key.
+        </p>
+
+        <div className="flex items-center justify-between gap-3 pt-2 border-t bh-hairline">
+          <div>
+            <div className="text-sm text-[var(--bh-ink)] font-medium">
+              Enable AI enrichment
+            </div>
+            <div className="text-[12px] text-neutral-500">
+              Must be on before the Enrich-now button can run.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            onClick={toggle}
+            disabled={!loaded || saving || !available}
+            data-testid="settings-enrichment-toggle"
+            className={
+              "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-150 disabled:opacity-40 " +
+              (enabled ? "bg-emerald-500/70" : "bg-neutral-700")
+            }
+          >
+            <span
+              className={
+                "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-150 " +
+                (enabled ? "translate-x-6" : "translate-x-1")
+              }
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12.5px] text-neutral-400 leading-relaxed max-w-md">
+            {available
+              ? `Tap Enrich now to sweep every lead missing both phone and email. Up to ${status?.max_per_sweep ?? 15} leads per sweep.`
+              : "Enrichment isn't available — the Emergent LLM key or Airtable connection is missing."}
+          </div>
+          <button
+            type="button"
+            onClick={run}
+            disabled={!enabled || running || !available}
+            data-testid="settings-enrichment-run"
+            className="text-[13px] h-9 px-4 rounded-md font-medium inline-flex items-center gap-1.5 disabled:opacity-40"
+            style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
+          >
+            <PlayCircle size={14} />
+            {running ? "Enriching…" : "Enrich now"}
+          </button>
+        </div>
+
+        {last && (
+          <div
+            data-testid="settings-enrichment-last-run"
+            className="border-t bh-hairline pt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]"
+          >
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                Last run
+              </div>
+              <div className="text-neutral-200 mt-0.5">
+                {last.finished_at
+                  ? new Date(last.finished_at).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                Scanned
+              </div>
+              <div className="text-neutral-200 mt-0.5 tabular-nums">
+                {last.scanned ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-emerald-400">
+                Enriched
+              </div>
+              <div className="text-emerald-300 mt-0.5 tabular-nums">
+                {last.enriched ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-amber-300">
+                Archived
+              </div>
+              <div className="text-amber-200 mt-0.5 tabular-nums">
+                {last.archived ?? 0}
+              </div>
+            </div>
+            {(last.failed ?? 0) > 0 && (
+              <div className="col-span-2 sm:col-span-4 text-[12px] text-red-300">
+                {last.failed} failed · {last.errors?.[0] || "check backend logs"}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -356,6 +573,8 @@ const Settings = () => {
         )}
 
         <SenderIdentitySection />
+
+        <EnrichmentSection />
 
         <section data-testid="section-playbooks">
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">

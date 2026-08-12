@@ -20,7 +20,13 @@ SINGLETON_KEY = "singleton"
 
 # Whitelist of keys Ryan can update. Anything else is silently dropped so
 # the endpoint can never be used as a general document editor.
-EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"}
+EDITABLE_KEYS = {
+    "sender_email",
+    "sender_name",
+    "sender_phone",
+    "email_provider",
+    "enrichment_enabled",
+}
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
 # URL supports `authuser` which pins the sending account. Outlook Web has
@@ -35,6 +41,9 @@ DEFAULTS: Dict[str, Any] = {
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
     "email_provider": "apple",
+    # AI Contact Enrichment (Gemini + Google Search grounding) is opt-in —
+    # runs only when Ryan taps "Enrich now" in Settings and this is true.
+    "enrichment_enabled": False,
 }
 
 
@@ -82,6 +91,10 @@ class UserSettingsService:
                         f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
                     )
                 s = low
+            if k == "enrichment_enabled":
+                # Accept truthy/falsy inputs — store as real bool.
+                clean[k] = str(v).strip().lower() in ("true", "1", "yes", "on") if not isinstance(v, bool) else v
+                continue
             clean[k] = s or None
         if not clean:
             return await self.get()
