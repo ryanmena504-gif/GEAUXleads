@@ -19,7 +19,6 @@ import {
   FileText,
   ShieldAlert,
   Info,
-  Sparkles,
   Search,
   Clock3,
   CheckCircle2,
@@ -31,6 +30,7 @@ import {
   Target,
   PenLine,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 
 // Five manual result buttons — Ryan taps AFTER a real-world action.
@@ -121,6 +121,7 @@ const OpportunityDetail = () => {
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
@@ -150,6 +151,31 @@ const OpportunityDetail = () => {
       toast.error(msg);
     } finally {
       setBusy(null);
+    }
+  };
+
+  const handleFindContact = async () => {
+    if (enriching) return;
+    setEnriching(true);
+    toast.info("Searching for public contact info…");
+    try {
+      const res = await api.enrichLead(id);
+      if (res?.opportunity) setOpp(res.opportunity);
+      const r = res?.result || {};
+      const found = [];
+      if (r.phone) found.push("phone");
+      if (r.email) found.push("email");
+      if (r.website) found.push("website");
+      if (found.length) {
+        toast.success(`Found: ${found.join(", ")}`);
+      } else {
+        toast.warning("Nothing publicly verifiable was found for this lead.");
+      }
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Enrichment failed";
+      toast.error(msg);
+    } finally {
+      setEnriching(false);
     }
   };
 
@@ -421,7 +447,28 @@ const OpportunityDetail = () => {
 
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading title="Who to talk to" />
+              <div className="flex items-baseline justify-between mb-3 gap-3">
+                <h3 className="font-display text-lg font-bold text-[var(--bh-ink)]">
+                  Who to talk to
+                </h3>
+                {!opp.phone && !opp.email && (
+                  <button
+                    type="button"
+                    onClick={handleFindContact}
+                    disabled={enriching}
+                    data-testid="find-contact-btn"
+                    className="text-[12.5px] h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 border transition-colors duration-150 disabled:opacity-50"
+                    style={{
+                      background: "var(--bh-brass-mute)",
+                      borderColor: "var(--bh-hair-warm)",
+                      color: "var(--bh-brass)",
+                    }}
+                  >
+                    <Sparkles size={13} />
+                    {enriching ? "Searching…" : "Find contact"}
+                  </button>
+                )}
+              </div>
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
                 <KV label="Phone" value={opp.phone} mono testId="kv-phone" />

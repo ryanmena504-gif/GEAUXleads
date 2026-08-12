@@ -92,4 +92,6 @@ export const api = {
     client.get("/enrichment/status").then((r) => r.data),
   runEnrichment: () =>
     client.post("/enrichment/run").then((r) => r.data),
+  enrichLead: (opp_id) =>
+    client.post(`/opportunities/${opp_id}/enrich`).then((r) => r.data),
 };

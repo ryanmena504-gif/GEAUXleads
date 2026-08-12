@@ -1136,6 +1136,35 @@ async def enrichment_run():
     return JSONResponse(status_code=202, content={"started": True, **esvc.status()})
 
 
+@api_router.post("/opportunities/{opp_id}/enrich")
+async def enrich_single_lead(opp_id: str):
+    """Manually enrich ONE lead — used by the 'Find contact' button on the
+    opportunity detail page. Respects the enrichment_enabled toggle but does
+    NOT require the sweep to be idle-scoped to the whole base."""
+    ssvc = get_user_settings_service()
+    if ssvc:
+        s = await ssvc.get()
+        if not s.get("enrichment_enabled"):
+            raise HTTPException(
+                status_code=409,
+                detail="Enrichment is disabled. Turn it on in Settings first.",
+            )
+    esvc = get_enrichment_service()
+    if not esvc:
+        raise HTTPException(
+            status_code=503,
+            detail="Enrichment unavailable (EMERGENT_LLM_KEY missing or Airtable backend inactive).",
+        )
+    result = await esvc.enrich_lead(opp_id)
+    if result.get("error") == "not_found":
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    if result.get("error") == "sweep_in_progress":
+        raise HTTPException(status_code=409, detail="A full sweep is already running.")
+    if result.get("error") == "blocked":
+        raise HTTPException(status_code=409, detail="This lead is blocked or closed.")
+    return result
+
+
 app.include_router(api_router)
 
 app.add_middleware(

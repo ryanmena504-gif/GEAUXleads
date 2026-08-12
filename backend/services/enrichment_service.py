@@ -168,6 +168,24 @@ class EnrichmentService:
             "max_per_sweep": self._max_targets,
         }
 
+    async def enrich_lead(self, opp_id: str) -> Dict[str, Any]:
+        """Run enrichment on a single lead by id. Returns the same shape as
+        _enrich_one plus updated opportunity DTO. Never runs while a full
+        sweep is in progress (would compete for the same LLM budget)."""
+        if self._running:
+            return {"error": "sweep_in_progress"}
+        if not hasattr(self._airtable, "get"):
+            return {"error": "airtable_unavailable"}
+        opp = self._airtable.get(opp_id)
+        if not opp:
+            return {"error": "not_found"}
+        if _is_blocked(opp):
+            return {"error": "blocked", "opportunity": opp}
+        result = await self._enrich_one(opp)
+        # Re-fetch so the UI receives the newly-written contact info.
+        updated = self._airtable.get(opp_id) or opp
+        return {"result": result, "opportunity": updated}
+
     async def run_sweep(self) -> Dict[str, Any]:
         if self._running:
             return {"error": "already_running", **self.status()}
