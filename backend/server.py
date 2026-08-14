@@ -427,43 +427,19 @@ async def leads_action(lead_id: str, body: LeadAction):
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     action = (body.action or "").lower()
     if action == "approve":
-        # Two-phase: mark session-approved, then actually send the email.
-        session = svc.approve(lead_id)
-        gate = svc.can_send(lead_id)
-        if not gate["ok"]:
-            raise HTTPException(status_code=422, detail=gate["reason"])
-        lead = gate["lead"]
-        recipient = gate["recipient"]
-        email = svc.compose_email(lead)
-        try:
-            provider = await send_outreach_email(
-                recipient_email=recipient,
-                subject=email["subject"],
-                html_body=email["html"],
-                text_body=email["text"],
-                reply_to=os.environ.get("EMAIL_REPLY_TO"),
-            )
-        except EmailSendError as e:
-            # DO NOT mark sent — leave the lead in the approval queue.
-            raise HTTPException(status_code=e.status_code,
-                                detail=f"Email send failed: {e}")
-        persisted = svc.mark_sent(
-            lead_id,
-            sent_at_iso=session["approved_at"],
-            channel="Email",
-            first_message_written=email["text"] if email["used_fallback"] else None,
+        # RULE 5 (2026-08-14): Bloodhound never sends email or SMS from the
+        # backend. Outreach happens exclusively through device-native drafts
+        # (mailto:/sms: handoffs) that Ryan reviews and sends himself.
+        # This endpoint used to call a Resend proxy — that path has been
+        # removed. Approve is now a no-op that returns a clear error.
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Direct approve-and-send has been removed. Use the device-"
+                "native draft handoff on the opportunity detail page, then "
+                "tap 'I sent it' after you actually pressed Send."
+            ),
         )
-        return {
-            "lead_id": lead_id,
-            "state": "sent",
-            "approved_at": session["approved_at"],
-            "channel": "Email",
-            "recipient": recipient,
-            "used_fallback_template": email["used_fallback"],
-            "provider_id": provider.get("id"),
-            "persisted": persisted,
-            "note": "Email sent to lead.",
-        }
     if action == "hold":
         return svc.hold(lead_id)
     if action == "skip":
