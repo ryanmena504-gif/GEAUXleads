@@ -1,0 +1,102 @@
+{
+  "theme_preference": "dark",
+  "typography": {
+    "fonts": {
+      "heading": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "monospace": "JetBrains Mono"
+    },
+    "strategy": "A highly readable sans-serif for UI text, a strong grotesque for headers, and a monospace font for timestamps, IDs, and operational metrics. This creates an authoritative, data-first intelligence aesthetic without looking generic."
+  },
+  "colors": {
+    "backgrounds": {
+      "base": "#0B0C10",
+      "surface": "#15161A",
+      "surface_elevated": "#1F2026",
+      "overlay": "rgba(11, 12, 16, 0.8)"
+    },
+    "borders": {
+      "subtle": "rgba(255, 255, 255, 0.08)",
+      "strong": "rgba(255, 255, 255, 0.15)",
+      "active": "#EAB308"
+    },
+    "text": {
+      "primary": "#F3F2EE",
+      "secondary": "#9CA3AF",
+      "muted": "#6B7280"
+    },
+    "accents": {
+      "primary": "#D97706",
+      "primary_hover": "#F59E0B",
+      "primary_muted": "rgba(217, 119, 6, 0.15)"
+    },
+    "status": {
+      "success": "#10B981",
+      "info": "#3B82F6",
+      "warning": "#F59E0B",
+      "error": "#EF4444"
+    },
+    "priority_bands": {
+      "band_a": "#10B981",
+      "band_b": "#3B82F6",
+      "band_c": "#F59E0B",
+      "band_d": "#EF4444"
+    }
+  },
+  "visual_enhancers": {
+    "surfaces": "Build elevation with surface steps and subtle borders, not heavy drop shadows. Use a 1px solid stroke or 1px inner top border (border-t border-t-white/10) to separate panels. Dark mode is default and non-negotiable for this operational tool.",
+    "textures": "Flat, matte finish. Avoid gradients and glossy effects entirely. The interface must look like a serious, industrial command center.",
+    "shapes": "Slightly rounded corners (4px to 6px) to remain modern but professional."
+  },
+  "grids_and_layouts": {
+    "dashboard_grid": "Grid-disciplined layout. Emphasize a top row of 4–6 actionable metrics (KPI strip). Use strict, compact spacing (gap-4 or gap-6) for high data density.",
+    "navigation": "Collapsible left sidebar for desktop, bottom navigation for mobile.",
+    "spacing_scale": "Use standard Tailwind scale but apply denser spacing (p-3 to p-5) inside cards to allow more information to be visible without scrolling.",
+    "alignment": "Left-align data arrays. Right-align numeric columns in tables. Never center-align primary structural elements."
+  },
+  "component_strategy": {
+    "cards": "Dark charcoal background, border-white/10, no large blurry shadows.",
+    "buttons": "Restrained use of primary gold/amber. Most actions should be outline or ghost buttons to maintain a calm, tactical UI. Primary button only for 'Next Best Action'.",
+    "tables": "Dense rows, monospace IDs, distinct status badges. Subtle hover state on rows (bg-white/5).",
+    "status_badges": "Small, pill-shaped or rectangular with slight background tint of the status color and bright text (e.g., bg-emerald-500/10 text-emerald-400 border border-emerald-500/20).",
+    "icons": "Phosphor Icons (duotone or regular) or Lucide Icons for sharp, legible glyphs."
+  },
+  "motion": {
+    "transitions": "Fast and decisive. Use 150ms ease-out. No bouncy or playful animations.",
+    "interactions": "Hover states should immediately brighten text or slightly lift background lightness (bg-white/5) to give immediate feedback without distraction."
+  },
+  "accessibility": {
+    "contrast": "Ensure text against background meets at least AA standard. Monospace digits must be highly readable against their backgrounds.",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1503387762-592deb58ef4e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwyfHxjb250cmFjdG9yJTIwYmx1ZXByaW50JTIwYXJjaGl0ZWN0dXJlfGVufDB8fHx8MTc4NTExMTAwOHww&ixlib=rb-4.1.0&q=85",
+        "description": "Architect working on draft with pencil and ruler",
+        "category": "empty_state_or_header"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1721244654392-9c912a6eb236?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwzfHxjb250cmFjdG9yJTIwYmx1ZXByaW50JTIwYXJjaGl0ZWN0dXJlfGVufDB8fHx8MTc4NTExMTAwOHww&ixlib=rb-4.1.0&q=85",
+        "description": "Blueprint of a building",
+        "category": "background_texture_subtle"
+      }
+    ],
+    "logo_concept": "Wordmark: BLOODHOUND in Cabinet Grotesk, all caps, wide tracking (tracking-widest). Icon: A minimalist, abstract geometric crosshair or radar blip in amber next to the text. It should feel like a piece of high-end intelligence software."
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Use glass-morphism effects with backdrop filters carefully (12-24px blur) only for fixed elements like headers.",
+    "You MUST NOT apply universal transition. Eg: transition: all. Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Missing image categories = main agent will use placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Use sonner for toasts, located in /app/src/components/ui/sonner.tsx.",
+    "DO NOT use complete transparent background in header, overlays, any surface that has content under it.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
+  ],
+  "instructions_to_main_agent": "Build a Palantir-meets-Linear operational dashboard. Maintain strict, dense grid alignments. Rely on typography and subtle background steps (not shadows) to create hierarchy. Keep it dark charcoal and use amber/gold strictly for primary actions. Use JetBrains Mono for all data digits. Do not invent facts—differentiate clearly between known and missing info. The interface must feel fast, decisive, and authoritative."
+}

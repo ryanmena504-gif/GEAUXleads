@@ -1,0 +1,183 @@
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --bh-bg: #0b0c10;
+    --bh-surface: #15161a;
+    --bh-surface-2: #1f2026;
+    --bh-border: rgba(255, 255, 255, 0.08);
+    --bh-border-strong: rgba(255, 255, 255, 0.15);
+    --bh-text: #f3f2ee;
+    --bh-text-2: #9ca3af;
+    --bh-text-muted: #6b7280;
+    --bh-accent: #d97706;
+    --bh-accent-hover: #f59e0b;
+    --bh-accent-muted: rgba(217, 119, 6, 0.15);
+    --bh-success: #10b981;
+    --bh-info: #3b82f6;
+    --bh-warning: #f59e0b;
+    --bh-error: #ef4444;
+}
+
+@layer base {
+    :root {
+        --background: 230 15% 6%;
+        --foreground: 40 20% 95%;
+        --card: 230 12% 10%;
+        --card-foreground: 40 20% 95%;
+        --popover: 230 12% 10%;
+        --popover-foreground: 40 20% 95%;
+        --primary: 32 95% 44%;
+        --primary-foreground: 230 15% 6%;
+        --secondary: 230 8% 15%;
+        --secondary-foreground: 40 20% 95%;
+        --muted: 230 8% 15%;
+        --muted-foreground: 220 8% 65%;
+        --accent: 32 95% 44%;
+        --accent-foreground: 230 15% 6%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 40 20% 95%;
+        --border: 230 8% 18%;
+        --input: 230 8% 15%;
+        --ring: 32 95% 44%;
+        --radius: 0.375rem;
+    }
+}
+
+* {
+    border-color: hsl(var(--border));
+}
+
+html,
+body,
+#root {
+    background: var(--bh-bg);
+    color: var(--bh-text);
+    min-height: 100vh;
+}
+
+body {
+    margin: 0;
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+}
+
+.font-display {
+    font-family: "Cabinet Grotesk", "IBM Plex Sans", sans-serif;
+    letter-spacing: -0.01em;
+}
+
+.font-mono,
+.mono {
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+    font-feature-settings: "tnum", "zero";
+}
+
+.bh-surface {
+    background: var(--bh-surface);
+    border: 1px solid var(--bh-border);
+}
+
+.bh-surface-2 {
+    background: var(--bh-surface-2);
+    border: 1px solid var(--bh-border);
+}
+
+.bh-hairline {
+    border-color: var(--bh-border);
+}
+
+.bh-hairline-strong {
+    border-color: var(--bh-border-strong);
+}
+
+.bh-text-muted {
+    color: var(--bh-text-muted);
+}
+
+.bh-scanline {
+    background-image: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.02) 0%,
+        rgba(255, 255, 255, 0) 25%,
+        rgba(255, 255, 255, 0) 75%,
+        rgba(0, 0, 0, 0.2) 100%
+    );
+}
+
+.bh-grid-bg {
+    background-image:
+        linear-gradient(
+            to right,
+            rgba(255, 255, 255, 0.025) 1px,
+            transparent 1px
+        ),
+        linear-gradient(
+            to bottom,
+            rgba(255, 255, 255, 0.025) 1px,
+            transparent 1px
+        );
+    background-size: 44px 44px;
+}
+
+/* Selection */
+::selection {
+    background: var(--bh-accent);
+    color: var(--bh-bg);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+/* Focus */
+:focus-visible {
+    outline: 1px solid var(--bh-accent);
+    outline-offset: 2px;
+}
+
+/* Animation utilities */
+@keyframes bh-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.bh-fade-in {
+    animation: bh-fade-in 240ms ease-out both;
+}
+
+@keyframes bh-pulse-dot {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+.bh-pulse-dot {
+    animation: bh-pulse-dot 1.8s ease-in-out infinite;
+}

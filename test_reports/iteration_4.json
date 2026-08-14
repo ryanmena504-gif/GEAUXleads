@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 4 verifies the airtable_service rewrite that projects the LIVE Leads table (113 rows) onto the Opportunity DTO. Backend: 11/15 pytest cases pass in /app/backend/tests/opportunities_leads_test.py — /api/health returns backend='airtable' count=113; /api/opportunities returns 113 real leads (Maggiore, Tulane Chabad, Brown, Deshautreaux — no sample names) with full DTO shape (activity_timeline / missing_information / risk_flags are lists); /api/opportunities?min_score=1 → 79 (spec ~79 ✅); /api/opportunities/summary → {new:40, needs_research:77, ready:1, active:113, total:113} ✅; /api/opportunities/pipeline → 9 stages summing to 113, New=40, Needs research=72 (≥70 ✅), Ready=1; /api/opportunities/missions → Research First=71, Wait=32, Send Email=5, Prepare Estimate=5 (spec ✅); /api/opportunities/recent?limit=5 returns 5 rec-prefixed leads; GET /api/opportunities/{id} returns single DTO with correct list shapes; /api/cache-status shows backend='airtable' count=113 is_stale=false. REGRESSION: /api/leads/next-best-action returns a populated lead (Maggiore Salvatore) with name+next_action, queue.total=113 eligible=21; POST /api/leads/{id}/action {action:'skip'} returns state='skipped'. FRONTEND (Playwright, live URL): Command Center renders NBA card + all 5 metric cards with real numbers (40 / 0 / 1 / 77 / $0), sidebar shows 'LIVE SIGNAL SOURCE · New Orleans permits · 113 records' with no 'Sample data' label; /opportunities lists real leads and filtering by 'Research First' narrows to 71 matching (matches missions bucket); clicking AT Tulane Chabad navigates to /opportunities/rec1j1S6sVvAu0ofb and renders name, Bathroom, Permit, evidence summary, missing information, risk flags, opportunity fit/momentum/reachability; Ctrl+K palette opens and searches 'Tulane' successfully. FAILURES all concentrated in PATCH /api/opportunities/{id}/fields (see backend_issues.critical).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PATCH /api/opportunities/{id}/fields", "issue": "Returns HTTP 500 on any Airtable 422 (INVALID_MULTIPLE_CHOICE_OPTIONS). Reproduced with body {\"status\":\"Ready\"}, {\"ryans_decision\":\"Investigating\"}, and {\"next_follow_up\":\"\"} — Airtable rejects unknown single-select options and the raised requests.HTTPError propagates as 500 Internal Server Error. Spec requires graceful 4xx. Root cause: services/airtable_service.py update_fields() re-raises the HTTPError; server.py:153 does not catch it. Fix: wrap self._table.update in try/except pyairtable.PyAirtableError/HTTPError and raise HTTPException(status_code=e.response.status_code or 422, detail=str(e)).", "priority": "HIGH"},
+      {"endpoint": "PATCH /api/opportunities/{id}/fields", "issue": "status='Ready' is expected by spec to persist to Airtable's `Status` field. It currently 422's because the base's `Status` single-select does NOT contain 'Ready' as an option (Airtable error: 'Insufficient permissions to create new select option'). Either add 'Ready' as a Status option in Airtable OR reroute the write to a field whose options match dashboard vocabulary (`Hunt status`/`Enrichment status`).", "priority": "HIGH"},
+      {"endpoint": "PATCH /api/opportunities/{id}/fields", "issue": "Body containing ONLY unknown fields (e.g. {\"unknown_field\":\"x\"}) currently returns 400 'No editable fields provided'. Spec requires silent ignore + return current DTO (200). Fix in server.py:150 — instead of raising when payload is empty after pydantic strips it, fall through to svc.get(opp_id) and return it. Pydantic already strips unknowns because FieldUpdate is a strict schema with 4 optional fields.", "priority": "MEDIUM"},
+      {"endpoint": "PATCH /api/opportunities/{id}/fields", "issue": "Cannot clear a date field. Sending {\"next_follow_up\": null} is silently stripped by exclude_none=True → 400. Sending {\"next_follow_up\": \"\"} → Airtable 422 → propagated as 500. There is no supported way to unset next_follow_up. Consider treating empty string as explicit clear and translating to None before the Airtable write.", "priority": "MEDIUM"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Opportunity Detail header (e.g. /opportunities/rec1j1S6sVvAu0ofb)", "issues": ["Label columns overlap: 'PRIORITY'/'EST. VALUE' and 'SOURCE'/'PROJECT TYPE' render on top of each other because the meta grid is too narrow for the label width (visible as 'PRIORIÉXT.VALUE', 'SOURCEPROJECT TYPE'). Increase column min-width or stack on narrow containers."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/opportunities_leads_test.py",
+    "/app/test_reports/pytest/opportunities_leads_results.xml"
+  ],
+  "action_items": [
+    "server.py:146 — wrap svc.update_fields() in try/except HTTPError to translate Airtable 4xx into HTTPException 4xx (never 500).",
+    "server.py:150 — when payload is empty (unknown-only body), return current DTO via svc.get(opp_id) instead of raising 400 (spec: silent-ignore behavior).",
+    "Airtable base config OR airtable_service.WRITE_ALIAS — reconcile dashboard status vocabulary ('Ready') with the base's actual `Status` single-select options, OR reroute `status` writes to a different field.",
+    "airtable_service.update_fields — coerce empty-string writes for date/select fields to None so clearing works instead of 422'ing.",
+    "Fix opportunity-detail meta grid overlapping labels (Priority / Est. Value / Source / Project Type)."
+  ],
+  "critical_code_review_comments": [
+    "airtable_service.update_fields lets pyairtable HTTPError escape unmodified — every user-facing PATCH failure becomes a 500. Wrap and re-raise as a domain exception with the Airtable status code preserved.",
+    "server.py FieldUpdate model uses exclude_none=True downstream, so callers CANNOT explicitly null a field. Consider using a sentinel (`Unset`) or accepting empty string as clear intent, then converting to None before the Airtable payload.",
+    "airtable_service._derive_status coalesces empty state to 'New' but a lead with Approval status='Approved' AND flag_outreach_sent=false is classified 'Ready' — the summary metric 'ready_to_contact' therefore mixes 'ready to email' with 'ready to close'. Consider a distinct derived stage.",
+    "airtable_service.WRITE_ALIAS omits `next_follow_up` handling for clear — see action items.",
+    "server.py exposes /api/opportunities/{id} without any 'Cache-Control' hints; the frontend polling detail pages could hammer Airtable via the 45s TTL, but there is no per-record throttle if the record isn't in cache (falls through to self._table.get). Fine for now, worth noting.",
+    "Opportunity detail page column layout — labels overlap on 1920 viewport; low-priority CSS bug (see frontend_issues.design_issues)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/opportunities_leads_test.py"
+  ],
+  "success_rate": {"backend": "73% (11/15 — all failures on PATCH endpoint)", "frontend": "100% of spec checks (metrics, sidebar 113 records, real names, filter, detail page, palette)"},
+  "test_credentials": "N/A (no auth). Airtable creds in /app/backend/.env.",
+  "seed_data_creation": "During PATCH testing on rec1j1S6sVvAu0ofb (AT Tulane Chabad): Next followup was set to 2026-09-01 successfully. Restore attempt failed (empty string returned 500) so that lead's `Next followup` is currently 2026-09-01 — main agent may want to manually clear it in Airtable. Status='Ready' and Hunt status='Investigating' writes both failed at Airtable (422) so no data was mutated by those attempts.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All read-only endpoints on /api/opportunities* are green against the Leads table (113 rows, real names, correct derived counts). Failures are isolated to PATCH /api/opportunities/{id}/fields. Backend test file: /app/backend/tests/opportunities_leads_test.py — run with `pytest -n 0`. If the Status field in Airtable gets 'Ready' added as a select option OR the write route changes, expect TestPatchFields.test_status_ready_persists to move from 500 to 200. NBA (leads_service) regression check confirmed OK — do not re-run leads_nba_test.py destructive cases unless needed. Note: lead rec1j1S6sVvAu0ofb has a non-original Next followup=2026-09-01 from this run.",
+  "rca of the issue": "The Airtable base's `Status` single-select does not contain the option 'Ready' (nor accept empty string). pyairtable's `table.update()` raises requests.HTTPError with the Airtable 422 body '{type: INVALID_MULTIPLE_CHOICE_OPTIONS, message: Insufficient permissions to create new select option \"...\"}'. airtable_service.update_fields calls `raise` unconditionally, and server.py update_fields does not catch it — FastAPI's default handler turns it into 500 Internal Server Error. Two-part fix required: (1) catch HTTPError in airtable_service.update_fields and translate to a domain-level exception carrying the upstream status code; server.py should map that to HTTPException(4xx); (2) reconcile the dashboard's status vocabulary with Airtable's single-select options (either by adding options in Airtable or by remapping WRITE_ALIAS['status'] to a field that already accepts those values)."
+}
