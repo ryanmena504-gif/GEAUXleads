@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import get_leads_service, reset_leads_service
 from services.airtable_service import AirtableWriteError
-from services.email_service import send_outreach_email, EmailSendError
 from services.slack_service import (
     get_slack_alerter,
     is_configured as slack_is_configured,
