@@ -11,6 +11,8 @@ import OpenInMessages from "@/components/OpenInMessages";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
+import PredictiveScoreBadge from "@/components/PredictiveScoreBadge";
+import ReplyIntelligencePanel from "@/components/ReplyIntelligencePanel";
 import {
   ArrowLeft,
   MapPin,
@@ -122,10 +124,29 @@ const OpportunityDetail = () => {
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [prediction, setPrediction] = useState(null);
+  const [replyIntel, setReplyIntel] = useState(null);
+  const [resultNote, setResultNote] = useState("");
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
   }, [id]);
+
+  // Learning-loop recommendation: shows Why this matters / What to do next /
+  // Evidence gaps. Never invents probabilities or dollar predictions.
+  useEffect(() => {
+    if (!id) return;
+    api.predictiveForOpp(id).then(setPrediction).catch(() => setPrediction(null));
+  }, [id, opp?.status, opp?.outreach_status]);
+
+  // Only classify a reply when the record has actual reply_summary text —
+  // never mine notes or fabricate one.
+  useEffect(() => {
+    if (!opp) { setReplyIntel(null); return; }
+    const text = String(opp.reply_summary || "").trim();
+    if (!text) { setReplyIntel(null); return; }
+    api.classifyReply(text, id).then(setReplyIntel).catch(() => setReplyIntel(null));
+  }, [opp, id]);
 
   const handleStatus = async (status) => {
     setBusy(status);
@@ -143,9 +164,11 @@ const OpportunityDetail = () => {
   const handleResult = async (result, label) => {
     setBusy(result);
     try {
-      const res = await api.recordResult(id, result);
+      const note = resultNote.trim();
+      const res = await api.recordResult(id, result, note || undefined);
       if (res?.opportunity) setOpp(res.opportunity);
-      toast.success(`Saved: ${label}`);
+      setResultNote("");
+      toast.success(note ? `Saved: ${label} · note attached` : `Saved: ${label}`);
     } catch (e) {
       const msg = e?.response?.data?.detail || "Could not save result";
       toast.error(msg);
@@ -296,6 +319,13 @@ const OpportunityDetail = () => {
 
             {/* Primary action panel */}
             <div className="bh-surface-2 rounded p-4 min-w-0">
+                {/* Bloodhound learning-loop recommendation — never invents
+                    probabilities, dollars, or win rates. */}
+                {prediction && (
+                  <div className="mb-4">
+                    <PredictiveScoreBadge prediction={prediction} showDetails />
+                  </div>
+                )}
                 <div className="bh-eyebrow">
                   What to do next
                 </div>
@@ -311,6 +341,20 @@ const OpportunityDetail = () => {
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
                 <OpenInMessages opportunity={opp} variant="panel" />
+                <label className="block pt-1">
+                  <span className="text-[11px] text-[var(--bh-ink-mute)]">
+                    Add a note before you tap a result{" "}
+                    <span className="text-[var(--bh-ink-3)]">(optional — helps Bloodhound learn)</span>
+                  </span>
+                  <textarea
+                    value={resultNote}
+                    onChange={(e) => setResultNote(e.target.value)}
+                    placeholder="Example: called their office, spoke with Sarah, asked for an estimate walkthrough Thursday."
+                    rows={2}
+                    data-testid="result-note-input"
+                    className="mt-1.5 w-full resize-y rounded-md border bh-hairline bg-transparent px-3 py-2 text-[12px] leading-relaxed text-[var(--bh-ink)] outline-none placeholder:text-[var(--bh-ink-3)] focus:border-amber-500/50"
+                  />
+                </label>
                 <div className="space-y-1.5 pt-1">
                 {RESULT_BUTTONS.map((a) => {
                   return (
@@ -368,6 +412,14 @@ const OpportunityDetail = () => {
             onOpenChange={setDraftOpen}
             opportunity={opp}
           />
+        )}
+
+        {/* Reply intelligence — surfaces only when a genuine reply_summary
+            is on the record. Never guesses; never sends anything. */}
+        {replyIntel && (
+          <section data-testid="reply-intel-section">
+            <ReplyIntelligencePanel classification={replyIntel} />
+          </section>
         )}
 
         <div className="grid lg:grid-cols-3 gap-6">

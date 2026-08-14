@@ -63,8 +63,10 @@ export const api = {
   deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
 
   // Manual result-tracking — Ryan taps AFTER a real-world touch.
-  recordResult: (opp_id, result) =>
-    client.post(`/opportunities/${opp_id}/result`, { result }).then((r) => r.data),
+  recordResult: (opp_id, result, note) =>
+    client
+      .post(`/opportunities/${opp_id}/result`, { result, note })
+      .then((r) => r.data),
 
   logHandoff: (opp_id, payload) =>
     client
@@ -94,4 +96,20 @@ export const api = {
     client.post("/enrichment/run").then((r) => r.data),
   enrichLead: (opp_id) =>
     client.post(`/opportunities/${opp_id}/enrich`).then((r) => r.data),
+
+  // Bloodhound learning loop — evidence-first, no invented probabilities.
+  predictiveStatus: () =>
+    client.get("/intelligence/predictive/status").then((r) => r.data),
+  predictiveTrain: () =>
+    client.post("/intelligence/predictive/train").then((r) => r.data),
+  predictiveForOpp: (opp_id) =>
+    client.get(`/intelligence/predictive/${opp_id}`).then((r) => r.data),
+  predictiveTop: (limit = 20) =>
+    client.get(`/intelligence/predictive/batch/top?limit=${limit}`).then((r) => r.data),
+  marketOverview: () =>
+    client.get("/intelligence/market").then((r) => r.data),
+  classifyReply: (text, lead_id) =>
+    client.post("/intelligence/reply/classify", { text, lead_id }).then((r) => r.data),
+  leadsWithReplies: () =>
+    client.get("/intelligence/reply/leads-with-replies").then((r) => r.data),
 };

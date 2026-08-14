@@ -25,6 +25,9 @@ from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.handoff_service import get_handoff_service
 from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
 from services.enrichment_service import get_enrichment_service
+from services.predictive_engine import train_from_records, predict_for_record, batch_predict, get_engine
+from services.market_intelligence import analyze_market
+from services.reply_intelligence import classify_reply, classify_lead_replies
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -267,6 +270,7 @@ async def update_fields(opp_id: str, body: FieldUpdate):
 # ============================================================================
 class ManualResult(BaseModel):
     result: str  # "sent" | "replied" | "estimate_requested" | "no_reply" | "not_interested"
+    note: Optional[str] = None  # optional freeform note Ryan can attach when saving
 
 
 _RESULT_TO_FIELDS = {
@@ -319,6 +323,19 @@ async def record_manual_result(opp_id: str, body: ManualResult):
     updates: Dict[str, Any] = {"outreach_status": plan["outreach_status"]}
     if plan["status_hint"]:
         updates["status"] = plan["status_hint"]
+    # Optional note goes into Airtable Notes so the learning loop and
+    # future audit have Ryan's own words about what happened.
+    user_note = (body.note or "").strip()
+    if user_note:
+        try:
+            current = svc.get(opp_id) if hasattr(svc, "get") else None
+        except Exception:
+            current = None
+        prior = str((current or {}).get("notes") or "").strip()
+        from datetime import datetime as _dt, timezone as _tz
+        stamp = _dt.now(_tz.utc).date().isoformat()
+        line = f"{plan['note']} · {stamp} · {user_note}"
+        updates["notes"] = f"{prior}\n{line}".strip() if prior else line
     if not hasattr(svc, "update_fields"):
         raise HTTPException(status_code=503, detail="Airtable write unavailable")
     try:
@@ -1163,6 +1180,70 @@ async def enrich_single_lead(opp_id: str):
     if result.get("error") == "blocked":
         raise HTTPException(status_code=409, detail="This lead is blocked or closed.")
     return result
+
+
+# ============================================================================
+# Bloodhound Learning Loop — evidence-first recommendation engine.
+# Rule: NO probabilities, expected-value dollars, or AI-generated win claims
+# appear unless the model has enough confirmed recorded outcomes. See
+# services/predictive_engine.py for the safety gate (MIN_LEARNING_SAMPLE).
+# ============================================================================
+@api_router.get("/intelligence/predictive/status")
+async def predictive_status():
+    svc = get_opportunity_service()
+    return train_from_records(svc.all())
+
+
+@api_router.post("/intelligence/predictive/train")
+async def predictive_train():
+    svc = get_opportunity_service()
+    records = svc.all()
+    status = train_from_records(records)
+    return {"ok": True, **status}
+
+
+@api_router.get("/intelligence/predictive/{opp_id}")
+async def predictive_for_opportunity(opp_id: str):
+    svc = get_opportunity_service()
+    opp = svc.get(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    train_from_records(svc.all())
+    return predict_for_record(opp)
+
+
+@api_router.get("/intelligence/predictive/batch/top")
+async def predictive_batch_top(limit: int = 20):
+    svc = get_opportunity_service()
+    records = svc.all()
+    train_from_records(records)
+    predictions = batch_predict(records)
+    return {"predictions": predictions[:limit], "total": len(predictions)}
+
+
+@api_router.get("/intelligence/market")
+async def market_overview():
+    svc = get_opportunity_service()
+    records = svc.all()
+    return analyze_market(records)
+
+
+@api_router.post("/intelligence/reply/classify")
+async def classify_reply_endpoint(body: dict):
+    text = body.get("text", "")
+    lead_id = body.get("lead_id")
+    lead_record = None
+    if lead_id:
+        svc = get_opportunity_service()
+        lead_record = svc.get(lead_id)
+    return classify_reply(text, lead_record)
+
+
+@api_router.get("/intelligence/reply/leads-with-replies")
+async def leads_with_replies():
+    svc = get_opportunity_service()
+    records = svc.all()
+    return {"classifications": classify_lead_replies(records)}
 
 
 app.include_router(api_router)

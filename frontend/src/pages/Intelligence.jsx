@@ -1,235 +1,197 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import TopHeader from "@/components/TopHeader";
-import LaneBadge from "@/components/LaneBadge";
-import OpenInMessages, { resolveContacts } from "@/components/OpenInMessages";
-import ContactBadge from "@/components/ContactBadge";
-import { PriorityBand } from "@/components/PriorityBadge";
+import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Brain, MapPin, MessageSquare, RefreshCw, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useLiveUpdates } from "@/hooks/useLiveUpdates";
-import {
-  Radar,
-  ExternalLink,
-  Lock,
-  Sparkles,
-  Shield,
-  AlertTriangle,
-  ArrowRight,
-} from "lucide-react";
+import PredictiveScoreBadge from "@/components/PredictiveScoreBadge";
+import ReplyIntelligencePanel from "@/components/ReplyIntelligencePanel";
 
-const SignalRow = ({ s }) => {
-  const evidence = s.evidence_summary || s.signal_type;
-  const why = s.recommendation_reason;
-  const next = s.recommended_action || s.next_best_action;
-  const url = s.source_url;
-  const source = s.source_category || s.source;
-  const fit = s.project_type || s.opportunity_fit;
-  const contacts = resolveContacts(s);
-  const hasPublicContact = !!(contacts.text || contacts.email);
-  return (
-    <div
-      data-testid={`signal-row-${s.id}`}
-      className="bh-surface rounded-md p-4 hover:bg-white/[0.03] transition-colors duration-150"
-    >
-      <div className="flex items-start gap-4">
-        <div className="hidden sm:flex flex-col items-start pt-1 w-[110px] shrink-0 gap-2">
-          <PriorityBand band={s.priority_band} score={s.priority_score} />
-          <ContactBadge opportunity={s} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              to={`/opportunities/${s.id}`}
-              data-testid={`signal-open-${s.id}`}
-              className="font-display font-semibold text-neutral-100 hover:text-amber-300 truncate"
-            >
-              {s.name || "Unnamed"}
-            </Link>
-            <LaneBadge lane={s.lane || "non_permit"} />
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-neutral-400 flex-wrap">
-            {source && (
-              <span className="mono text-[10px] uppercase tracking-widest text-sky-300 border border-sky-500/30 rounded px-2 py-0.5">
-                Found on {source}
-              </span>
-            )}
-            {fit && (
-              <span className="mono text-[10px] uppercase tracking-widest text-neutral-400 border bh-hairline rounded px-2 py-0.5">
-                Fit · {fit}
-              </span>
-            )}
-          </div>
-          {evidence && (
-            <div className="mt-2 text-sm text-neutral-300 line-clamp-2">
-              <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                What&rsquo;s happening
-              </span>
-              {evidence}
-            </div>
-          )}
-          {why && (
-            <div className="mt-2 text-[13px] text-neutral-400 line-clamp-2">
-              <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                Why it may fit
-              </span>
-              {why}
-            </div>
-          )}
-          {next && (
-            <div className="mt-2 text-[13px] text-amber-200/90 line-clamp-2">
-              <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-2">
-                What to do next
-              </span>
-              {next}
-            </div>
-          )}
-          <div className="mt-3 flex items-center gap-2 flex-wrap sm:hidden">
-            <ContactBadge opportunity={s} />
-          </div>
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            {url && (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid={`signal-evidence-${s.id}`}
-                className="mono text-[10px] uppercase tracking-widest text-sky-300 hover:text-sky-200 inline-flex items-center gap-1"
-              >
-                <ExternalLink size={11} /> Found on
-              </a>
-            )}
-            {hasPublicContact && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                data-testid={`signal-handoff-${s.id}`}
-                className="inline-flex"
-              >
-                <OpenInMessages opportunity={s} variant="pill" />
-              </div>
-            )}
-          </div>
-        </div>
+const Section = ({ title, icon: Icon, children }) => (
+  <section className="bh-surface rounded-lg border-t border-t-white/10 p-5">
+    <div className="flex items-center gap-2 mb-4">
+      {Icon && <Icon size={14} className="text-amber-400" />}
+      <h2 className="font-display text-lg font-semibold text-neutral-100">
+        {title}
+      </h2>
+    </div>
+    {children}
+  </section>
+);
+
+const Stat = ({ label, value, sub }) => (
+  <div className="p-3 rounded bg-white/[0.03] border border-white/5">
+    <div className="mono text-[9px] uppercase tracking-widest text-neutral-500 mb-1">
+      {label}
+    </div>
+    <div className="font-display text-xl font-bold text-neutral-100">
+      {value ?? "—"}
+    </div>
+    {sub && <div className="text-[10px] text-neutral-500 mt-0.5">{sub}</div>}
+  </div>
+);
+
+export default function Intelligence() {
+  const [market, setMarket] = useState(null);
+  const [recommendations, setRecommendations] = useState(null);
+  const [replies, setReplies] = useState(null);
+  const [learning, setLearning] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [m, r, replyData, learningStatus] = await Promise.all([
+        api.marketOverview(),
+        api.predictiveTop(12),
+        api.leadsWithReplies(),
+        api.predictiveStatus(),
+      ]);
+      setMarket(m);
+      setRecommendations(r);
+      setReplies(replyData);
+      setLearning(learningStatus);
+    } catch {
+      toast.error("Could not load Bloodhound’s learning view");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96 text-neutral-400 gap-2">
+        <Loader2 size={16} className="animate-spin" /> Loading what Bloodhound
+        is learning...
       </div>
+    );
+  }
+
+  const outcomes = learning?.results_recorded || {};
+  const resultCount = learning?.training_size || 0;
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-neutral-100">
+            What Bloodhound is learning
+          </h1>
+          <p className="mt-1 text-sm text-neutral-400">
+            Recommendations improve only from results you record. No guessed win
+            rates and no automatic outreach.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1.5"
+        >
+          <RefreshCw size={11} /> Refresh
+        </button>
+      </div>
+
+      <Section title="Results that teach Bloodhound" icon={Brain}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Stat
+            label="Confirmed results"
+            value={resultCount}
+            sub={
+              learning?.learning_ready
+                ? "Enough to look for early patterns"
+                : "Still gathering your real outcomes"
+            }
+          />
+          <Stat label="Replies" value={outcomes.replied || 0} />
+          <Stat
+            label="Estimates requested"
+            value={outcomes.estimate_requested || 0}
+          />
+          <Stat label="Won work" value={outcomes.won || 0} />
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-neutral-400">
+          {learning?.note}
+        </p>
+      </Section>
+
+      {recommendations?.predictions?.length > 0 && (
+        <Section title="What is worth your time" icon={Brain}>
+          <div className="grid gap-3 md:grid-cols-2">
+            {recommendations.predictions.map((recommendation) => (
+              <PredictiveScoreBadge
+                key={recommendation.lead_id}
+                prediction={recommendation}
+                showDetails
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {market && !market.error && (
+        <Section title="Where to keep watching" icon={MapPin}>
+          <p className="mb-4 text-xs leading-relaxed text-neutral-400">
+            This is a count of the public project signals already in Bloodhound.
+            It is not a prediction of revenue.
+          </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+                Places with the most signals
+              </div>
+              <div className="space-y-2">
+                {market.geography?.top_cities?.slice(0, 5).map((city) => (
+                  <div
+                    key={city.city}
+                    className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="text-sm text-neutral-200 font-medium">
+                      {city.city}
+                    </div>
+                    <div className="text-xs text-neutral-400">
+                      {city.count} signals
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+                Types of work showing up
+              </div>
+              <div className="space-y-2">
+                {market.project_types?.slice(0, 5).map((projectType) => (
+                  <div
+                    key={projectType.type}
+                    className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="text-sm text-neutral-200">
+                      {projectType.type}
+                    </div>
+                    <div className="text-xs text-neutral-400">
+                      {projectType.count} signals
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {replies?.classifications?.length > 0 && (
+        <Section title="Replies that need your attention" icon={MessageSquare}>
+          <div className="space-y-3">
+            {replies.classifications.slice(0, 5).map((classification) => (
+              <ReplyIntelligencePanel
+                key={classification.lead_id}
+                classification={classification}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
     </div>
   );
-};
-
-const NonPermitSignals = () => {
-  const [items, setItems] = useState(null);
-  const [platform, setPlatform] = useState("all");
-
-  const load = React.useCallback(() => {
-    api.listOpportunities({ lane: "non_permit" }).then(setItems);
-  }, []);
-  useEffect(() => { load(); }, [load]);
-  useLiveUpdates(React.useCallback(() => load(), [load]));
-
-  const platforms = useMemo(() => {
-    const set = new Set();
-    (items || []).forEach((s) => {
-      if (s.source_category) set.add(s.source_category);
-      else if (s.source) set.add(s.source);
-    });
-    return ["all", ...Array.from(set)];
-  }, [items]);
-
-  const visible = useMemo(() => {
-    if (platform === "all") return items || [];
-    return (items || []).filter(
-      (s) => (s.source_category || s.source) === platform,
-    );
-  }, [platform, items]);
-
-  return (
-    <>
-      <TopHeader
-        pageTitle="Projects to Watch"
-        subtitle={items === null ? "Loading" : `${items.length} projects that may turn into good work`}
-      />
-      <div className="px-4 lg:px-8 py-6 space-y-5">
-        <section
-          data-testid="signals-hero"
-          className="bh-surface rounded p-5 sm:p-6 border-t border-t-sky-500/60"
-        >
-          <div className="flex items-center gap-2">
-            <Radar size={13} style={{ color: "#4b6b6f" }} strokeWidth={1.75} />
-            <span className="bh-eyebrow" style={{ color: "#4b6b6f" }}>
-              Projects to watch
-            </span>
-            <span className="bh-note ml-2 inline-flex items-center gap-1 py-0.5">
-              <Shield size={10} strokeWidth={1.75} /> Nothing sends until you press Send on your phone
-            </span>
-          </div>
-          <h2 className="mt-3 font-display text-[26px] sm:text-[32px] text-[var(--bh-ink)] tracking-tight max-w-2xl">
-            Projects that may turn into good work.
-          </h2>
-          <p className="mt-2 text-[14px] text-[var(--bh-ink-3)] max-w-2xl leading-relaxed">
-            Real signs of an upcoming project — website mentions, referral
-            hints, and other early leads. Follow them until it&rsquo;s worth
-            reaching out.
-          </p>
-        </section>
-
-        {platforms.length > 1 && (
-          <section className="flex flex-wrap gap-1.5">
-            {platforms.map((p) => (
-              <button
-                key={p}
-                type="button"
-                data-testid={`signal-platform-${p}`}
-                onClick={() => setPlatform(p)}
-                className={
-                  "mono text-[10.5px] px-2.5 py-1 rounded-full border transition-colors duration-150 tracking-tight " +
-                  (platform === p
-                    ? "bg-[rgba(75,107,111,0.10)] border-[rgba(75,107,111,0.30)] text-[#4b6b6f]"
-                    : "bh-hairline text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]/70")
-                }
-              >
-                {p === "all" ? "All platforms" : p}
-              </button>
-            ))}
-          </section>
-        )}
-
-        {items === null ? (
-          <div className="bh-surface rounded p-12 text-center text-neutral-500 text-sm">
-            Loading signals…
-          </div>
-        ) : visible.length === 0 ? (
-          <div
-            data-testid="signals-empty"
-            className="bh-surface rounded p-10 border-t border-t-sky-500/60 space-y-3"
-          >
-            <div className="flex items-center gap-2 text-neutral-300">
-              <Sparkles size={14} className="text-sky-300" />
-              <span className="font-display text-lg font-semibold">
-                Nothing to watch yet.
-              </span>
-            </div>
-            <p className="text-sm text-neutral-500 max-w-lg leading-relaxed">
-              Early project signs will show up here as soon as we find them —
-              website mentions, referral hints, and other clues that a
-              renovation may be coming.
-            </p>
-            <div className="inline-flex items-center gap-2 mono text-[10px] uppercase tracking-widest text-neutral-500 border bh-hairline rounded px-2 py-1">
-              <AlertTriangle size={10} /> Nothing sends until you press Send on your phone
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {visible.map((s) => (
-              <SignalRow key={s.id} s={s} />
-            ))}
-          </div>
-        )}
-
-        <section className="text-xs text-neutral-500 flex items-center gap-2 justify-end pt-2">
-          <ArrowRight size={11} />
-          <span>Nothing sends automatically · you always press Send on your phone</span>
-        </section>
-      </div>
-    </>
-  );
-};
-
-export default NonPermitSignals;
+}
