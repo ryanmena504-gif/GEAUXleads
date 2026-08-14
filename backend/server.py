@@ -211,18 +211,20 @@ async def record_result(opp_id: str, body: ResultUpdate):
     elif event == "replied":
         updates = {
             "outreach_status": "Replied",
-            "reply_classification": "Needs more information",
+            "reply_classification": "Reply received",
             "reply_summary": body.note or "Reply received",
             "date_replied": now,
         }
     elif event == "estimate_requested":
         updates = {
-            "reply_classification": "Interested",
+            "outreach_status": "Replied",
+            "reply_classification": "Estimate requested",
             "reply_summary": body.note or "Estimate requested",
             "date_replied": now,
         }
     elif event == "not_interested":
         updates = {
+            "outreach_status": "Not interested",
             "reply_classification": "Not interested",
             "reply_summary": body.note or "Not interested",
             "date_replied": now,
@@ -434,10 +436,14 @@ async def reload_service():
     return {"ok": True, "backend": svc.backend_name}
 
 
-# ---------- Predictive Intelligence ----------
+# ---------- Bloodhound learning loop ----------
+# Legacy route names stay stable so the current app does not break.  The
+# implementation is evidence-first: no guessed conversion rate or invented
+# expected value is returned.
 @api_router.get("/intelligence/predictive/status")
 async def predictive_status():
-    return get_engine().model_status()
+    svc = get_opportunity_service()
+    return train_from_records(svc.all())
 
 
 @api_router.post("/intelligence/predictive/train")
@@ -454,6 +460,7 @@ async def predictive_for_opportunity(opp_id: str):
     opp = svc.get(opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
+    train_from_records(svc.all())
     return predict_for_record(opp)
 
 
@@ -461,6 +468,7 @@ async def predictive_for_opportunity(opp_id: str):
 async def predictive_batch_top(limit: int = 20):
     svc = get_opportunity_service()
     records = svc.all()
+    train_from_records(records)
     predictions = batch_predict(records)
     return {"predictions": predictions[:limit], "total": len(predictions)}
 

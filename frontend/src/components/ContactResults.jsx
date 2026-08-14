@@ -1,18 +1,40 @@
 import React, { useState } from "react";
-import { Check, MessageCircle, ClipboardList, XCircle, Clock3 } from "lucide-react";
+import {
+  Check,
+  MessageCircle,
+  ClipboardList,
+  XCircle,
+  Clock3,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 const RESULT_ACTIONS = [
   { event: "sent", label: "I sent it", icon: Check, tone: "primary" },
-  { event: "replied", label: "They replied", icon: MessageCircle, tone: "plain" },
-  { event: "estimate_requested", label: "Estimate requested", icon: ClipboardList, tone: "plain" },
+  {
+    event: "replied",
+    label: "They replied",
+    icon: MessageCircle,
+    tone: "plain",
+  },
+  {
+    event: "estimate_requested",
+    label: "Estimate requested",
+    icon: ClipboardList,
+    tone: "plain",
+  },
   { event: "no_response", label: "No reply yet", icon: Clock3, tone: "plain" },
-  { event: "not_interested", label: "Not interested", icon: XCircle, tone: "plain" },
+  {
+    event: "not_interested",
+    label: "Not interested",
+    icon: XCircle,
+    tone: "plain",
+  },
 ];
 
 const ContactResults = ({ opportunity, onSaved }) => {
   const [busy, setBusy] = useState("");
+  const [note, setNote] = useState("");
   const options = [
     ...(opportunity?.contact_phone || opportunity?.phone ? ["Text"] : []),
     ...(opportunity?.contact_email || opportunity?.email ? ["Email"] : []),
@@ -22,35 +44,58 @@ const ContactResults = ({ opportunity, onSaved }) => {
   const save = async (event) => {
     const action = RESULT_ACTIONS.find((item) => item.event === event);
     if (!action) return;
-    if (event === "sent" && !window.confirm("Only record this after you pressed Send yourself. Did you send it?")) {
+    if (
+      event === "sent" &&
+      !window.confirm(
+        "Only record this after you pressed Send yourself. Did you send it?",
+      )
+    ) {
       return;
     }
     setBusy(event);
     try {
-      const updated = await api.recordResult(opportunity.id, { event, channel });
+      const updated = await api.recordResult(opportunity.id, {
+        event,
+        channel,
+        note: note.trim() || undefined,
+      });
       onSaved?.(updated);
+      setNote("");
       toast.success(
-        event === "sent" ? "Saved as sent" :
-        event === "replied" ? "Reply saved" :
-        event === "estimate_requested" ? "Estimate request saved" :
-        event === "not_interested" ? "Marked not interested" :
-        "Saved as no reply yet",
+        event === "sent"
+          ? "Saved as sent"
+          : event === "replied"
+            ? "Reply saved"
+            : event === "estimate_requested"
+              ? "Estimate request saved"
+              : event === "not_interested"
+                ? "Marked not interested"
+                : "Saved as no reply yet",
       );
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Could not save that result");
+      toast.error(
+        error?.response?.data?.detail || "Could not save that result",
+      );
     } finally {
       setBusy("");
     }
   };
 
   return (
-    <section className="border-t bh-hairline pt-3 space-y-2" data-testid="contact-results">
+    <section
+      className="border-t bh-hairline pt-3 space-y-2"
+      data-testid="contact-results"
+    >
       <div className="bh-eyebrow">After you do something</div>
       <p className="text-[12px] leading-relaxed text-[var(--bh-ink-3)]">
-        Opening a draft does not count as contact. Tap one of these only after something actually happened.
+        Opening a draft does not count as contact. Tap one of these only after
+        something actually happened.
       </p>
       {options.length > 1 && (
-        <div className="flex items-center gap-1.5" aria-label="Choose how you contacted them">
+        <div
+          className="flex items-center gap-1.5"
+          aria-label="Choose how you contacted them"
+        >
           <span className="text-[11px] text-[var(--bh-ink-mute)]">I used:</span>
           {options.map((option) => (
             <button
@@ -90,6 +135,22 @@ const ContactResults = ({ opportunity, onSaved }) => {
           </button>
         ))}
       </div>
+      <label className="block pt-1">
+        <span className="text-[11px] text-[var(--bh-ink-mute)]">
+          What happened?{" "}
+          <span className="text-[var(--bh-ink-mute)]">
+            (optional, helps Bloodhound learn)
+          </span>
+        </span>
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="Example: Asked about a tadelakt shower project and requested a site visit."
+          rows={2}
+          className="mt-1.5 w-full resize-y rounded-md border bh-hairline bg-transparent px-3 py-2 text-[12px] leading-relaxed text-[var(--bh-ink)] outline-none placeholder:text-[var(--bh-ink-mute)] focus:border-amber-500/50"
+          data-testid={`result-note-${opportunity?.id}`}
+        />
+      </label>
     </section>
   );
 };

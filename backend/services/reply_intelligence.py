@@ -1,219 +1,93 @@
+"""Human-reviewed reply helper for Bloodhound.
+
+It never sends, archives, or changes a record.  It only helps Ryan identify the
+next human step after he pastes a reply or records a result.
+"""
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from services.field_norm import clean_text
 
-log = logging.getLogger("bloodhound.reply_intel")
-
 
 @dataclass
 class ReplyClassification:
     intent: str
-    sentiment: str
     urgency: str
-    confidence: float
     suggested_action: str
-    suggested_response_template: Optional[str]
     key_phrases: List[str]
 
 
 class ReplyIntelligence:
-    INTENT_PATTERNS = {
-        "estimate_request": [
-            r"\b(estimate|quote|bid|pricing|price|cost|how much)\b",
-            r"\b(ballpark|range|figure|numbers?)\b",
-            r"\b(send|give).{0,20}(estimate|quote|price)\b",
-        ],
-        "scheduling": [
-            r"\b(schedule|appointment|meet|meeting|visit|site visit|come by|stop by|when|available|time|day|week)\b",
-            r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon)\b",
-            r"\b(next week|this week|tomorrow|soon)\b",
-        ],
-        "referral": [
-            r"\b(refer|referral|recommend|someone|friend|neighbor|colleague|contact|know a)\b",
-            r"\b(not me|wrong person|different|someone else)\b",
-        ],
-        "not_interested": [
-            r"\b(not interested|no thanks|pass|decline|unsubscribe|stop|don'?t contact|wrong number|sold|already hired|found someone)\b",
-            r"\b(no need|don'?t need|not looking|not right now|maybe later)\b",
-        ],
-        "objection": [
-            r"\b(too expensive|too much|high price|cheaper|discount|budget|can'?t afford)\b",
-            r"\b(compare|comparison|shopping around|other quotes|getting bids)\b",
-            r"\b(not sure|hesitant|concern|worried|skeptical|trust|license|insured|bonded)\b",
-            r"\b(timeline|too long|how long|when finished|deadline|rush)\b",
-        ],
-        "positive": [
-            r"\b(yes|interested|sounds good|let'?s do|go ahead|proceed|ready|excited|perfect|great|awesome)\b",
-            r"\b(love|like|want|need|help|please)\b",
-        ],
-        "needs_info": [
-            r"\b(more info|details|question|what|how|why|explain|tell me|portfolio|past work|references|reviews)\b",
-            r"\b(experience|qualified|certified|license number|insurance|warranty|guarantee)\b",
-        ],
+    PATTERNS = {
+        "estimate_request": [r"\b(estimate|quote|bid|pricing|price|cost|ballpark)\b"],
+        "site_visit": [r"\b(schedule|appointment|meet|site visit|come by|available)\b"],
+        "referral": [r"\b(refer|referral|recommend|someone you know)\b"],
+        "not_interested": [r"\b(not interested|no thanks|unsubscribe|stop|don't contact|already hired|found someone)\b"],
+        "needs_info": [r"\b(more info|details|portfolio|references|insurance|warranty|license)\b"],
+        "positive": [r"\b(yes|interested|sounds good|go ahead|ready|let's do)\b"],
     }
 
-    SENTIMENT_POSITIVE = [
-        r"\b(thank|thanks|appreciate|great|awesome|perfect|excellent|love|like|interested|excited|ready)\b",
-        r"\b(yes|sure|absolutely|definitely|of course|please|help)\b",
-    ]
-    SENTIMENT_NEGATIVE = [
-        r"\b(no|not|never|stop|don'?t|won'?t|can'?t|bad|terrible|awful|waste|scam|annoying)\b",
-        r"\b(expensive|too much|rip off|overpriced|disappointed|frustrated|angry)\b",
-    ]
-
-    URGENCY_HIGH = [
-        r"\b(urgent|asap|immediately|emergency|rush|today|now|right away|hurry)\b",
-    ]
-    URGENCY_MEDIUM = [
-        r"\b(soon|this week|next week|quick|fast|promptly)\b",
-    ]
-
-    ACTION_TEMPLATES = {
-        "estimate_request": {
-            "action": "Prepare Estimate",
-            "template": "Thanks for your interest! I'd be happy to prepare a detailed estimate for {project_type} at {address}. When would be a good time to visit the site?",
-        },
-        "scheduling": {
-            "action": "Schedule Site Visit",
-            "template": "I'd love to come by and take a look. What days/times work best for you this week or next?",
-        },
-        "referral": {
-            "action": "Follow Up on Referral",
-            "template": "Thank you for the referral! Would you mind sharing their contact info, or would you prefer to introduce us directly?",
-        },
-        "not_interested": {
-            "action": "Archive & Tag",
-            "template": None,
-        },
-        "objection": {
-            "action": "Address Concerns",
-            "template": "I completely understand. Let me address that. Would a quick call help clarify?",
-        },
-        "positive": {
-            "action": "Move to Contract",
-            "template": "Excellent! Let's get started. I'll send over the next steps and we can schedule the kickoff.",
-        },
-        "needs_info": {
-            "action": "Send Details",
-            "template": "Happy to provide more details. Here's what you need to know about our {project_type} process...",
-        },
-        "unclear": {
-            "action": "Clarify Intent",
-            "template": "Thanks for reaching out! Just to make sure I understand — are you looking for an estimate, or do you have questions about the process?",
-        },
+    ACTIONS = {
+        "estimate_request": "Call or reply personally and get the details needed to prepare an estimate.",
+        "site_visit": "Offer a couple of times for a site visit or call.",
+        "referral": "Thank them and ask for an introduction to the right person.",
+        "not_interested": "Respect the response. Mark Not interested and do not contact again.",
+        "needs_info": "Send the specific proof or portfolio item they asked for, using a device-native draft.",
+        "positive": "Reply personally while the conversation is warm and agree on the next step.",
+        "unclear": "Read the reply yourself and decide the next step before changing the record.",
     }
 
     def classify(self, reply_text: Optional[str], lead_record: Optional[Dict[str, Any]] = None) -> ReplyClassification:
         text = clean_text(reply_text) or ""
         lowered = text.lower()
-
-        if not text:
-            return ReplyClassification(
-                intent="unclear", sentiment="neutral", urgency="low",
-                confidence=0.0, suggested_action="Review manually",
-                suggested_response_template=None, key_phrases=[],
-            )
-
-        intent_scores: Dict[str, float] = {}
-        matched_phrases: List[str] = []
-
-        for intent, patterns in self.INTENT_PATTERNS.items():
-            score = 0.0
+        matches: Dict[str, List[str]] = {}
+        for intent, patterns in self.PATTERNS.items():
+            phrases: List[str] = []
             for pattern in patterns:
-                matches = list(re.finditer(pattern, lowered, re.IGNORECASE))
-                if matches:
-                    score += len(matches) * 0.3
-                    for m in matches:
-                        phrase = text[m.start():m.end()]
-                        if phrase not in matched_phrases:
-                            matched_phrases.append(phrase)
-            if score > 0:
-                intent_scores[intent] = min(score, 1.0)
+                for match in re.finditer(pattern, lowered, re.IGNORECASE):
+                    phrase = text[match.start():match.end()]
+                    if phrase not in phrases:
+                        phrases.append(phrase)
+            if phrases:
+                matches[intent] = phrases
 
-        if "estimate_request" in intent_scores and self._has_positive(lowered):
-            intent_scores["estimate_request"] += 0.2
-
-        if "not_interested" in intent_scores:
-            intent_scores["not_interested"] += 0.15
-
-        if intent_scores:
-            top_intent = max(intent_scores, key=intent_scores.get)
-            confidence = min(intent_scores[top_intent], 0.95)
+        # A stop/unsubscribe instruction always wins over positive words.
+        if "not_interested" in matches:
+            intent = "not_interested"
+        elif matches:
+            intent = max(matches, key=lambda key: len(matches[key]))
         else:
-            top_intent = "unclear"
-            confidence = 0.3
+            intent = "unclear"
 
-        pos_count = sum(1 for p in self.SENTIMENT_POSITIVE if re.search(p, lowered, re.IGNORECASE))
-        neg_count = sum(1 for p in self.SENTIMENT_NEGATIVE if re.search(p, lowered, re.IGNORECASE))
-
-        if pos_count > neg_count:
-            sentiment = "positive"
-        elif neg_count > pos_count:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
-
-        if top_intent == "not_interested":
-            sentiment = "negative"
-
-        if any(re.search(p, lowered, re.IGNORECASE) for p in self.URGENCY_HIGH):
-            urgency = "high"
-        elif any(re.search(p, lowered, re.IGNORECASE) for p in self.URGENCY_MEDIUM):
-            urgency = "medium"
-        else:
-            urgency = "low"
-
-        action_info = self.ACTION_TEMPLATES.get(top_intent, self.ACTION_TEMPLATES["unclear"])
-        template = action_info["template"]
-
-        if template and lead_record:
-            template = template.replace("{project_type}", clean_text(lead_record.get("project_type")) or "this project")
-            template = template.replace("{address}", clean_text(lead_record.get("project_address") or lead_record.get("address")) or "your property")
-            template = template.replace("{name}", clean_text(lead_record.get("decision_maker") or lead_record.get("contact_name") or "there"))
-
+        urgency = "high" if re.search(r"\b(today|asap|urgent|immediately|this week)\b", lowered) else "normal"
         return ReplyClassification(
-            intent=top_intent, sentiment=sentiment, urgency=urgency,
-            confidence=round(confidence, 2),
-            suggested_action=action_info["action"],
-            suggested_response_template=template,
-            key_phrases=matched_phrases[:5],
+            intent=intent,
+            urgency=urgency,
+            suggested_action=self.ACTIONS[intent],
+            key_phrases=matches.get(intent, [])[:5],
         )
 
-    def _has_positive(self, text: str) -> bool:
-        return any(re.search(p, text, re.IGNORECASE) for p in self.SENTIMENT_POSITIVE)
-
-    def classify_lead_reply(self, lead_record: Dict[str, Any]) -> Dict[str, Any]:
+    def classify_lead_reply(self, lead_record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # Notes are not a reply field.  Do not mine them for pseudo-replies.
         reply_text = clean_text(lead_record.get("reply_summary")) or ""
         if not reply_text:
-            reply_text = clean_text(lead_record.get("notes")) or ""
+            return None
         result = self.classify(reply_text, lead_record)
         return {
             "lead_id": lead_record.get("id"),
-            "reply_text_preview": reply_text[:200] if reply_text else None,
+            "reply_text_preview": reply_text[:200],
             "intent": result.intent,
-            "sentiment": result.sentiment,
             "urgency": result.urgency,
-            "confidence": result.confidence,
             "suggested_action": result.suggested_action,
-            "suggested_response": result.suggested_response_template,
             "key_phrases": result.key_phrases,
         }
 
     def batch_classify(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        results = []
-        for r in records:
-            if clean_text(r.get("reply_summary")) or clean_text(r.get("notes")):
-                results.append(self.classify_lead_reply(r))
-        results.sort(key=lambda x: (
-            {"high": 3, "medium": 2, "low": 1}.get(x["urgency"], 0),
-            x["confidence"],
-        ), reverse=True)
-        return results
+        results = [self.classify_lead_reply(record) for record in records]
+        return [result for result in results if result is not None]
 
 
 _reply_intel: Optional[ReplyIntelligence] = None
@@ -230,11 +104,8 @@ def classify_reply(reply_text: str, lead_record: Optional[Dict[str, Any]] = None
     result = get_reply_intel().classify(reply_text, lead_record)
     return {
         "intent": result.intent,
-        "sentiment": result.sentiment,
         "urgency": result.urgency,
-        "confidence": result.confidence,
         "suggested_action": result.suggested_action,
-        "suggested_response": result.suggested_response_template,
         "key_phrases": result.key_phrases,
     }
 

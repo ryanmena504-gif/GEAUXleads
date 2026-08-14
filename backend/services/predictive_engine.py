@@ -1,212 +1,240 @@
+"""Bloodhound's evidence-first recommendation and learning loop.
+
+This intentionally does not pretend that a small Airtable table can predict a
+conversion percentage.  It gives Ryan a clear work bucket today, then uses
+only confirmed results to make future recommendations more specific.
+"""
 from __future__ import annotations
 
-import logging
-import math
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from services.field_norm import coerce_number, clean_text, is_valid_email, is_valid_phone
+from services.field_norm import clean_text, is_valid_email, is_valid_phone
 
-log = logging.getLogger("bloodhound.predictive")
+
+CONTACT_NOW = "Contact Now"
+WATCH = "Watch"
+NOT_A_FIT = "Not a Fit"
+
+
+def _text(record: Dict[str, Any], key: str) -> str:
+    return (clean_text(record.get(key)) or "").strip()
+
+
+def _has_public_contact(record: Dict[str, Any]) -> bool:
+    return any((
+        is_valid_phone(record.get("phone")),
+        is_valid_phone(record.get("phone_alt")),
+        is_valid_email(record.get("email")),
+        is_valid_email(record.get("email_alt")),
+    ))
+
+
+def _is_not_a_fit(record: Dict[str, Any]) -> bool:
+    values = " ".join(
+        _text(record, key).lower()
+        for key in ("status", "status_raw", "outcome", "hunt_status", "rejection_reason")
+    )
+    return any(term in values for term in (
+        "do not contact", "not a fit", "disqualified", "rejected", "wrong project",
+        "bad data", "utility", "demolition", "dumpster", "street cut",
+    ))
+
+
+def _is_estimate_requested(record: Dict[str, Any]) -> bool:
+    values = " ".join(_text(record, key).lower() for key in (
+        "status", "reply_classification", "reply_summary",
+    ))
+    return "estimate requested" in values or "quote requested" in values
+
+
+def _confirmed_outcome(record: Dict[str, Any]) -> Optional[str]:
+    """Return only outcomes Ryan or a source has actually confirmed."""
+    status = _text(record, "status").lower()
+    outcome = _text(record, "outcome").lower()
+    reply = _text(record, "reply_classification").lower()
+    outreach = _text(record, "outreach_status").lower()
+
+    if record.get("flag_won") is True or status == "won" or record.get("closed_revenue"):
+        return "won"
+    if any(value in {"not interested", "lost", "do not contact"} for value in (status, outcome, reply)):
+        return "not_interested"
+    if _is_estimate_requested(record):
+        return "estimate_requested"
+    if "replied" in outreach or reply in {"reply received", "needs more information", "interested"}:
+        return "replied"
+    if "sent" in outreach:
+        return "contacted"
+    return None
 
 
 @dataclass
-class FeatureWeight:
-    name: str
-    won_count: int = 0
-    lost_count: int = 0
-    total_count: int = 0
-
-    @property
-    def conversion_rate(self) -> float:
-        if self.total_count == 0:
-            return 0.5
-        return (self.won_count + 1) / (self.total_count + 2)
-
-    @property
-    def lift(self) -> float:
-        return self.conversion_rate / 0.5
-
-
-@dataclass
-class PredictionResult:
+class Recommendation:
     lead_id: Optional[str]
-    conversion_probability: float
-    expected_value: Optional[float]
-    priority_score: float
-    feature_importance: List[Dict[str, Any]]
+    work_bucket: str
+    priority: str
+    why_this_matters: str
+    what_to_do_next: str
+    learning_note: str
+    evidence_gaps: List[str]
+    confirmed_outcome: Optional[str]
+    training_size: int
     confidence: str
-    model_version: int
+    feature_importance: List[Dict[str, Any]]
 
 
 class PredictiveEngine:
-    FEATURE_EXTRACTORS = {
-        "has_phone": lambda r: bool(
-            is_valid_phone(r.get("phone")) or is_valid_phone(r.get("phone_alt"))
-            or is_valid_phone(r.get("contact_phone")) or is_valid_phone(r.get("phone_number"))
-        ),
-        "has_email": lambda r: bool(
-            is_valid_email(r.get("email")) or is_valid_email(r.get("email_alt"))
-            or is_valid_email(r.get("contact_email"))
-        ),
-        "has_decision_maker": lambda r: bool(
-            clean_text(r.get("decision_maker")) or clean_text(r.get("contact_name"))
-        ),
-        "has_company": lambda r: bool(
-            clean_text(r.get("company")) or clean_text(r.get("contact_company"))
-            or clean_text(r.get("business_name"))
-        ),
-        "has_address": lambda r: bool(
-            clean_text(r.get("project_address")) or clean_text(r.get("address"))
-        ),
-        "has_permit": lambda r: bool(clean_text(r.get("permit_number"))),
-        "ai_complete": lambda r: (clean_text(r.get("ai_status")) or "").lower() == "complete",
-        "has_evidence": lambda r: bool(clean_text(r.get("evidence_summary"))),
-        "has_recommendation": lambda r: bool(
-            clean_text(r.get("recommendation_reason")) or clean_text(r.get("why_lead_matters"))
-        ),
-        "has_estimated_value": lambda r: coerce_number(
-            r.get("estimated_value") or r.get("estimated_job_value")
-        ) is not None,
-        "has_construction_value": lambda r: coerce_number(
-            r.get("construction_value") or r.get("permit_project_value")
-        ) is not None,
-        "verified": lambda r: bool(r.get("flag_verified") or r.get("verified_opportunity")),
-        "qualified": lambda r: bool(r.get("flag_qualified") or r.get("qualified_opportunity")),
-        "premium": lambda r: bool(r.get("flag_premium")),
-        "partnership": lambda r: bool(r.get("flag_partnership")),
-        "recent_activity": lambda r: bool(r.get("flag_recent_activity")),
-        "local_service": lambda r: bool(r.get("flag_local_service")),
-        "bathroom_signal": lambda r: bool(r.get("flag_bathroom_signal")),
-        "has_outreach_angle": lambda r: bool(clean_text(r.get("outreach_angle"))),
-        "has_first_message": lambda r: bool(clean_text(r.get("first_message"))),
-        "high_confidence": lambda r: (clean_text(
-            r.get("contact_confidence") or r.get("contact_confidence_raw")
-        ) or "").lower() in ("high", "strong", "verified", "confirmed"),
-    }
+    """Compatibility name retained for existing API routes.
+
+    The engine deliberately makes no dollar or conversion prediction.  It
+    learns a small, auditable set of outcome patterns instead.
+    """
+
+    FEATURE_KEYS = ("source", "project_type", "city")
+    MIN_PATTERN_SAMPLE = 3
+    MIN_LEARNING_SAMPLE = 5
 
     def __init__(self):
-        self._weights: Dict[str, FeatureWeight] = {
-            name: FeatureWeight(name=name) for name in self.FEATURE_EXTRACTORS
-        }
-        self._baseline_rate = 0.15
         self._training_size = 0
+        self._outcomes = Counter()
+        self._feature_outcomes: Dict[str, Dict[str, Counter]] = defaultdict(lambda: defaultdict(Counter))
         self._model_version = 1
 
     def train(self, records: List[Dict[str, Any]]) -> None:
-        won_total = 0
-        lost_total = 0
+        self._training_size = 0
+        self._outcomes = Counter()
+        self._feature_outcomes = defaultdict(lambda: defaultdict(Counter))
+
         for record in records:
-            outcome = self._extract_outcome(record)
-            if outcome is None:
+            outcome = _confirmed_outcome(record)
+            if not outcome:
                 continue
-            is_won = outcome == "won"
-            if is_won:
-                won_total += 1
-            else:
-                lost_total += 1
-            for feat_name, extractor in self.FEATURE_EXTRACTORS.items():
-                present = extractor(record)
-                weight = self._weights[feat_name]
-                weight.total_count += 1
-                if is_won and present:
-                    weight.won_count += 1
-                elif not is_won and present:
-                    weight.lost_count += 1
-        total_outcomes = won_total + lost_total
-        if total_outcomes > 0:
-            self._baseline_rate = (won_total + 1) / (total_outcomes + 2)
-            self._training_size = total_outcomes
-            self._model_version += 1
-            log.info(
-                "PredictiveEngine: trained on %d outcomes (%d won, %d lost). Baseline %.2f%%",
-                total_outcomes, won_total, lost_total, self._baseline_rate * 100
+            self._training_size += 1
+            self._outcomes[outcome] += 1
+            for field in self.FEATURE_KEYS:
+                value = _text(record, field)
+                if value:
+                    self._feature_outcomes[field][value][outcome] += 1
+
+        self._model_version += 1
+
+    def _matching_patterns(self, record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        patterns: List[Dict[str, Any]] = []
+        for field in self.FEATURE_KEYS:
+            value = _text(record, field)
+            if not value:
+                continue
+            counts = self._feature_outcomes[field].get(value, Counter())
+            sample = sum(counts.values())
+            if sample < self.MIN_PATTERN_SAMPLE:
+                continue
+            strongest, count = counts.most_common(1)[0]
+            if strongest in {"won", "estimate_requested", "replied"}:
+                patterns.append({
+                    "feature": field,
+                    "value": value,
+                    "outcome": strongest,
+                    "sample": sample,
+                    "count": count,
+                })
+        return sorted(patterns, key=lambda item: (item["count"], item["sample"]), reverse=True)
+
+    def predict(self, record: Dict[str, Any]) -> Recommendation:
+        gaps: List[str] = []
+        outcome = _confirmed_outcome(record)
+        has_contact = _has_public_contact(record)
+        has_evidence = bool(_text(record, "source_url") or _text(record, "evidence_summary"))
+        why = _text(record, "recommendation_reason")
+        next_action = _text(record, "recommended_action") or _text(record, "next_best_action")
+
+        if not has_evidence:
+            gaps.append("A source link or evidence summary")
+        if not has_contact and not _is_not_a_fit(record):
+            gaps.append("A verified public business phone or email")
+        if not why:
+            gaps.append("A plain-English reason this fits your work")
+        if not next_action and not _is_not_a_fit(record):
+            gaps.append("A specific next step")
+
+        if _is_not_a_fit(record):
+            bucket = NOT_A_FIT
+            priority = "Leave alone"
+            why_text = why or "This record does not match the premium surface-work work Bloodhound is looking for."
+            action_text = "Keep it out of your daily list. Do not contact it unless new evidence changes the fit."
+        elif _is_estimate_requested(record):
+            bucket = CONTACT_NOW
+            priority = "High"
+            why_text = why or "They have asked for pricing or an estimate, so this needs a timely human follow-up."
+            action_text = "Prepare the estimate or arrange the information needed to price the work."
+        elif has_contact and has_evidence:
+            bucket = CONTACT_NOW
+            priority = "High"
+            why_text = why or "A qualified business has a public contact path and evidence of a relevant project or partnership fit."
+            action_text = next_action or "Open a draft, contact the business yourself, then record what happened."
+        else:
+            bucket = WATCH
+            priority = "Medium"
+            why_text = why or "This may fit, but it is not ready for outreach yet."
+            action_text = next_action or (
+                "Find a verified public business contact before reaching out."
+                if not has_contact else "Review the public evidence before reaching out."
             )
 
-    def _extract_outcome(self, record: Dict[str, Any]) -> Optional[str]:
-        if record.get("flag_won") is True or record.get("job_won") is True:
-            return "won"
-        if record.get("outcome") and "not interested" in str(record.get("outcome")).lower():
-            return "lost"
-        if record.get("status") == "Lost" or record.get("status_raw") == "Lost":
-            return "lost"
-        if record.get("reply_classification") and "not interested" in str(record.get("reply_classification")).lower():
-            return "lost"
-        rev = coerce_number(record.get("closed_revenue"))
-        if rev and rev > 0:
-            return "won"
-        return None
-
-    def predict(self, record: Dict[str, Any]) -> PredictionResult:
-        log_odds = math.log(self._baseline_rate / (1 - self._baseline_rate))
-        feature_scores = []
-
-        for feat_name, extractor in self.FEATURE_EXTRACTORS.items():
-            present = extractor(record)
-            weight = self._weights[feat_name]
-            if present:
-                feat_rate = weight.conversion_rate
-                feat_lift = feat_rate / max(self._baseline_rate, 0.01)
-                contribution = math.log(feat_rate / (1 - feat_rate + 0.001)) if feat_rate < 0.99 else 2.0
-                log_odds += contribution * 0.3
-                feature_scores.append({
-                    "feature": feat_name,
-                    "present": True,
-                    "conversion_rate": round(feat_rate, 3),
-                    "lift": round(feat_lift, 2),
-                    "weight": round(contribution * 0.3, 3),
-                })
-            elif weight.total_count > 0:
-                feat_rate = weight.conversion_rate
-                if feat_rate > self._baseline_rate:
-                    contribution = -0.1 * (feat_rate - self._baseline_rate)
-                    log_odds += contribution
-
-        probability = 1 / (1 + math.exp(-log_odds))
-        probability = max(0.01, min(0.99, probability))
-        priority_score = probability * 100
-
-        est_value = coerce_number(record.get("estimated_value") or record.get("estimated_job_value"))
-        expected_value = est_value * probability if est_value else None
-
-        if self._training_size >= 50:
-            confidence = "high"
-        elif self._training_size >= 10:
-            confidence = "medium"
+        patterns = self._matching_patterns(record)
+        if self._training_size < self.MIN_LEARNING_SAMPLE:
+            learning_note = (
+                "Bloodhound is still learning from your real results. "
+                "It will not claim a win rate until enough confirmed outcomes exist."
+            )
+            confidence = "learning"
+        elif patterns:
+            strongest = patterns[0]
+            outcome_label = {
+                "won": "won work",
+                "estimate_requested": "estimate requests",
+                "replied": "replies",
+            }[strongest["outcome"]]
+            learning_note = (
+                f"Based on {strongest['sample']} confirmed results, {strongest['feature'].replace('_', ' ')} "
+                f"“{strongest['value']}” has produced {outcome_label} {strongest['count']} time(s)."
+            )
+            confidence = "pattern found"
         else:
-            confidence = "low"
+            learning_note = (
+                "Bloodhound has confirmed results, but not enough matching history for this kind of opportunity yet."
+            )
+            confidence = "early"
 
-        feature_scores.sort(key=lambda x: abs(x.get("weight", 0)), reverse=True)
-
-        return PredictionResult(
+        return Recommendation(
             lead_id=record.get("id"),
-            conversion_probability=round(probability, 3),
-            expected_value=round(expected_value, 2) if expected_value else None,
-            priority_score=round(priority_score, 1),
-            feature_importance=feature_scores[:8],
+            work_bucket=bucket,
+            priority=priority,
+            why_this_matters=why_text,
+            what_to_do_next=action_text,
+            learning_note=learning_note,
+            evidence_gaps=gaps,
+            confirmed_outcome=outcome,
+            training_size=self._training_size,
             confidence=confidence,
-            model_version=self._model_version,
+            feature_importance=patterns[:3],
         )
 
-    def batch_predict(self, records: List[Dict[str, Any]]) -> List[PredictionResult]:
-        results = [self.predict(r) for r in records]
-        results.sort(key=lambda p: (p.expected_value or 0, p.conversion_probability), reverse=True)
+    def batch_predict(self, records: List[Dict[str, Any]]) -> List[Recommendation]:
+        bucket_rank = {CONTACT_NOW: 0, WATCH: 1, NOT_A_FIT: 2}
+        results = [self.predict(record) for record in records]
+        results.sort(key=lambda result: (bucket_rank[result.work_bucket], result.priority != "High"))
         return results
 
     def model_status(self) -> Dict[str, Any]:
         return {
             "model_version": self._model_version,
             "training_size": self._training_size,
-            "baseline_rate": round(self._baseline_rate, 3),
-            "features_tracked": len(self._weights),
-            "top_features": sorted(
-                [
-                    {"name": w.name, "conversion_rate": round(w.conversion_rate, 3), "n": w.total_count}
-                    for w in self._weights.values() if w.total_count > 0
-                ],
-                key=lambda x: x["conversion_rate"],
-                reverse=True,
-            )[:10],
+            "results_recorded": dict(self._outcomes),
+            "learning_ready": self._training_size >= self.MIN_LEARNING_SAMPLE,
+            "note": (
+                "Bloodhound learns from confirmed results only. It does not use guessed outcomes or claim a conversion rate."
+            ),
         }
 
 
@@ -231,31 +259,30 @@ def train_from_records(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     return engine.model_status()
 
 
-def predict_for_record(record: Dict[str, Any]) -> Dict[str, Any]:
-    engine = get_engine()
-    result = engine.predict(record)
+def _as_dict(result: Recommendation) -> Dict[str, Any]:
     return {
         "lead_id": result.lead_id,
-        "conversion_probability": result.conversion_probability,
-        "expected_value": result.expected_value,
-        "priority_score": result.priority_score,
-        "feature_importance": result.feature_importance,
+        "work_bucket": result.work_bucket,
+        "priority": result.priority,
+        "why_this_matters": result.why_this_matters,
+        "what_to_do_next": result.what_to_do_next,
+        "learning_note": result.learning_note,
+        "evidence_gaps": result.evidence_gaps,
+        "confirmed_outcome": result.confirmed_outcome,
+        "training_size": result.training_size,
         "confidence": result.confidence,
-        "model_version": result.model_version,
+        "feature_importance": result.feature_importance,
+        # Retained as null so older callers cannot mistake a fabricated number
+        # for a real probability or monetary forecast.
+        "conversion_probability": None,
+        "expected_value": None,
+        "priority_score": None,
     }
 
 
+def predict_for_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    return _as_dict(get_engine().predict(record))
+
+
 def batch_predict(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    engine = get_engine()
-    results = engine.batch_predict(records)
-    return [
-        {
-            "lead_id": r.lead_id,
-            "conversion_probability": r.conversion_probability,
-            "expected_value": r.expected_value,
-            "priority_score": r.priority_score,
-            "feature_importance": r.feature_importance,
-            "confidence": r.confidence,
-        }
-        for r in results
-    ]
+    return [_as_dict(result) for result in get_engine().batch_predict(records)]

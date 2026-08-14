@@ -9,7 +9,9 @@ const Section = ({ title, icon: Icon, children }) => (
   <section className="bh-surface rounded-lg border-t border-t-white/10 p-5">
     <div className="flex items-center gap-2 mb-4">
       {Icon && <Icon size={14} className="text-amber-400" />}
-      <h2 className="font-display text-lg font-semibold text-neutral-100">{title}</h2>
+      <h2 className="font-display text-lg font-semibold text-neutral-100">
+        {title}
+      </h2>
     </div>
     {children}
   </section>
@@ -17,139 +19,158 @@ const Section = ({ title, icon: Icon, children }) => (
 
 const Stat = ({ label, value, sub }) => (
   <div className="p-3 rounded bg-white/[0.03] border border-white/5">
-    <div className="mono text-[9px] uppercase tracking-widest text-neutral-500 mb-1">{label}</div>
-    <div className="font-display text-xl font-bold text-neutral-100">{value ?? "—"}</div>
+    <div className="mono text-[9px] uppercase tracking-widest text-neutral-500 mb-1">
+      {label}
+    </div>
+    <div className="font-display text-xl font-bold text-neutral-100">
+      {value ?? "—"}
+    </div>
     {sub && <div className="text-[10px] text-neutral-500 mt-0.5">{sub}</div>}
   </div>
 );
 
 export default function Intelligence() {
   const [market, setMarket] = useState(null);
-  const [predictions, setPredictions] = useState(null);
+  const [recommendations, setRecommendations] = useState(null);
   const [replies, setReplies] = useState(null);
-  const [modelStatus, setModelStatus] = useState(null);
+  const [learning, setLearning] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [training, setTraining] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [m, p, r, ms] = await Promise.all([
+      const [m, r, replyData, learningStatus] = await Promise.all([
         api.marketOverview(),
-        api.predictiveTop(10),
+        api.predictiveTop(12),
         api.leadsWithReplies(),
         api.predictiveStatus(),
       ]);
       setMarket(m);
-      setPredictions(p);
-      setReplies(r);
-      setModelStatus(ms);
-    } catch (err) {
-      toast.error("Failed to load intelligence data");
+      setRecommendations(r);
+      setReplies(replyData);
+      setLearning(learningStatus);
+    } catch {
+      toast.error("Could not load Bloodhound’s learning view");
     } finally {
       setLoading(false);
     }
   };
 
-  const train = async () => {
-    setTraining(true);
-    try {
-      await api.predictiveTrain();
-      toast.success("Model retrained");
-      await load();
-    } catch (err) {
-      toast.error("Training failed");
-    } finally {
-      setTraining(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96 text-neutral-400 gap-2">
-        <Loader2 size={16} className="animate-spin" /> Loading intelligence...
+        <Loader2 size={16} className="animate-spin" /> Loading what Bloodhound
+        is learning...
       </div>
     );
   }
 
+  const outcomes = learning?.results_recorded || {};
+  const resultCount = learning?.training_size || 0;
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-neutral-100">Intelligence Center</h1>
-        <button onClick={load} className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1.5">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-neutral-100">
+            What Bloodhound is learning
+          </h1>
+          <p className="mt-1 text-sm text-neutral-400">
+            Recommendations improve only from results you record. No guessed win
+            rates and no automatic outreach.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1.5"
+        >
           <RefreshCw size={11} /> Refresh
         </button>
       </div>
 
-      <Section title="Predictive Model" icon={Brain}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4 text-sm text-neutral-400">
-            <span>Version: <span className="text-neutral-200 font-mono">{modelStatus?.model_version}</span></span>
-            <span>Training: <span className="text-neutral-200 font-mono">{modelStatus?.training_size}</span></span>
-            <span>Baseline: <span className="text-neutral-200 font-mono">{Math.round((modelStatus?.baseline_rate || 0) * 100)}%</span></span>
-          </div>
-          <button onClick={train} disabled={training}
-            className="h-8 px-3 rounded bg-amber-500 text-neutral-950 hover:bg-amber-400 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-1.5">
-            {training ? <Loader2 size={12} className="animate-spin" /> : <Brain size={12} />}
-            {training ? "Training..." : "Retrain Model"}
-          </button>
+      <Section title="Results that teach Bloodhound" icon={Brain}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Stat
+            label="Confirmed results"
+            value={resultCount}
+            sub={
+              learning?.learning_ready
+                ? "Enough to look for early patterns"
+                : "Still gathering your real outcomes"
+            }
+          />
+          <Stat label="Replies" value={outcomes.replied || 0} />
+          <Stat
+            label="Estimates requested"
+            value={outcomes.estimate_requested || 0}
+          />
+          <Stat label="Won work" value={outcomes.won || 0} />
         </div>
-
-        {predictions?.predictions && (
-          <div className="space-y-3">
-            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">Top by Expected Value</div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {predictions.predictions.map((p) => (
-                <PredictiveScoreBadge key={p.lead_id} prediction={p} showDetails />
-              ))}
-            </div>
-          </div>
-        )}
+        <p className="mt-4 text-xs leading-relaxed text-neutral-400">
+          {learning?.note}
+        </p>
       </Section>
 
-      {market && !market.error && (
-        <Section title="Market Intelligence" icon={MapPin}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            <Stat label="Total Pipeline" value={market.revenue?.total_pipeline_estimate ? `$${Math.round(market.revenue.total_pipeline_estimate).toLocaleString()}` : null} />
-            <Stat label="Avg Deal" value={market.revenue?.average_deal_size ? `$${Math.round(market.revenue.average_deal_size).toLocaleString()}` : null} />
-            <Stat label="Win Rate" value={`${market.pipeline_health?.win_rate}%`} sub={`${market.pipeline_health?.total_records} total`} />
-            <Stat label="Trend" value={market.permit_velocity?.trend} sub={`${market.permit_velocity?.change_percent > 0 ? "+" : ""}${market.permit_velocity?.change_percent}%`} />
+      {recommendations?.predictions?.length > 0 && (
+        <Section title="What is worth your time" icon={Brain}>
+          <div className="grid gap-3 md:grid-cols-2">
+            {recommendations.predictions.map((recommendation) => (
+              <PredictiveScoreBadge
+                key={recommendation.lead_id}
+                prediction={recommendation}
+                showDetails
+              />
+            ))}
           </div>
+        </Section>
+      )}
 
+      {market && !market.error && (
+        <Section title="Where to keep watching" icon={MapPin}>
+          <p className="mb-4 text-xs leading-relaxed text-neutral-400">
+            This is a count of the public project signals already in Bloodhound.
+            It is not a prediction of revenue.
+          </p>
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Hot Zones</div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+                Places with the most signals
+              </div>
               <div className="space-y-2">
-                {market.geography?.hot_zones?.map((z) => (
-                  <div key={z.city} className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5">
-                    <div>
-                      <div className="text-sm text-neutral-200 font-medium">{z.city}</div>
-                      <div className="text-[10px] text-neutral-500">{z.permit_count} permits</div>
+                {market.geography?.top_cities?.slice(0, 5).map((city) => (
+                  <div
+                    key={city.city}
+                    className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="text-sm text-neutral-200 font-medium">
+                      {city.city}
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm text-amber-400 font-mono">
-                        {z.total_estimated_value ? `$${Math.round(z.total_estimated_value).toLocaleString()}` : "—"}
-                      </div>
-                      <div className="text-[10px] text-neutral-500">total value</div>
+                    <div className="text-xs text-neutral-400">
+                      {city.count} signals
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
             <div>
-              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Top Project Types</div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+                Types of work showing up
+              </div>
               <div className="space-y-2">
-                {market.project_types?.slice(0, 6).map((pt) => (
-                  <div key={pt.type} className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5">
-                    <div className="text-sm text-neutral-200">{pt.type}</div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
-                        <div className="h-full bg-amber-500/60 rounded-full" style={{ width: `${pt.percentage}%` }} />
-                      </div>
-                      <span className="text-xs text-neutral-400 font-mono w-8 text-right">{pt.percentage}%</span>
+                {market.project_types?.slice(0, 5).map((projectType) => (
+                  <div
+                    key={projectType.type}
+                    className="flex items-center justify-between p-2.5 rounded bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="text-sm text-neutral-200">
+                      {projectType.type}
+                    </div>
+                    <div className="text-xs text-neutral-400">
+                      {projectType.count} signals
                     </div>
                   </div>
                 ))}
@@ -159,11 +180,14 @@ export default function Intelligence() {
         </Section>
       )}
 
-      {replies?.classifications && replies.classifications.length > 0 && (
-        <Section title="Reply Intelligence" icon={MessageSquare}>
+      {replies?.classifications?.length > 0 && (
+        <Section title="Replies that need your attention" icon={MessageSquare}>
           <div className="space-y-3">
-            {replies.classifications.slice(0, 5).map((c) => (
-              <ReplyIntelligencePanel key={c.lead_id} classification={c} />
+            {replies.classifications.slice(0, 5).map((classification) => (
+              <ReplyIntelligencePanel
+                key={classification.lead_id}
+                classification={classification}
+              />
             ))}
           </div>
         </Section>

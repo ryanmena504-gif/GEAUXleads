@@ -1,48 +1,86 @@
 import React from "react";
-import { TrendingUp, TrendingDown, Minus, Brain } from "lucide-react";
+import { CheckCircle2, Clock3, CircleX, Lightbulb } from "lucide-react";
 
 export const PredictiveScoreBadge = ({ prediction, showDetails = false }) => {
   if (!prediction) return null;
 
-  const { conversion_probability, expected_value, confidence, feature_importance } = prediction;
-  const prob = Math.round((conversion_probability || 0) * 100);
-  const ev = expected_value;
-
-  let color = "text-neutral-400";
-  let bg = "bg-white/[0.03]";
-  let Icon = Minus;
-  if (prob >= 70) { color = "text-emerald-400"; bg = "bg-emerald-500/10"; Icon = TrendingUp; }
-  else if (prob >= 40) { color = "text-amber-400"; bg = "bg-amber-500/10"; Icon = TrendingUp; }
-  else { color = "text-red-400"; bg = "bg-red-500/10"; Icon = TrendingDown; }
+  const {
+    work_bucket,
+    priority,
+    why_this_matters,
+    what_to_do_next,
+    learning_note,
+    evidence_gaps,
+    feature_importance,
+  } = prediction;
+  const config = {
+    "Contact Now": {
+      color: "text-emerald-300",
+      bg: "bg-emerald-500/10",
+      icon: CheckCircle2,
+    },
+    Watch: { color: "text-amber-300", bg: "bg-amber-500/10", icon: Clock3 },
+    "Not a Fit": {
+      color: "text-neutral-400",
+      bg: "bg-white/[0.03]",
+      icon: CircleX,
+    },
+  }[work_bucket] || {
+    color: "text-neutral-300",
+    bg: "bg-white/[0.03]",
+    icon: Lightbulb,
+  };
+  const Icon = config.icon;
 
   return (
-    <div className={`rounded-md border border-white/10 ${bg} p-3`} data-testid="predictive-score">
+    <div
+      className={`rounded-md border border-white/10 ${config.bg} p-3`}
+      data-testid="bloodhound-recommendation"
+    >
       <div className="flex items-center gap-2 mb-2">
-        <Brain size={13} className={color} />
+        <Icon size={13} className={config.color} />
         <span className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-          AI Prediction · {confidence} confidence
+          Bloodhound recommendation
         </span>
       </div>
-      <div className="flex items-baseline gap-3">
-        <div className={`font-display text-3xl font-bold ${color}`}>{prob}%</div>
-        <div className="text-sm text-neutral-400">conversion probability</div>
-      </div>
-      {ev !== null && ev !== undefined && (
-        <div className="mt-1 text-sm text-neutral-300">
-          Expected value: <span className="font-mono text-amber-400">${ev.toLocaleString()}</span>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className={`font-display text-lg font-bold ${config.color}`}>
+          {work_bucket}
         </div>
-      )}
-      {showDetails && feature_importance && feature_importance.length > 0 && (
-        <div className="mt-3 space-y-1.5 border-t border-white/10 pt-2">
-          <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">Top drivers</div>
-          {feature_importance.slice(0, 4).map((f) => (
-            <div key={f.feature} className="flex items-center justify-between text-xs">
-              <span className="text-neutral-300 capitalize">{f.feature.replace(/_/g, " ")}</span>
-              <span className={`font-mono ${f.lift > 1 ? "text-emerald-400" : "text-neutral-500"}`}>
-                {f.lift > 1 ? "+" : ""}{Math.round((f.lift - 1) * 100)}%
-              </span>
+        <div className="text-[11px] text-neutral-400">{priority} priority</div>
+      </div>
+      <div className="mt-3 space-y-2 text-[12px] leading-relaxed">
+        <div>
+          <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+            Why this matters
+          </div>
+          <p className="mt-0.5 text-neutral-200">{why_this_matters}</p>
+        </div>
+        <div>
+          <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+            What to do next
+          </div>
+          <p className="mt-0.5 text-neutral-200">{what_to_do_next}</p>
+        </div>
+      </div>
+      {showDetails && (
+        <div className="mt-3 border-t border-white/10 pt-2 space-y-2">
+          <div className="text-[11px] leading-relaxed text-neutral-400">
+            {learning_note}
+          </div>
+          {evidence_gaps?.length > 0 && (
+            <div className="text-[11px] text-amber-200/90">
+              Still needed: {evidence_gaps.join(" · ")}
             </div>
-          ))}
+          )}
+          {feature_importance?.length > 0 && (
+            <div className="text-[11px] text-neutral-400">
+              Similar results:{" "}
+              {feature_importance
+                .map((item) => `${item.value} (${item.sample})`)
+                .join(" · ")}
+            </div>
+          )}
         </div>
       )}
     </div>
