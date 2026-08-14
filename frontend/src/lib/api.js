@@ -52,13 +52,21 @@ export const api = {
     client.get("/audit/events", { params }).then((r) => r.data),
   ingestionDiagnostics: () =>
     client.get("/diagnostics/ingestion").then((r) => r.data),
+
+  // NEW: Predictive Intelligence
+  predictiveStatus: () => client.get("/intelligence/predictive/status").then((r) => r.data),
+  predictiveTrain: () => client.post("/intelligence/predictive/train").then((r) => r.data),
+  predictiveForLead: (id) => client.get(`/intelligence/predictive/${id}`).then((r) => r.data),
+  predictiveTop: (limit = 20) => client.get(`/intelligence/predictive/batch/top?limit=${limit}`).then((r) => r.data),
+
+  // NEW: Market Intelligence
+  marketOverview: () => client.get("/intelligence/market").then((r) => r.data),
+
+  // NEW: Reply Intelligence
+  classifyReply: (text, leadId) => client.post("/intelligence/reply/classify", { text, lead_id: leadId }).then((r) => r.data),
+  leadsWithReplies: () => client.get("/intelligence/reply/leads-with-replies").then((r) => r.data),
 };
 
-/**
- * The server returns 409 + a structured eligibility verdict when a write is
- * refused by the outreach policy. Without this the UI would show a generic
- * failure and the operator would not learn what to fix.
- */
 export const outreachBlockedFrom = (error) => {
   const data = error?.response?.data;
   if (error?.response?.status === 409 && data?.error === "outreach_blocked") {

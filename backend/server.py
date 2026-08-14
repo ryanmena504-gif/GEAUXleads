@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from services.audit import get_audit_log
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import OutreachBlocked, get_leads_service, reset_leads_service
+from services.predictive_engine import train_from_records, predict_for_record, batch_predict, get_engine
+from services.market_intelligence import analyze_market
+from services.reply_intelligence import classify_reply, classify_lead_replies
 
 
 ROOT_DIR = Path(__file__).parent
@@ -429,6 +432,64 @@ async def reload_service():
     reset_opportunity_service()
     svc = get_opportunity_service()
     return {"ok": True, "backend": svc.backend_name}
+
+
+# ---------- Predictive Intelligence ----------
+@api_router.get("/intelligence/predictive/status")
+async def predictive_status():
+    return get_engine().model_status()
+
+
+@api_router.post("/intelligence/predictive/train")
+async def predictive_train():
+    svc = get_opportunity_service()
+    records = svc.all()
+    status = train_from_records(records)
+    return {"ok": True, **status}
+
+
+@api_router.get("/intelligence/predictive/{opp_id}")
+async def predictive_for_opportunity(opp_id: str):
+    svc = get_opportunity_service()
+    opp = svc.get(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    return predict_for_record(opp)
+
+
+@api_router.get("/intelligence/predictive/batch/top")
+async def predictive_batch_top(limit: int = 20):
+    svc = get_opportunity_service()
+    records = svc.all()
+    predictions = batch_predict(records)
+    return {"predictions": predictions[:limit], "total": len(predictions)}
+
+
+# ---------- Market Intelligence ----------
+@api_router.get("/intelligence/market")
+async def market_overview():
+    svc = get_opportunity_service()
+    records = svc.all()
+    return analyze_market(records)
+
+
+# ---------- Reply Intelligence ----------
+@api_router.post("/intelligence/reply/classify")
+async def classify_reply_endpoint(body: dict):
+    text = body.get("text", "")
+    lead_id = body.get("lead_id")
+    lead_record = None
+    if lead_id:
+        svc = get_opportunity_service()
+        lead_record = svc.get(lead_id)
+    return classify_reply(text, lead_record)
+
+
+@api_router.get("/intelligence/reply/leads-with-replies")
+async def leads_with_replies():
+    svc = get_opportunity_service()
+    records = svc.all()
+    return {"classifications": classify_lead_replies(records)}
 
 
 app.include_router(api_router)
