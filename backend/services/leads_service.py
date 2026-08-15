@@ -77,9 +77,12 @@ EDITABLE_FIELDS = {
     "Hunt status",
 }
 
-# Do-not-send guardrails (case-insensitive substring matches).
+# Do-not-send / NBA-exclude guardrails (case-insensitive).
 _DO_NOT_SEND_STATUS = ("do not contact", "dnc")
-_DO_NOT_SEND_HUNT   = ("rejected", "closed", "disqualified")
+_DO_NOT_SEND_HUNT = ("rejected", "closed", "disqualified")
+# Hunt statuses that mean "leave this lead alone" for the NBA queue.
+# Includes Paused (hold) so a backend restart cannot resurrect held leads.
+_EXCLUDE_HUNT = ("rejected", "closed", "disqualified", "paused")
 
 # Fixed fallback template used when a lead has no `First message` yet.
 _FALLBACK_SUBJECT = "Following up on your {opportunity_type} permit at {project_address}"
@@ -93,9 +96,20 @@ _FALLBACK_TEXT = (
     "— Ryan"
 )
 
-# Case-insensitive substring match — any lead whose Status / Outreach status /
-# Approval status contains one of these is excluded from the action queue.
-EXCLUDE_TOKENS = ("duplicate", "do not contact", "sent", "closed", "complete")
+# Exact Status / Outreach / Approval values that remove a lead from the NBA
+# queue. Prefer exact matches over bare substring "sent" — otherwise
+# "Not sent" falsely excludes every fresh lead.
+_EXCLUDE_STATUS_EXACT = {
+    "sent",
+    "closed",
+    "complete",
+    "duplicate",
+    "replied",
+    "no response",
+    "not interested",
+    "do not contact",
+}
+_EXCLUDE_STATUS_SUBSTRING = ("do not contact", "duplicate")
 
 PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "normal": 2, "low": 1}
 
@@ -215,11 +229,34 @@ class LeadsAirtableService:
             return deepcopy(cached) if cached else None
 
     # ---------- selection logic ----------
+    @staticmethod
+    def _workflow_field_excluded(value: Any) -> bool:
+        """True when a Status / Outreach / Approval value means leave it alone."""
+        if value is None or value is False:
+            return False
+        low = (value if isinstance(value, str) else str(value)).lower().strip()
+        if not low:
+            return False
+        if low in _EXCLUDE_STATUS_EXACT:
+            return True
+        if any(tok in low for tok in _EXCLUDE_STATUS_SUBSTRING):
+            return True
+        return False
+
     def _is_excluded(self, lead: Dict[str, Any]) -> bool:
         if lead["id"] in self._held:
             return True
         if lead.get("job_won") is True:
             return True
+        if lead.get("outreach_sent") is True:
+            return True
+        # Hunt status is the canonical hold / DNC signal. Without this check,
+        # Rejected / Paused leads reappear in NBA after a process restart.
+        hunt = lead.get("hunt_status")
+        if isinstance(hunt, str) and hunt.strip():
+            hunt_l = hunt.lower()
+            if any(tok in hunt_l for tok in _EXCLUDE_HUNT):
+                return True
         # A lead is not actionable without a name AND a recommended next action.
         # Empty/skeleton rows in Airtable must never surface as the NBA.
         name = (lead.get("name") or "").strip() if isinstance(lead.get("name"), str) else ""
@@ -227,10 +264,7 @@ class LeadsAirtableService:
         if not name or not next_action:
             return True
         for key in ("status", "outreach_status", "approval_status"):
-            v = (lead.get(key) or "")
-            v = v if isinstance(v, str) else str(v)
-            low = v.lower()
-            if any(tok in low for tok in EXCLUDE_TOKENS):
+            if self._workflow_field_excluded(lead.get(key)):
                 return True
         return False
 

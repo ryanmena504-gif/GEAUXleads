@@ -11,6 +11,7 @@ import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
+import { needsConfirmation } from "@/lib/priority";
 import {
   ArrowLeft,
   MapPin,
@@ -156,6 +157,20 @@ const OpportunityDetail = () => {
         >
           <ArrowLeft size={13} /> Back to Project List
         </Link>
+
+        {needsConfirmation(opp) && (
+          <div
+            data-testid="needs-confirmation-banner"
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+          >
+            <div className="font-medium text-amber-200">Needs confirmation</div>
+            <p className="mt-1 text-[13px] leading-relaxed text-amber-100/80">
+              Outreach history says something was sent, but no result has been
+              confirmed yet. Tap one of the result buttons below (They replied,
+              No reply yet, Not interested, etc.) to keep the tracker honest.
+            </p>
+          </div>
+        )}
 
         {/* Hero */}
         <section

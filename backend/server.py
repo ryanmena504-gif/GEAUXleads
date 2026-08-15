@@ -278,6 +278,7 @@ async def record_result(opp_id: str, body: ResultUpdate):
     now = datetime.now(timezone.utc).isoformat()
     updates: Dict[str, Any] = {}
     if event == "sent":
+        # Pipeline status must NOT auto-advance on "I sent it".
         updates = {
             "outreach_status": "Sent",
             "outreach_channel": channel or "Other",
@@ -293,12 +294,14 @@ async def record_result(opp_id: str, body: ResultUpdate):
         }
     elif event == "estimate_requested":
         updates = {
+            "outreach_status": "Estimate requested",
             "reply_classification": "Interested",
             "reply_summary": body.note or "Estimate requested",
             "date_replied": now,
         }
     elif event == "not_interested":
         updates = {
+            "outreach_status": "Not interested",
             "reply_classification": "Not interested",
             "reply_summary": body.note or "Not interested",
             "date_replied": now,

@@ -4,12 +4,10 @@ import TopHeader from "@/components/TopHeader";
 import OpportunityRow from "@/components/OpportunityRow";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
+import { contactReady } from "@/lib/priority";
 import { ArrowRight, PhoneCall, Search, Users } from "lucide-react";
 
 const CLOSED_STATUSES = new Set(["Won", "Lost", "Disqualified"]);
-
-const hasPublicContact = (opp) =>
-  Boolean(opp?.contact_phone || opp?.phone || opp?.contact_email || opp?.email);
 
 const sortByPriority = (items) =>
   [...items].sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0));
@@ -73,16 +71,23 @@ const CommandCenter = () => {
     }
 
     const active = items.filter((opp) => !CLOSED_STATUSES.has(opp.status));
-    // A public phone or email makes this actionable now, regardless of whether
-    // the record began life as a partner relationship or a project signal.
-    // Keep the home list mutually exclusive so the same business is not shown
-    // in several places at once.
-    const contactToday = sortByPriority(active.filter(hasPublicContact)).slice(0, 5);
+    // Strict Contact Ready gate (verified contact + evidence). Partners with a
+    // real public phone/email still qualify without the premium/source rules —
+    // relationship work does not need a remodel "premium" checkbox.
+    // Keep the three home lists mutually exclusive.
+    const contactToday = sortByPriority(
+      active.filter((opp) => contactReady(opp).ready),
+    ).slice(0, 5);
+    const contactIds = new Set(contactToday.map((opp) => opp.id));
     const projectsToWatch = sortByPriority(
-      active.filter((opp) => opp.lane !== "partner" && !hasPublicContact(opp)),
+      active.filter(
+        (opp) => opp.lane !== "partner" && !contactIds.has(opp.id),
+      ),
     ).slice(0, 5);
     const peopleToKnow = sortByPriority(
-      active.filter((opp) => opp.lane === "partner" && !hasPublicContact(opp)),
+      active.filter(
+        (opp) => opp.lane === "partner" && !contactIds.has(opp.id),
+      ),
     ).slice(0, 4);
 
     return { contactToday, projectsToWatch, peopleToKnow };
@@ -102,15 +107,17 @@ const CommandCenter = () => {
         >
           <div className="bh-eyebrow">Your simple work list</div>
           <p className="mt-2 text-[15px] leading-relaxed text-[var(--bh-ink-2)] max-w-3xl">
-            Contact-ready people come first. A project without a public business phone or
-            email stays in <strong className="font-medium text-[var(--bh-ink)]">Projects to Watch</strong> until there is a real way to reach the right person.
+            Contact-ready people come first — verified public phone or email, and
+            for projects a premium-fit signal plus a source URL. Everything else
+            stays in <strong className="font-medium text-[var(--bh-ink)]">Projects to Watch</strong> or{" "}
+            <strong className="font-medium text-[var(--bh-ink)]">People to Know</strong> until it clears that bar.
           </p>
         </section>
 
         <HomeSection
           eyebrow="Contact ready"
           title="People to contact today"
-          hint="These have a public business phone or email. Open a draft, send it yourself, then record what happened."
+          hint="These cleared the contact-ready gate. Open a draft, send it yourself, then record what happened."
           icon={PhoneCall}
           items={groups.contactToday}
           empty="Nothing is contact-ready right now. Bloodhound will keep researching public business contact details before moving anything here."
@@ -120,7 +127,7 @@ const CommandCenter = () => {
         <HomeSection
           eyebrow="Projects to watch"
           title="Worth watching, not ready to contact"
-          hint="These may be good projects, but there is no verified public business contact path yet."
+          hint="These may be good projects, but they still need a verified public contact path or more evidence."
           icon={Search}
           items={groups.projectsToWatch}
           empty="No projects are waiting on a public contact path."
