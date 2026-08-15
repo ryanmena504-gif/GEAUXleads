@@ -101,7 +101,7 @@ const Meter = ({ label, level }) => {
       <div className="mt-1.5 flex gap-1">
         {[1, 2, 3].map((i) => (
           <div
-            key={i}
+            key={`bar-${i}`}
             className={"h-1 flex-1 rounded " + (i <= val ? color : "bg-white/[0.06]")}
           />
         ))}
@@ -341,7 +341,7 @@ const OpportunityDetail = () => {
                     <ul className="space-y-1">
                       {opp.missing_information.map((m, i) => (
                         <li
-                          key={i}
+                          key={`missing-${m}-${i}`}
                           className="text-sm text-amber-200/90 flex items-start gap-2"
                         >
                           <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400" />
@@ -363,7 +363,7 @@ const OpportunityDetail = () => {
                     <ul className="space-y-1">
                       {opp.risk_flags.map((m, i) => (
                         <li
-                          key={i}
+                          key={`risk-${m}-${i}`}
                           className="text-sm text-red-300 flex items-start gap-2"
                         >
                           <span className="mt-1.5 w-1 h-1 rounded-full bg-red-400" />
@@ -434,7 +434,7 @@ const OpportunityDetail = () => {
                 {(opp.activity_timeline || []).map((a, i) => {
                   const Icon = activityIcon(a.type);
                   return (
-                    <li key={i} className="relative">
+                    <li key={a.timestamp ? `${a.type}-${a.timestamp}` : `activity-${i}`} className="relative">
                       <span className="absolute -left-[27px] top-0.5 w-4 h-4 rounded-full bg-[color:var(--bh-surface)] border bh-hairline-strong flex items-center justify-center">
                         <Icon size={9} className="text-amber-400" />
                       </span>

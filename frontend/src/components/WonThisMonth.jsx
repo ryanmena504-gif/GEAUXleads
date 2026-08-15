@@ -85,8 +85,10 @@ export const WonThisMonth = () => {
   try {
     const d = new Date(kpis.month_start);
     monthLabel = d.toLocaleString(undefined, { month: "long", year: "numeric" });
-  } catch {
-    /* fall back to generic label */
+  } catch (err) {
+    // Bad date string from the API — surface it so we notice, then fall
+    // back to the generic label.
+    console.warn("WonThisMonth: bad month_start", kpis.month_start, err);
   }
 
   return (

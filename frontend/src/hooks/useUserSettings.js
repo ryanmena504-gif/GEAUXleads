@@ -11,7 +11,10 @@ const _listeners = new Set();
 const notify = (value) => {
   _cache = value;
   _listeners.forEach((cb) => {
-    try { cb(value); } catch { /* keep other listeners alive */ }
+    try { cb(value); } catch (err) {
+      // Never let one listener break the rest of the fan-out.
+      console.warn("useUserSettings listener error:", err);
+    }
   });
 };
 

@@ -28,8 +28,9 @@ export const useLiveUpdates = (onUpdate) => {
         try {
           const data = JSON.parse(e.data);
           cbRef.current && cbRef.current(data);
-        } catch {
-          /* ignore malformed frame */
+        } catch (err) {
+          // Malformed SSE frame — log but keep the connection alive.
+          console.warn("useLiveUpdates: malformed frame", err);
         }
       });
       es.onerror = () => {

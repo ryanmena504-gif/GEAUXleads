@@ -102,7 +102,6 @@ LIVE_FIELDS: Dict[str, str] = {
     "recommended action": "recommended_action",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
-    "First message": "first_message",
     "Confidence score": "confidence_score",
     "Lead score": "lead_score",
     "Priority": "priority_raw",
