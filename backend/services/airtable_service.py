@@ -1090,15 +1090,50 @@ class AirtableOpportunityService:
             return deepcopy(cached)
 
 
+_last_build_error: Optional[str] = None
+
+
+def get_last_build_error() -> Optional[str]:
+    """Return the last Airtable-init exception message so /api/config can
+    surface it (e.g. '401 Unauthorized', 'table not found'). None until an
+    init has been attempted or if the last init succeeded."""
+    return _last_build_error
+
+
 def build_airtable_service_from_env() -> Optional[AirtableOpportunityService]:
+    global _last_build_error
     api_key = os.environ.get("AIRTABLE_API_KEY")
     base_id = os.environ.get("AIRTABLE_BASE_ID")
     table = os.environ.get("AIRTABLE_OPPORTUNITIES_TABLE")
     enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
     if not (enabled and api_key and base_id and table):
+        _last_build_error = None
         return None
     try:
-        return AirtableOpportunityService(api_key, base_id, table)
-    except Exception:
+        svc = AirtableOpportunityService(api_key, base_id, table)
+        _last_build_error = None
+        return svc
+    except Exception as e:  # noqa: BLE001
         log.exception("Airtable: initialization failed — falling back to sample data")
+        msg = str(e)
+        # Trim to the useful signal without leaking the PAT.
+        if "401" in msg or "Unauthorized" in msg:
+            _last_build_error = (
+                "401 Unauthorized — Airtable PAT is invalid or revoked. "
+                "Rotate the token in Airtable → Developer Hub → Personal "
+                "access tokens, then update AIRTABLE_API_KEY."
+            )
+        elif "403" in msg:
+            _last_build_error = (
+                "403 Forbidden — PAT lacks required scopes. Needs "
+                "data.records:read, data.records:write, schema.bases:read "
+                "and access to the Bloodhound base."
+            )
+        elif "404" in msg or "NOT_FOUND" in msg:
+            _last_build_error = (
+                "404 Not Found — AIRTABLE_BASE_ID or AIRTABLE_OPPORTUNITIES_TABLE "
+                "does not match a base/table this PAT can see."
+            )
+        else:
+            _last_build_error = f"{type(e).__name__}: {msg[:220]}"
         return None

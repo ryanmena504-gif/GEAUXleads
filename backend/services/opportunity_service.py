@@ -17,6 +17,15 @@ from services.airtable_service import build_airtable_service_from_env
 
 log = logging.getLogger("bloodhound.service")
 
+# Populated by get_opportunity_service() when Airtable init fails, so
+# /api/config can surface the exact reason (e.g. 401 Unauthorized) without
+# forcing the operator to dig through server logs.
+_last_init_error: Optional[str] = None
+
+
+def get_last_init_error() -> Optional[str]:
+    return _last_init_error
+
 
 PIPELINE_STATUSES = [
     "New",
@@ -230,13 +239,24 @@ def get_opportunity_service():
     Prefers a live Airtable-backed service when AIRTABLE_ENABLED=true and
     credentials are present; otherwise falls back to sample data.
     """
-    global _service_singleton
+    global _service_singleton, _last_init_error
     if _service_singleton is None:
-        airtable = build_airtable_service_from_env()
+        try:
+            airtable = build_airtable_service_from_env()
+        except Exception as e:  # pragma: no cover — defensive
+            airtable = None
+            _last_init_error = f"{type(e).__name__}: {str(e)[:240]}"
         if airtable is not None:
             log.info("Opportunity service: using live Airtable backend")
             _service_singleton = airtable
+            _last_init_error = None
         else:
+            # Airtable was configured but init returned None — capture the
+            # provider's error message from the airtable_service log module
+            # so /api/config can show it.
+            if _last_init_error is None and os.environ.get("AIRTABLE_ENABLED", "").lower() == "true":
+                from services.airtable_service import get_last_build_error
+                _last_init_error = get_last_build_error()
             log.info("Opportunity service: using in-memory sample backend")
             _service_singleton = SampleOpportunityService()
     return _service_singleton

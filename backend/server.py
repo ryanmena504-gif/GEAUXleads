@@ -321,6 +321,7 @@ async def record_result(opp_id: str, body: ResultUpdate):
 
 @api_router.get("/config")
 async def config():
+    from services.opportunity_service import get_last_init_error
     svc = get_opportunity_service()
     return {
         "airtable_configured": bool(
@@ -330,6 +331,9 @@ async def config():
         ),
         "airtable_enabled": os.environ.get("AIRTABLE_ENABLED", "").lower() == "true",
         "backend": svc.backend_name,
+        # Reason the Airtable init failed (401, missing table, etc.) — null
+        # when Airtable is live or was never attempted.
+        "airtable_init_error": get_last_init_error(),
     }
 
 
