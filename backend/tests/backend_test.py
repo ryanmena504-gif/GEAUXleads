@@ -273,5 +273,7 @@ def test_build_airtable_service_from_env_returns_none_when_disabled():
     sys.path.insert(0, "/app/backend")
     from services.airtable_service import build_airtable_service_from_env
     # AIRTABLE_ENABLED=false in .env — should return None without any live call.
-    assert build_airtable_service_from_env() is None
+    svc, err = build_airtable_service_from_env()
+    assert svc is None
+    assert err  # explains why sample mode won
 

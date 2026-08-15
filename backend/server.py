@@ -112,8 +112,10 @@ async def list_opportunities(
     lane: Optional[str] = None,
     sort: Optional[str] = "lead_score",
 ):
+    """List opportunities. Never blank the Today page if an older sample
+    backend rejects the sort= kwarg — fall back without it."""
     svc = get_opportunity_service()
-    return svc.list(
+    kwargs = dict(
         source=source,
         status=status,
         priority_band=priority_band,
@@ -124,6 +126,11 @@ async def list_opportunities(
         lane=lane,
         sort=sort,
     )
+    try:
+        return svc.list(**kwargs)
+    except TypeError:
+        kwargs.pop("sort", None)
+        return svc.list(**kwargs)
 
 
 @api_router.get("/opportunities/lanes")
@@ -321,6 +328,7 @@ async def record_result(opp_id: str, body: ResultUpdate):
 
 @api_router.get("/config")
 async def config():
+    from services.opportunity_service import get_airtable_init_error
     svc = get_opportunity_service()
     return {
         "airtable_configured": bool(
@@ -330,6 +338,7 @@ async def config():
         ),
         "airtable_enabled": os.environ.get("AIRTABLE_ENABLED", "").lower() == "true",
         "backend": svc.backend_name,
+        "airtable_init_error": get_airtable_init_error(),
     }
 
 

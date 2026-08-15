@@ -1090,15 +1090,27 @@ class AirtableOpportunityService:
             return deepcopy(cached)
 
 
-def build_airtable_service_from_env() -> Optional[AirtableOpportunityService]:
+def build_airtable_service_from_env():
+    """Return (service_or_None, error_message_or_None).
+
+    Callers that only need the service can ignore the second value. The error
+    string is surfaced on /api/config so operators can see why sample mode won.
+    """
     api_key = os.environ.get("AIRTABLE_API_KEY")
     base_id = os.environ.get("AIRTABLE_BASE_ID")
     table = os.environ.get("AIRTABLE_OPPORTUNITIES_TABLE")
     enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
-    if not (enabled and api_key and base_id and table):
-        return None
+    if not enabled:
+        return None, "AIRTABLE_ENABLED is not true"
+    missing = [name for name, val in (
+        ("AIRTABLE_API_KEY", api_key),
+        ("AIRTABLE_BASE_ID", base_id),
+        ("AIRTABLE_OPPORTUNITIES_TABLE", table),
+    ) if not val]
+    if missing:
+        return None, "missing " + ", ".join(missing)
     try:
-        return AirtableOpportunityService(api_key, base_id, table)
-    except Exception:
+        return AirtableOpportunityService(api_key, base_id, table), None
+    except Exception as e:
         log.exception("Airtable: initialization failed — falling back to sample data")
-        return None
+        return None, f"{type(e).__name__}: {e}"

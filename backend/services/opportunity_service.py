@@ -82,7 +82,9 @@ class SampleOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None, **_ignored) -> List[Dict[str, Any]]:
+        """Filter sample rows. Accepts unused kwargs so API/route upgrades
+        never 500 the Today page when Airtable falls back to sample."""
         results = self.all()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -110,8 +112,12 @@ class SampleOpportunityService:
                 ]).lower()
                 return ql in blob
             results = [o for o in results if match(o)]
-        # sort by score desc
-        results.sort(key=lambda o: o.get("priority_score", 0), reverse=True)
+        mode = (sort or "lead_score").lower()
+        if mode == "freshness":
+            results.sort(key=lambda o: o.get("created_time") or "", reverse=True)
+        else:
+            # lead_score / confidence / unknown → priority_score desc
+            results.sort(key=lambda o: o.get("priority_score") or 0, reverse=True)
         return results
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -223,6 +229,12 @@ class SampleOpportunityService:
 
 
 _service_singleton = None
+_airtable_init_error: Optional[str] = None
+
+
+def get_airtable_init_error() -> Optional[str]:
+    """Why live Airtable was not used (None when backend is airtable)."""
+    return _airtable_init_error
 
 
 def get_opportunity_service():
@@ -230,19 +242,26 @@ def get_opportunity_service():
     Prefers a live Airtable-backed service when AIRTABLE_ENABLED=true and
     credentials are present; otherwise falls back to sample data.
     """
-    global _service_singleton
+    global _service_singleton, _airtable_init_error
     if _service_singleton is None:
-        airtable = build_airtable_service_from_env()
+        _airtable_init_error = None
+        airtable, err = build_airtable_service_from_env()
         if airtable is not None:
             log.info("Opportunity service: using live Airtable backend")
             _service_singleton = airtable
+            _airtable_init_error = None
         else:
-            log.info("Opportunity service: using in-memory sample backend")
+            _airtable_init_error = err
+            log.info(
+                "Opportunity service: using in-memory sample backend%s",
+                f" ({err})" if err else "",
+            )
             _service_singleton = SampleOpportunityService()
     return _service_singleton
 
 
 def reset_opportunity_service():
     """Force the next call to rebuild the service. Handy after env changes."""
-    global _service_singleton
+    global _service_singleton, _airtable_init_error
     _service_singleton = None
+    _airtable_init_error = None
