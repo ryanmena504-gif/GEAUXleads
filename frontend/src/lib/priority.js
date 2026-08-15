@@ -55,12 +55,13 @@ export const priorityReason = (opp) => {
 export const contactState = (opp) => {
   if (!opp) return { key: "watch", label: "Keep watching", color: "gray" };
   const status = String(opp.status || opp.hunt_status || "").toLowerCase();
-  const dnc = (opp.approval_status || opp.outreach_status || "").toLowerCase();
+  const dnc = `${opp.approval_status || ""} ${opp.outreach_status || ""}`.toLowerCase();
   if (
     status.includes("disqualified") ||
     status.includes("lost") ||
     status.includes("rejected") ||
     dnc.includes("do not contact") ||
+    dnc.includes("not interested") ||
     dnc.includes("blocked")
   ) {
     return { key: "not_fit", label: "Not a fit", color: "red" };
@@ -75,4 +76,93 @@ export const contactState = (opp) => {
     return { key: "needs", label: "Needs a phone or email", color: "yellow" };
   }
   return { key: "watch", label: "Keep watching", color: "gray" };
+};
+
+/**
+ * hasPremiumFit — evidence this is the kind of premium remodel work Ryan wants.
+ * Uses existing Airtable columns only (no invented revenue fields).
+ */
+export const hasPremiumFit = (opp) => {
+  if (!opp) return false;
+  if (opp.flag_premium === true) return true;
+  const fit = String(opp.opportunity_fit || "").toLowerCase();
+  if (fit === "strong") return true;
+  const rev = String(opp.revenue_potential || "").toLowerCase();
+  if (rev.includes("high")) return true;
+  return false;
+};
+
+/**
+ * contactReady — strict evidence gate for "People to contact today".
+ * Returns { ready, reasons } so the UI can hide or explain what's missing.
+ *
+ *  1. Verified public phone OR email on file
+ *  2. Premium-fit evidence (see hasPremiumFit) — projects only; partners skip this
+ *  3. Source URL recorded (projects only)
+ *  4. Date checked (created_time or last_reviewed on file)
+ *  5. No history conflict (closed / blocked / hunt-rejected)
+ */
+export const contactReady = (opp) => {
+  if (!opp) return { ready: false, reasons: ["empty"] };
+  const reasons = [];
+  const isPartner = opp.lane === "partner";
+
+  const status = String(opp.status || "").toLowerCase();
+  if (["disqualified", "lost", "won"].some((s) => status.includes(s))) {
+    reasons.push("closed");
+  }
+  const hunt = String(opp.hunt_status || "").toLowerCase();
+  if (["rejected", "closed", "disqualified", "paused"].some((s) => hunt.includes(s))) {
+    reasons.push("hunt_blocked");
+  }
+  const outreach = String(opp.outreach_status || "").toLowerCase();
+  const approval = String(opp.approval_status || "").toLowerCase();
+  if (
+    outreach.includes("do not contact") ||
+    outreach.includes("not interested") ||
+    approval.includes("do not contact") ||
+    approval.includes("blocked")
+  ) {
+    reasons.push("blocked");
+  }
+
+  const phone = (opp.contact_phone || opp.phone || opp.phone_alt || opp.phone_number || "")
+    .toString()
+    .trim();
+  const email = (opp.contact_email || opp.email || opp.email_alt || "").toString().trim();
+  const hasContact = phone.length >= 7 || email.includes("@");
+  if (!hasContact) reasons.push("no_contact");
+
+  if (!isPartner) {
+    if (!hasPremiumFit(opp)) reasons.push("not_premium");
+    if (!opp.source_url) reasons.push("no_source_url");
+  }
+  if (!(opp.last_reviewed || opp.created_time)) reasons.push("not_checked");
+
+  return { ready: reasons.length === 0, reasons };
+};
+
+/**
+ * needsConfirmation — outreach history says something was sent, but Ryan never
+ * confirmed a result that advances (or closes) the pipeline stage.
+ */
+export const needsConfirmation = (opp) => {
+  if (!opp) return false;
+  const outreach = String(opp.outreach_status || "").toLowerCase();
+  const sentSignal =
+    opp.flag_outreach_sent === true ||
+    outreach === "sent" ||
+    outreach.includes("no response") ||
+    outreach.includes("no reply");
+  if (!sentSignal) return false;
+  const status = String(opp.status || "").toLowerCase();
+  const resolved = [
+    "conversation started",
+    "estimate requested",
+    "estimate sent",
+    "won",
+    "lost",
+    "disqualified",
+  ].some((s) => status === s);
+  return !resolved;
 };
