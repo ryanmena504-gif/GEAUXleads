@@ -25,6 +25,8 @@ export const api = {
       .then((r) => r.data),
   updateFields: (id, patch) =>
     client.patch(`/opportunities/${id}/fields`, patch).then((r) => r.data),
+  recordResult: (id, payload) =>
+    client.post(`/opportunities/${id}/result`, payload).then((r) => r.data),
   addActivity: (id, type, note) =>
     client
       .post(`/opportunities/${id}/activity`, { type, note })
@@ -62,12 +64,6 @@ export const api = {
     client.patch(`/drafts/${id}`, patch).then((r) => r.data),
   deleteDraft: (id) => client.delete(`/drafts/${id}`).then((r) => r.data),
 
-  // Manual result-tracking — Ryan taps AFTER a real-world touch.
-  recordResult: (opp_id, result, note) =>
-    client
-      .post(`/opportunities/${opp_id}/result`, { result, note })
-      .then((r) => r.data),
-
   logHandoff: (opp_id, payload) =>
     client
       .post(`/opportunities/${opp_id}/handoff`, payload)
@@ -88,28 +84,4 @@ export const api = {
     client.get("/settings/user").then((r) => r.data),
   updateUserSettings: (patch) =>
     client.patch("/settings/user", patch).then((r) => r.data),
-
-  // AI Contact Enrichment — Gemini + Google Search grounding, manual only.
-  enrichmentStatus: () =>
-    client.get("/enrichment/status").then((r) => r.data),
-  runEnrichment: () =>
-    client.post("/enrichment/run").then((r) => r.data),
-  enrichLead: (opp_id) =>
-    client.post(`/opportunities/${opp_id}/enrich`).then((r) => r.data),
-
-  // Bloodhound learning loop — evidence-first, no invented probabilities.
-  predictiveStatus: () =>
-    client.get("/intelligence/predictive/status").then((r) => r.data),
-  predictiveTrain: () =>
-    client.post("/intelligence/predictive/train").then((r) => r.data),
-  predictiveForOpp: (opp_id) =>
-    client.get(`/intelligence/predictive/${opp_id}`).then((r) => r.data),
-  predictiveTop: (limit = 20) =>
-    client.get(`/intelligence/predictive/batch/top?limit=${limit}`).then((r) => r.data),
-  marketOverview: () =>
-    client.get("/intelligence/market").then((r) => r.data),
-  classifyReply: (text, lead_id) =>
-    client.post("/intelligence/reply/classify", { text, lead_id }).then((r) => r.data),
-  leadsWithReplies: () =>
-    client.get("/intelligence/reply/leads-with-replies").then((r) => r.data),
 };

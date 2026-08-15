@@ -82,7 +82,7 @@ class SampleOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
         results = self.all()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -193,6 +193,24 @@ class SampleOpportunityService:
         if not opp:
             return None
         self._append_activity(opp, type_, note)
+        return opp
+
+    def update_fields(self, opp_id: str, updates_by_snake: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Sample-data equivalent of the Airtable write method used in tests."""
+        opp = self._data.get(opp_id)
+        if not opp:
+            return None
+        for key, value in updates_by_snake.items():
+            if key == "ryans_decision":
+                opp["ryans_decision"] = value
+            elif key == "outcome":
+                opp["outcome"] = value
+            elif key == "next_follow_up":
+                opp["next_follow_up"] = value
+            elif key == "status":
+                self.update_status(opp_id, value)
+            else:
+                opp[key] = value
         return opp
 
     def _append_activity(self, opp: Dict[str, Any], type_: str, note: Optional[str]):

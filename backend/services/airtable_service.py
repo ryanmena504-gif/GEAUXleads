@@ -181,15 +181,8 @@ EXPLICIT_READONLY: set = {
     "Confidence score",
     "Lead score",
     "Enrichment status",
-    "Reply summary",
-    "Reply classification",
     "Verified opportunity",
     "Qualified opportunity",
-    "Outreach sent",
-    "Reply received",
-    "Positive conversation",
-    "Estimate opportunity",
-    "Job won",
     "Closed revenue",
     "Estimated gross profit",
     "SMS Permission",
@@ -210,10 +203,12 @@ EDITABLE_FIELDS = {
     "Notes",
     "Approval status",
     "Outreach status",
-    # Contact enrichment writes (AI-filled from Google Search grounding).
-    "Contact phone",
-    "Contact email",
-    "Contact website",
+    "Outreach channel",
+    "Message sent date",
+    "Date contacted",
+    "Reply classification",
+    "Reply summary",
+    "Date replied",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -227,9 +222,12 @@ WRITE_ALIAS: Dict[str, str] = {
     "notes": "Notes",
     "approval_status": "Approval status",
     "outreach_status": "Outreach status",
-    "phone": "Contact phone",
-    "email": "Contact email",
-    "website": "Contact website",
+    "outreach_channel": "Outreach channel",
+    "message_sent_date": "Message sent date",
+    "date_contacted": "Date contacted",
+    "reply_classification": "Reply classification",
+    "reply_summary": "Reply summary",
+    "date_replied": "Date replied",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.
@@ -313,13 +311,18 @@ PIPELINE_STATUSES = [
 ]
 
 # Derive a dashboard-pipeline stage from the Leads workflow state.
-# IMPORTANT: `outreach_status` is Ryan's manual source of truth — the five
-# result buttons on the detail page write to it. If it's set to one of the
-# terminal manual values we honor it BEFORE re-deriving from signal flags,
-# otherwise the read path would silently override what the write path just
-# stored (bug caught 2026-02: replied/not_interested/estimate_requested
-# taps were being overridden back to 'Needs research').
+# IMPORTANT: `outreach_status` is Ryan's manual source of truth — the
+# ContactResults buttons write to it. If it's set to one of the terminal
+# manual values we honor it BEFORE re-deriving from signal flags, otherwise
+# the read path would silently override what the write path just stored.
+# "Sent" / "No response" intentionally do NOT auto-advance the pipeline stage.
+# Won / Lost flags still win over outreach (a closed deal is closed).
 def _derive_status(opp: Dict[str, Any]) -> str:
+    if opp.get("flag_won"):
+        return "Won"
+    if opp.get("outcome"):
+        return "Lost"
+
     outreach = opp.get("outreach_status")
     if isinstance(outreach, str) and outreach.strip():
         ol = outreach.lower().strip()
@@ -327,12 +330,16 @@ def _derive_status(opp: Dict[str, Any]) -> str:
             return "Disqualified"
         if "estimate requested" in ol:
             return "Estimate requested"
-        if "reply received" in ol:
+        if ol in ("replied", "reply received") or "reply received" in ol:
             return "Conversation started"
-    if opp.get("flag_won"):
-        return "Won"
-    if opp.get("outcome"):
-        return "Lost"
+        # "sent", "no response", "not sent", "sms draft" — fall through
+
+    reply = opp.get("reply_classification")
+    if isinstance(reply, str) and reply.strip():
+        rl = reply.lower().strip()
+        if "not interested" in rl:
+            return "Disqualified"
+
     if opp.get("flag_estimate"):
         return "Estimate sent"
     if opp.get("flag_reply_received") or opp.get("flag_positive_conversation"):

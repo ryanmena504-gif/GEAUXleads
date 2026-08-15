@@ -58,6 +58,12 @@ export const OpportunityRow = ({ opp }) => (
             {opp.next_best_action}
           </div>
         )}
+        {(opp.recommendation_reason || opp.evidence_summary) && (
+          <div className="mt-2 text-[13px] text-[var(--bh-ink-3)] leading-snug line-clamp-2">
+            <span className="bh-eyebrow mr-2">Why this matters</span>
+            {opp.recommendation_reason || opp.evidence_summary}
+          </div>
+        )}
 
         <div className="mt-3 flex items-center gap-2 flex-wrap sm:hidden">
           <ContactBadge opportunity={opp} />

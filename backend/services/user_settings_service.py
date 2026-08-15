@@ -20,30 +20,21 @@ SINGLETON_KEY = "singleton"
 
 # Whitelist of keys Ryan can update. Anything else is silently dropped so
 # the endpoint can never be used as a general document editor.
-EDITABLE_KEYS = {
-    "sender_email",
-    "sender_name",
-    "sender_phone",
-    "email_provider",
-    "enrichment_enabled",
-}
+EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"}
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
 # URL supports `authuser` which pins the sending account. Outlook Web has
 # a similar deeplink. Apple Mail falls back to plain mailto:.
 ALLOWED_EMAIL_PROVIDERS = {"gmail", "outlook", "apple"}
 
-# Ryan's fixed sender identity for The Shirtless Handyman. Default provider
-# is Apple Mail (mailto:) — the device's default mail app decides which
-# account the message sends from. Bloodhound never claims control over that.
+# Ryan's fixed sender identity for The Shirtless Handyman. Native device
+# handoff is the default: it opens the mail composer configured on the iPhone
+# Ryan is actually using instead of a web inbox on a borrowed tablet.
 DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
     "email_provider": "apple",
-    # AI Contact Enrichment (Gemini + Google Search grounding) is opt-in —
-    # runs only when Ryan taps "Enrich now" in Settings and this is true.
-    "enrichment_enabled": False,
 }
 
 
@@ -68,7 +59,13 @@ class UserSettingsService:
 
     async def get(self) -> Dict[str, Any]:
         doc = await self._col.find_one({"key": SINGLETON_KEY})
-        return self._serialize(doc)
+        settings = self._serialize(doc)
+        # Gmail was a legacy default that can open an inbox instead of a
+        # compose window on iPhone. Move that default to native Mail. An
+        # explicit future Outlook choice is still respected.
+        if settings.get("email_provider") == "gmail":
+            settings["email_provider"] = "apple"
+        return settings
 
     async def update(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         clean: Dict[str, Any] = {}
@@ -91,10 +88,6 @@ class UserSettingsService:
                         f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
                     )
                 s = low
-            if k == "enrichment_enabled":
-                # Accept truthy/falsy inputs — store as real bool.
-                clean[k] = str(v).strip().lower() in ("true", "1", "yes", "on") if not isinstance(v, bool) else v
-                continue
             clean[k] = s or None
         if not clean:
             return await self.get()

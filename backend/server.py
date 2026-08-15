@@ -23,10 +23,6 @@ from services.playbook_service import get_playbook_service
 from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.handoff_service import get_handoff_service
 from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
-from services.enrichment_service import get_enrichment_service
-from services.predictive_engine import train_from_records, predict_for_record, batch_predict, get_engine
-from services.market_intelligence import analyze_market
-from services.reply_intelligence import classify_reply, classify_lead_replies
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -84,6 +80,13 @@ class FieldUpdate(BaseModel):
     ryans_decision: Optional[str] = None
     next_follow_up: Optional[str] = None
     outcome: Optional[str] = None
+
+
+class ResultUpdate(BaseModel):
+    """A human-confirmed outcome. This never opens or sends a message."""
+    event: str
+    channel: Optional[str] = None
+    note: Optional[str] = None
 
 
 @api_router.get("/")
@@ -262,95 +265,58 @@ async def update_fields(opp_id: str, body: FieldUpdate):
     return updated
 
 
-# ============================================================================
-# Manual result-tracking — five buttons Ryan taps AFTER personally sending
-# or hearing back. Opening a draft never touches this. Only a deliberate
-# button press records outreach state so Airtable stays honest.
-# ============================================================================
-class ManualResult(BaseModel):
-    result: str  # "sent" | "replied" | "estimate_requested" | "no_reply" | "not_interested"
-    note: Optional[str] = None  # optional freeform note Ryan can attach when saving
-
-
-_RESULT_TO_FIELDS = {
-    "sent": {
-        "outreach_status": "Sent by Ryan",
-        "status_hint": None,  # do NOT auto-advance to Conversation started
-        "activity_type": "sent",
-        "note": "Manually marked: I sent it",
-    },
-    "replied": {
-        "outreach_status": "Reply received",
-        "status_hint": "Conversation started",
-        "activity_type": "reply",
-        "note": "Manually marked: they replied",
-    },
-    "estimate_requested": {
-        "outreach_status": "Estimate requested",
-        "status_hint": "Estimate requested",
-        "activity_type": "estimate",
-        "note": "Manually marked: estimate requested",
-    },
-    "no_reply": {
-        "outreach_status": "No reply yet",
-        "status_hint": None,
-        "activity_type": "no_reply",
-        "note": "Manually marked: no reply yet",
-    },
-    "not_interested": {
-        "outreach_status": "Not interested",
-        "status_hint": "Disqualified",
-        "activity_type": "closed",
-        "note": "Manually marked: not interested",
-    },
-}
-
-
 @api_router.post("/opportunities/{opp_id}/result")
-async def record_manual_result(opp_id: str, body: ManualResult):
-    """Ryan explicitly presses one of the five result buttons. Never called
-    automatically — opening a draft or sending a Text/Email link does NOT
-    hit this endpoint. Only a deliberate tap after real-world action does."""
-    key = (body.result or "").strip().lower()
-    if key not in _RESULT_TO_FIELDS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"result must be one of {list(_RESULT_TO_FIELDS.keys())}",
-        )
-    plan = _RESULT_TO_FIELDS[key]
+async def record_result(opp_id: str, body: ResultUpdate):
+    """Persist a result only after Ryan explicitly confirms it in the app."""
+    event = (body.event or "").strip().lower()
+    channel = (body.channel or "").strip()
+    if event not in {"sent", "replied", "estimate_requested", "not_interested", "no_response"}:
+        raise HTTPException(status_code=422, detail="Unknown result")
+    if channel and channel not in {"Text", "Email", "Call", "Other"}:
+        raise HTTPException(status_code=422, detail="Unknown contact method")
+
+    now = datetime.now(timezone.utc).isoformat()
+    updates: Dict[str, Any] = {}
+    if event == "sent":
+        # Pipeline status must NOT auto-advance on "I sent it".
+        updates = {
+            "outreach_status": "Sent",
+            "outreach_channel": channel or "Other",
+            "message_sent_date": now,
+            "date_contacted": now,
+        }
+    elif event == "replied":
+        updates = {
+            "outreach_status": "Replied",
+            "reply_classification": "Needs more information",
+            "reply_summary": body.note or "Reply received",
+            "date_replied": now,
+        }
+    elif event == "estimate_requested":
+        updates = {
+            "outreach_status": "Estimate requested",
+            "reply_classification": "Interested",
+            "reply_summary": body.note or "Estimate requested",
+            "date_replied": now,
+        }
+    elif event == "not_interested":
+        updates = {
+            "outreach_status": "Not interested",
+            "reply_classification": "Not interested",
+            "reply_summary": body.note or "Not interested",
+            "date_replied": now,
+        }
+    elif event == "no_response":
+        updates = {"outreach_status": "No response"}
+
     svc = get_opportunity_service()
-    updates: Dict[str, Any] = {"outreach_status": plan["outreach_status"]}
-    if plan["status_hint"]:
-        updates["status"] = plan["status_hint"]
-    # Optional note goes into Airtable Notes so the learning loop and
-    # future audit have Ryan's own words about what happened.
-    user_note = (body.note or "").strip()
-    if user_note:
-        try:
-            current = svc.get(opp_id) if hasattr(svc, "get") else None
-        except Exception:
-            current = None
-        prior = str((current or {}).get("notes") or "").strip()
-        from datetime import datetime as _dt, timezone as _tz
-        stamp = _dt.now(_tz.utc).date().isoformat()
-        line = f"{plan['note']} · {stamp} · {user_note}"
-        updates["notes"] = f"{prior}\n{line}".strip() if prior else line
-    if not hasattr(svc, "update_fields"):
-        raise HTTPException(status_code=503, detail="Airtable write unavailable")
     try:
-        updated = svc.update_fields(opp_id, updates)
+        updated = svc.update_fields(opp_id, updates) if hasattr(svc, "update_fields") else None
     except AirtableWriteError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
-    # Add activity timeline entry
-    try:
-        if hasattr(svc, "add_activity"):
-            svc.add_activity(opp_id, plan["activity_type"], plan["note"])
-    except Exception:
-        # Non-fatal — the write above already succeeded.
-        pass
-    return {"opportunity": updated, "result": key}
+    return updated
 
 
 @api_router.get("/config")
@@ -390,7 +356,7 @@ async def cache_refresh():
 # ---------- Leads / Next Best Action ----------
 
 class LeadAction(BaseModel):
-    action: str  # approve | hold | skip | do_not_contact
+    action: str  # approve (disabled) | hold | skip | do_not_contact
     confirm: Optional[bool] = False
 
 
@@ -419,26 +385,23 @@ async def leads_next_best_action():
 
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
+    action = (body.action or "").lower()
+    if action == "approve":
+        # Bloodhound is approval-only. A dashboard approval must never become
+        # provider delivery: use the device-native draft handoff instead.
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Direct email delivery is disabled. Open a device-native draft, "
+                "send it yourself, then record the result in Bloodhound."
+            ),
+        )
+
     svc = get_leads_service()
     if not svc:
         raise HTTPException(status_code=503, detail="Leads service not available")
     if svc.get(lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
-    action = (body.action or "").lower()
-    if action == "approve":
-        # RULE 5 (2026-08-14): Bloodhound never sends email or SMS from the
-        # backend. Outreach happens exclusively through device-native drafts
-        # (mailto:/sms: handoffs) that Ryan reviews and sends himself.
-        # This endpoint used to call a Resend proxy — that path has been
-        # removed. Approve is now a no-op that returns a clear error.
-        raise HTTPException(
-            status_code=410,
-            detail=(
-                "Direct approve-and-send has been removed. Use the device-"
-                "native draft handoff on the opportunity detail page, then "
-                "tap 'I sent it' after you actually pressed Send."
-            ),
-        )
     if action == "hold":
         return svc.hold(lead_id)
     if action == "skip":
@@ -1053,7 +1016,6 @@ class UserSettingsPatch(BaseModel):
     sender_name: Optional[str] = None
     sender_phone: Optional[str] = None
     email_provider: Optional[str] = None
-    enrichment_enabled: Optional[bool] = None
 
 
 @api_router.get("/settings/user")
@@ -1074,151 +1036,6 @@ async def update_user_settings(patch: UserSettingsPatch):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"settings": settings, "persisted": True}
-
-
-# ============================================================================
-# AI Contact Enrichment — Gemini + Google Search grounding. Manual only.
-# Runs when Ryan taps "Enrich now" in Settings AND enrichment_enabled=True.
-# Fills missing Contact phone / Contact email on Leads that have neither,
-# and soft-archives any lead 5+ days old with no results.
-# ============================================================================
-@api_router.get("/enrichment/status")
-async def enrichment_status():
-    esvc = get_enrichment_service()
-    ssvc = get_user_settings_service()
-    enabled = False
-    if ssvc:
-        s = await ssvc.get()
-        enabled = bool(s.get("enrichment_enabled"))
-    if not esvc:
-        return {
-            "available": False,
-            "enabled": enabled,
-            "reason": "EMERGENT_LLM_KEY missing or Airtable backend inactive",
-        }
-    return {"available": True, "enabled": enabled, **esvc.status()}
-
-
-@api_router.post("/enrichment/run")
-async def enrichment_run():
-    """Kick off a one-shot enrichment sweep in the BACKGROUND. Returns 202
-    immediately; the client should poll GET /api/enrichment/status until
-    running=false. Requires the enrichment_enabled toggle in user settings."""
-    ssvc = get_user_settings_service()
-    if ssvc:
-        s = await ssvc.get()
-        if not s.get("enrichment_enabled"):
-            raise HTTPException(
-                status_code=409,
-                detail="Enrichment is disabled. Turn it on in Settings first.",
-            )
-    esvc = get_enrichment_service()
-    if not esvc:
-        raise HTTPException(
-            status_code=503,
-            detail="Enrichment unavailable (EMERGENT_LLM_KEY missing or Airtable backend inactive).",
-        )
-    if esvc.status().get("running"):
-        return JSONResponse(
-            status_code=202,
-            content={"started": False, "reason": "already_running", **esvc.status()},
-        )
-    # Fire-and-forget — sweep updates its own last_run + running flag.
-    asyncio.create_task(esvc.run_sweep())
-    return JSONResponse(status_code=202, content={"started": True, **esvc.status()})
-
-
-@api_router.post("/opportunities/{opp_id}/enrich")
-async def enrich_single_lead(opp_id: str):
-    """Manually enrich ONE lead — used by the 'Find contact' button on the
-    opportunity detail page. Respects the enrichment_enabled toggle but does
-    NOT require the sweep to be idle-scoped to the whole base."""
-    ssvc = get_user_settings_service()
-    if ssvc:
-        s = await ssvc.get()
-        if not s.get("enrichment_enabled"):
-            raise HTTPException(
-                status_code=409,
-                detail="Enrichment is disabled. Turn it on in Settings first.",
-            )
-    esvc = get_enrichment_service()
-    if not esvc:
-        raise HTTPException(
-            status_code=503,
-            detail="Enrichment unavailable (EMERGENT_LLM_KEY missing or Airtable backend inactive).",
-        )
-    result = await esvc.enrich_lead(opp_id)
-    if result.get("error") == "not_found":
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-    if result.get("error") == "sweep_in_progress":
-        raise HTTPException(status_code=409, detail="A full sweep is already running.")
-    if result.get("error") == "blocked":
-        raise HTTPException(status_code=409, detail="This lead is blocked or closed.")
-    return result
-
-
-# ============================================================================
-# Bloodhound Learning Loop — evidence-first recommendation engine.
-# Rule: NO probabilities, expected-value dollars, or AI-generated win claims
-# appear unless the model has enough confirmed recorded outcomes. See
-# services/predictive_engine.py for the safety gate (MIN_LEARNING_SAMPLE).
-# ============================================================================
-@api_router.get("/intelligence/predictive/status")
-async def predictive_status():
-    svc = get_opportunity_service()
-    return train_from_records(svc.all())
-
-
-@api_router.post("/intelligence/predictive/train")
-async def predictive_train():
-    svc = get_opportunity_service()
-    records = svc.all()
-    status = train_from_records(records)
-    return {"ok": True, **status}
-
-
-@api_router.get("/intelligence/predictive/{opp_id}")
-async def predictive_for_opportunity(opp_id: str):
-    svc = get_opportunity_service()
-    opp = svc.get(opp_id)
-    if not opp:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-    train_from_records(svc.all())
-    return predict_for_record(opp)
-
-
-@api_router.get("/intelligence/predictive/batch/top")
-async def predictive_batch_top(limit: int = 20):
-    svc = get_opportunity_service()
-    records = svc.all()
-    train_from_records(records)
-    predictions = batch_predict(records)
-    return {"predictions": predictions[:limit], "total": len(predictions)}
-
-
-@api_router.get("/intelligence/market")
-async def market_overview():
-    svc = get_opportunity_service()
-    records = svc.all()
-    return analyze_market(records)
-
-
-@api_router.post("/intelligence/reply/classify")
-async def classify_reply_endpoint(body: dict):
-    text = body.get("text", "")
-    lead_id = body.get("lead_id")
-    lead_record = None
-    if lead_id:
-        svc = get_opportunity_service()
-        lead_record = svc.get(lead_id)
-    return classify_reply(text, lead_record)
-
-
-@api_router.get("/intelligence/reply/leads-with-replies")
-async def leads_with_replies():
-    svc = get_opportunity_service()
-    records = svc.all()
-    return {"classifications": classify_lead_replies(records)}
 
 
 app.include_router(api_router)

@@ -8,11 +8,10 @@ import MissionBadge from "@/components/MissionBadge";
 import EditableDecisionPanel from "@/components/EditableDecisionPanel";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
+import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
-import PredictiveScoreBadge from "@/components/PredictiveScoreBadge";
-import ReplyIntelligencePanel from "@/components/ReplyIntelligencePanel";
 import {
   ArrowLeft,
   MapPin,
@@ -21,29 +20,22 @@ import {
   FileText,
   ShieldAlert,
   Info,
+  Sparkles,
   Search,
   Clock3,
   CheckCircle2,
   Send,
-  ClipboardList,
   Trophy,
   XCircle,
   Gauge,
   Target,
   PenLine,
-  AlertTriangle,
-  Sparkles,
 } from "lucide-react";
 
-// Five manual result buttons — Ryan taps AFTER a real-world action.
-// Opening a draft never touches these; only a deliberate tap sends the
-// result to Airtable via /api/opportunities/{id}/result.
-const RESULT_BUTTONS = [
-  { label: "I sent it",          result: "sent",               icon: Send,          tone: "primary" },
-  { label: "They replied",       result: "replied",            icon: CheckCircle2,  tone: "success" },
-  { label: "Estimate requested", result: "estimate_requested", icon: ClipboardList, tone: "ghost" },
-  { label: "No reply yet",       result: "no_reply",           icon: Search,        tone: "ghost" },
-  { label: "Not interested",     result: "not_interested",     icon: XCircle,       tone: "danger" },
+const ACTION_BUTTONS = [
+  { label: "Get more info first", status: "Needs research", icon: Search, tone: "ghost" },
+  { label: "Won", status: "Won", icon: Trophy, tone: "success" },
+  { label: "Lost", status: "Lost", icon: XCircle, tone: "danger" },
 ];
 
 const activityIcon = (t) => {
@@ -123,30 +115,10 @@ const OpportunityDetail = () => {
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
-  const [enriching, setEnriching] = useState(false);
-  const [prediction, setPrediction] = useState(null);
-  const [replyIntel, setReplyIntel] = useState(null);
-  const [resultNote, setResultNote] = useState("");
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
   }, [id]);
-
-  // Learning-loop recommendation: shows Why this matters / What to do next /
-  // Evidence gaps. Never invents probabilities or dollar predictions.
-  useEffect(() => {
-    if (!id) return;
-    api.predictiveForOpp(id).then(setPrediction).catch(() => setPrediction(null));
-  }, [id, opp?.status, opp?.outreach_status]);
-
-  // Only classify a reply when the record has actual reply_summary text —
-  // never mine notes or fabricate one.
-  useEffect(() => {
-    if (!opp) { setReplyIntel(null); return; }
-    const text = String(opp.reply_summary || "").trim();
-    if (!text) { setReplyIntel(null); return; }
-    api.classifyReply(text, id).then(setReplyIntel).catch(() => setReplyIntel(null));
-  }, [opp, id]);
 
   const handleStatus = async (status) => {
     setBusy(status);
@@ -158,55 +130,6 @@ const OpportunityDetail = () => {
       toast.error("Could not update status");
     } finally {
       setBusy(null);
-    }
-  };
-
-  const handleResult = async (result, label) => {
-    setBusy(result);
-    try {
-      const note = resultNote.trim();
-      const res = await api.recordResult(id, result, note || undefined);
-      if (res?.opportunity) setOpp(res.opportunity);
-      setResultNote("");
-      toast.success(note ? `Saved: ${label} · note attached` : `Saved: ${label}`);
-    } catch (e) {
-      const msg = e?.response?.data?.detail || "Could not save result";
-      toast.error(msg);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleFindContact = async () => {
-    if (enriching) return;
-    if (!window.confirm(
-      "Find public business contact for this lead?\n\n" +
-      "Bloodhound will search Google for a verified BUSINESS phone or email — never a private homeowner number. " +
-      "Nothing is sent, drafted, or archived. If nothing is found, this record stays in Watch."
-    )) return;
-    setEnriching(true);
-    toast.info("Searching public business sources…");
-    try {
-      const res = await api.enrichLead(id);
-      if (res?.opportunity) setOpp(res.opportunity);
-      const r = res?.result || {};
-      const outcome = r.outcome;
-      if (outcome === "contact_found") {
-        const found = [];
-        if (r.phone) found.push("phone");
-        if (r.email) found.push("email");
-        if (r.website) found.push("website");
-        toast.success(`Contact found · ${found.join(", ") || "written to Airtable"}`);
-      } else if (outcome === "needs_review") {
-        toast.warning("Needs human review — sources conflict or are unclear.");
-      } else {
-        toast.info("No public business contact found yet. Stays in Watch.");
-      }
-    } catch (e) {
-      const msg = e?.response?.data?.detail || "Enrichment failed";
-      toast.error(msg);
-    } finally {
-      setEnriching(false);
     }
   };
 
@@ -235,27 +158,17 @@ const OpportunityDetail = () => {
           <ArrowLeft size={13} /> Back to Project List
         </Link>
 
-        {/* Needs confirmation — Airtable history says something was sent but
-            Ryan never tapped a result button. Prompt him to resolve. */}
         {needsConfirmation(opp) && (
           <div
             data-testid="needs-confirmation-banner"
-            className="rounded-md border p-4 flex items-start gap-3"
-            style={{
-              background: "var(--bh-brass-mute)",
-              borderColor: "var(--bh-hair-warm)",
-              color: "var(--bh-brass)",
-            }}
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
           >
-            <AlertTriangle size={16} strokeWidth={1.75} className="shrink-0 mt-0.5" />
-            <div className="text-[13.5px] leading-relaxed">
-              <div className="font-medium">Needs confirmation</div>
-              <div className="text-[12.5px] text-[var(--bh-ink-2)] mt-0.5">
-                The record shows outreach history, but nothing has been
-                confirmed. Tap one of the result buttons below (I sent it,
-                They replied, No reply yet, etc.) to keep the tracker honest.
-              </div>
-            </div>
+            <div className="font-medium text-amber-200">Needs confirmation</div>
+            <p className="mt-1 text-[13px] leading-relaxed text-amber-100/80">
+              Outreach history says something was sent, but no result has been
+              confirmed yet. Tap one of the result buttons below (They replied,
+              No reply yet, Not interested, etc.) to keep the tracker honest.
+            </p>
           </div>
         )}
 
@@ -319,13 +232,6 @@ const OpportunityDetail = () => {
 
             {/* Primary action panel */}
             <div className="bh-surface-2 rounded p-4 min-w-0">
-                {/* Bloodhound learning-loop recommendation — never invents
-                    probabilities, dollars, or win rates. */}
-                {prediction && (
-                  <div className="mb-4">
-                    <PredictiveScoreBadge prediction={prediction} showDetails />
-                  </div>
-                )}
                 <div className="bh-eyebrow">
                   What to do next
                 </div>
@@ -341,55 +247,40 @@ const OpportunityDetail = () => {
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
                 <OpenInMessages opportunity={opp} variant="panel" />
-                <label className="block pt-1">
-                  <span className="text-[11px] text-[var(--bh-ink-mute)]">
-                    Add a note before you tap a result{" "}
-                    <span className="text-[var(--bh-ink-3)]">(optional — helps Bloodhound learn)</span>
-                  </span>
-                  <textarea
-                    value={resultNote}
-                    onChange={(e) => setResultNote(e.target.value)}
-                    placeholder="Example: called their office, spoke with Sarah, asked for an estimate walkthrough Thursday."
-                    rows={2}
-                    data-testid="result-note-input"
-                    className="mt-1.5 w-full resize-y rounded-md border bh-hairline bg-transparent px-3 py-2 text-[12px] leading-relaxed text-[var(--bh-ink)] outline-none placeholder:text-[var(--bh-ink-3)] focus:border-amber-500/50"
-                  />
-                </label>
+                <ContactResults opportunity={opp} onSaved={setOpp} />
                 <div className="space-y-1.5 pt-1">
-                {RESULT_BUTTONS.map((a) => {
+                {ACTION_BUTTONS.map((a) => {
                   return (
-                    <button
-                      key={a.result}
-                      data-testid={`result-${a.result}`}
-                      disabled={busy === a.result}
-                      onClick={() => handleResult(a.result, a.label)}
-                      className={
-                        "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
-                        (a.tone === "primary"
-                          ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
-                          : a.tone === "success"
-                            ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
-                            : a.tone === "danger"
-                              ? "border bh-hairline text-red-300 hover:bg-red-500/10"
-                              : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
-                        " disabled:cursor-not-allowed disabled:opacity-50"
-                      }
-                    >
-                      <a.icon size={14} />
-                      {a.label}
-                    </button>
+                    <React.Fragment key={a.status}>
+                      <button
+                        data-testid={`action-${a.status}`}
+                        disabled={busy === a.status || opp.status === a.status}
+                        onClick={() => handleStatus(a.status)}
+                        className={
+                          "w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 " +
+                          (a.tone === "primary"
+                            ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 font-medium"
+                            : a.tone === "success"
+                              ? "border bh-hairline text-emerald-300 hover:bg-emerald-500/10"
+                              : a.tone === "danger"
+                                ? "border bh-hairline text-red-300 hover:bg-red-500/10"
+                                : "border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)]") +
+                          (opp.status === a.status ? " opacity-40" : "") +
+                          " disabled:cursor-not-allowed"
+                        }
+                      >
+                        <a.icon size={14} />
+                        {a.label}
+                      </button>
+                    </React.Fragment>
                   );
                 })}
-                <p className="text-[11px] text-[var(--bh-ink-3)] leading-relaxed pt-1">
-                  Only tap these after you personally sent, received a reply,
-                  or heard back. Opening a draft never records anything.
-                </p>
                 {opp.lane === "partner" && (
                   <button
                     type="button"
                     onClick={() => setDraftOpen(true)}
                     data-testid="action-draft-note"
-                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150 mt-3"
+                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
                     style={{
                       background: "var(--bh-brass-mute)",
                       borderColor: "var(--bh-hair-warm)",
@@ -412,14 +303,6 @@ const OpportunityDetail = () => {
             onOpenChange={setDraftOpen}
             opportunity={opp}
           />
-        )}
-
-        {/* Reply intelligence — surfaces only when a genuine reply_summary
-            is on the record. Never guesses; never sends anything. */}
-        {replyIntel && (
-          <section data-testid="reply-intel-section">
-            <ReplyIntelligencePanel classification={replyIntel} />
-          </section>
         )}
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -507,28 +390,7 @@ const OpportunityDetail = () => {
 
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
-              <div className="flex items-baseline justify-between mb-3 gap-3">
-                <h3 className="font-display text-lg font-bold text-[var(--bh-ink)]">
-                  Who to talk to
-                </h3>
-                {!opp.phone && !opp.email && (
-                  <button
-                    type="button"
-                    onClick={handleFindContact}
-                    disabled={enriching}
-                    data-testid="find-contact-btn"
-                    className="text-[12.5px] h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 border transition-colors duration-150 disabled:opacity-50"
-                    style={{
-                      background: "var(--bh-brass-mute)",
-                      borderColor: "var(--bh-hair-warm)",
-                      color: "var(--bh-brass)",
-                    }}
-                  >
-                    <Sparkles size={13} />
-                    {enriching ? "Searching…" : "Find public business contact"}
-                  </button>
-                )}
-              </div>
+              <SectionHeading title="Who to talk to" />
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
                 <KV label="Phone" value={opp.phone} mono testId="kv-phone" />

@@ -1,102 +1,88 @@
-# BLOODHOUND — AI Opportunity Intelligence · PRD
+# BLOODHOUND: AI Opportunity Intelligence — PRD
 
-## Original problem
-A premium full-stack app for contractors (Ryan) that discovers, understands, and
-prioritizes business opportunities and partners. Airtable `Leads` table is the
-source of truth. Everything outbound is **native iOS handoff only** (`sms:` and
-`mailto:`). **No automated backend sending** (no Resend, Twilio, Gmail APIs).
+## Original problem statement
+Premium full-stack app for The Shirtless Handyman (Ryan Mena) that discovers,
+understands, and prioritizes business opportunities, partners, and market
+signals from an Airtable base. **All outreach is native-only** — `sms:`,
+`mailto:`, and provider compose URLs (Gmail/Outlook Web). Nothing sends
+automatically; Ryan always presses Send himself.
 
-## Product principles
-- Plain English everywhere. Hide scores/bands/database jargon.
-- Manual result buttons are the ONLY way outreach status advances.
-- Opening a draft NEVER writes to Airtable.
-- Records are NEVER dropped, archived, hidden, or retired because contact
-  info is missing. The AI keeps learning from the same set.
-- No probabilities, expected-value dollars, or AI-generated win claims
-  appear unless enough confirmed outcomes exist.
+## User
+- **Ryan Mena** — owner-operator contractor. iPhone + Mac. Fixed sender identity:
+  ryanmena@theshirtlesshandyman.com · (504) 264-4919 · Gmail (Google Workspace).
 
-## Core requirements (implemented)
-- **4-item navigation** (Sidebar + BottomNav): Today · All Projects · People to
-  Know · Settings.
-- **Today page = 3 work buckets**: Contact Now · Watch · Not a Fit. Everything
-  else lives behind the record detail page.
-- **Manual result buttons** on `/opportunities/:id`: I sent it, They replied,
-  Estimate requested, No reply yet, Not interested — with an **optional note
-  textarea** that gets stamped into Airtable Notes.
-- **Needs confirmation banner** when outreach history is ambiguous.
-- **AI Contact Enrichment (manual only)** — Gemini 2.5 Flash + Google Search
-  grounding. Toggle defaults OFF. Business-only contacts. 30-day recheck.
-  Nothing archived automatically.
-- **Bloodhound learning loop** (branch `computer/bloodhound-learning-loop`,
-  commit `bfe32e2`, pulled 2026-08-14):
-  - `services/predictive_engine.py` — evidence-first recommender. Returns
-    `work_bucket`, `priority`, `why_this_matters`, `what_to_do_next`,
-    `learning_note`, `evidence_gaps`. **Always returns
-    `conversion_probability=null`, `expected_value=null`, `priority_score=null`.**
-    Only produces "pattern found" language when ≥5 confirmed outcomes exist.
-  - `services/reply_intelligence.py` — regex-based reply classifier
-    (estimate_request / positive / not_interested / needs_info / referral /
-    unclear). Never mines notes; only reads `reply_summary`. Suggests a
-    manual next step; changes nothing.
-  - `services/market_intelligence.py` — city / project-type / velocity
-    counts derived from live records. Never claims revenue.
-  - `services/field_norm.py` — shared normalization helpers.
-  - `tests/test_bloodhound_learning.py` — 6 tests, all passing.
-  - Endpoints: `/api/intelligence/predictive/status`,
-    `/api/intelligence/predictive/train`,
-    `/api/intelligence/predictive/{id}`,
-    `/api/intelligence/predictive/batch/top`,
-    `/api/intelligence/market`,
-    `/api/intelligence/reply/classify`,
-    `/api/intelligence/reply/leads-with-replies`.
-  - Frontend: `PredictiveScoreBadge` inside the opportunity detail's action
-    panel (shows Why/What/Learning note/Evidence gaps).
-    `ReplyIntelligencePanel` renders only when the record has a real
-    `reply_summary`. `Intelligence.jsx` page is available at `/intelligence`.
+## Core rules
+- Airtable Leads table is the source of truth.
+- Live via webhook → SSE → frontend refetch.
+- No provider sending. No Resend/Twilio/Gmail API/iMessage APIs. No Apple
+  account integration. Approval-only, always.
+- Every outreach flows through a plain `sms:`, `mailto:`, or provider
+  compose URL (Gmail authuser= or Outlook deeplink).
 
-## Recent changelog
-- 2026-08-14 — Pulled `computer/bloodhound-learning-loop@bfe32e2`. Added 4
-  new backend services, 3 new frontend components, Intelligence page,
-  6 backend tests, 7 new API endpoints, optional note on result buttons.
-  Commit `77e73da`.
-- 2026-02-11 (final) — Removed 5-day soft-archive rule; added 3-bucket Today
-  page; tightened LLM prompt to reject homeowner/private/permit contacts;
-  30-day recheck marking on no-hit records; confirmation modal on per-lead
-  enrichment button; restored 22 previously affected records.
-- 2026-02-11 — Per-lead enrichment button + AI Contact Enrichment sweep.
-- 2026-02-11 — Rewrote CommandCenter into strict 3-section Today page.
+## Tech stack
+- Frontend: React 18 + Tailwind + Shadcn/UI
+- Backend: FastAPI + PyAirtable + Motor (MongoDB)
+- Data: Airtable (leads, playbooks) + MongoDB (drafts, handoffs, user_settings)
 
-## Backlog
-### P1 — Recheck-driven surfacing
-- Highlight records whose 30-day recheck date has passed in a Watch
-  sub-bucket. Never runs enrichment automatically.
+## Implemented (major features)
+### Discovery + prioritisation
+- Command Center dashboard with Won-this-month KPI hero, Today's top action,
+  Time to nudge, metric strip, follow-ups, top picks, pipeline
+- Airtable read-through with SSE live updates
+- Slack alerts for high-priority leads
+- Priority as High/Medium/Low pill (score hidden behind hover)
+- Contact readiness badge (green/yellow/gray/red) on every lead
 
-### P2 — Webhook persistence
-- Persist Airtable webhook state to Mongo so preview reloads don't hijack
-  the production webhook.
+### Outreach — native + provider-locked
+- `sms:` / `mailto:` URLs with iPhone-safe phone sanitization
+- **Email provider lock** — Gmail compose URL with `authuser=` param forces
+  every email to send from Ryan's business account on every device
+- Configurable in Settings → Your sender identity (Name / Email / Phone / Provider)
+- Handoff logger — every Text/Email tap logs one row to Mongo `contact_handoffs`
+- Row-level Text/Email pills on People to Know + Projects to Watch
+- Removed leftover "Approve & Send" button
 
-### P3 — Small polish
-- Source URL + reason chip on Contact Now rows.
-- Unify BottomNav testids to `nav-*` prefix.
-- Wire an in-app "What Bloodhound is learning" link inside Settings that
-  points at `/intelligence`.
+### Follow-up sequencing (2026-08 session)
+- `GET /api/follow-ups/due` — joins handoff_log with opportunity list to
+  surface leads Ryan touched but never nudged, bucketed by:
+    · estimate_check (7+ days since Estimate requested/sent)
+    · text_nudge     (3+ days since last text)
+    · email_nudge    (5+ days since last email)
+- Ranked estimate → text → email, then by priority score, then by days idle
+- Time to nudge section on Today's Work shows top 8 with one-tap Contact them
 
-## Files of interest
-- `/app/frontend/src/pages/CommandCenter.jsx` — 3-bucket Today.
-- `/app/frontend/src/pages/OpportunityDetail.jsx` — manual result buttons,
-  optional note, Needs confirmation, Find public business contact,
-  PredictiveScoreBadge, ReplyIntelligencePanel.
-- `/app/frontend/src/pages/Intelligence.jsx` — learning-loop overview.
-- `/app/frontend/src/pages/Settings.jsx` — SenderIdentity + Enrichment.
-- `/app/frontend/src/lib/priority.js` — contactReady, hasPremiumFit,
-  needsConfirmation, isBusinessContact, isClosedOrBlocked.
-- `/app/frontend/src/components/PredictiveScoreBadge.jsx`
-- `/app/frontend/src/components/ReplyIntelligencePanel.jsx`
-- `/app/frontend/src/components/ContactResults.jsx`
-- `/app/backend/server.py` — result / enrich / intelligence endpoints.
-- `/app/backend/services/enrichment_service.py`
-- `/app/backend/services/predictive_engine.py`
-- `/app/backend/services/reply_intelligence.py`
-- `/app/backend/services/market_intelligence.py`
-- `/app/backend/services/field_norm.py`
-- `/app/backend/tests/test_bloodhound_learning.py`
+### Business trend at a glance (2026-08 session)
+- `GET /api/kpis/monthly` — Won this month, Active pipeline, Estimates out,
+  Won all-time (count + value each)
+- WonThisMonth hero strip at the very top of Today's Work
+
+### Plain-English UX
+- Full rebrand (Partner Intelligence → People to Know, Lead score → Priority,
+  Pipeline value → Possible work value, Research First → Get more info first,
+  etc.)
+- Status labels ("Need more info", "Talking", "Not a fit")
+- Section /XX numbering removed; sections have real titles
+
+## Data models (Mongo)
+- `outreach_drafts` — Draft-a-Note storage
+- `contact_handoffs` — {opp_id, channel, recipient, device_hint, at}
+- `user_settings` — {sender_email, sender_name, sender_phone, email_provider, updated_at}
+
+## API surface (relevant/new)
+- `GET  /api/follow-ups/due` — leads needing a nudge
+- `GET  /api/kpis/monthly` — Won this month + pipeline value
+- `GET  /api/settings/user` · `PATCH /api/settings/user`
+- `POST /api/opportunities/{id}/handoff` · `GET /api/opportunities/{id}/handoffs`
+- `GET  /api/handoffs/recent`
+- (+ existing opportunities / drafts / playbook / lane / pipeline endpoints)
+
+## Backlog / Next
+- **Signature preview** in Settings (see the exact email signature before sending)
+- **Provider test** button — send yourself a Gmail compose to verify authuser lock
+- **Won streak widget** — small streak counter on the dashboard
+- **Voice-to-note capture** — job-site dictation into any lead
+- **Photo / estimate upload** — attach property photos and estimate PDFs to a lead
+- **Referral prompt** — after Won status, prompt a text to ask for a referral
+- **Weekly recap email** — "you contacted X, Y replied, Z estimates out"
+- **Webhook persistence** to Mongo so preview reloads don't hijack production
+- **iPad hint** — small nudge saying "open on iPhone to text"

@@ -55,12 +55,13 @@ export const priorityReason = (opp) => {
 export const contactState = (opp) => {
   if (!opp) return { key: "watch", label: "Keep watching", color: "gray" };
   const status = String(opp.status || opp.hunt_status || "").toLowerCase();
-  const dnc = (opp.approval_status || opp.outreach_status || "").toLowerCase();
+  const dnc = `${opp.approval_status || ""} ${opp.outreach_status || ""}`.toLowerCase();
   if (
     status.includes("disqualified") ||
     status.includes("lost") ||
     status.includes("rejected") ||
     dnc.includes("do not contact") ||
+    dnc.includes("not interested") ||
     dnc.includes("blocked")
   ) {
     return { key: "not_fit", label: "Not a fit", color: "red" };
@@ -78,30 +79,8 @@ export const contactState = (opp) => {
 };
 
 /**
- * isBusinessContact — is the contact on this record a *business* contact
- * (not a homeowner / private owner tied to a permit)? Ryan explicitly does
- * NOT want homeowner phones/emails routed to Contact Now — those get
- * treated as Watch until a proper business channel is found.
- *
- * Signals: partner lane is always business; a `company` field OR a
- * `contact_website` field (or business-looking website) are strong tells.
- */
-export const isBusinessContact = (opp) => {
-  if (!opp) return false;
-  if (opp.lane === "partner") return true;
-  const company = String(opp.company || "").trim();
-  if (company.length >= 2) return true;
-  const website = String(opp.website || opp.website_alt || "").trim();
-  if (website.startsWith("http")) return true;
-  // Otherwise: assume homeowner / permit-address contact until proven
-  // business.
-  return false;
-};
-
-/**
- * hasPremiumFit — is there evidence this is the kind of premium remodel work
- * Ryan wants? Sourced from Airtable's `Premium property or client` checkbox,
- * the AI-derived Opportunity Fit ("Strong"), or a High revenue potential.
+ * hasPremiumFit — evidence this is the kind of premium remodel work Ryan wants.
+ * Uses existing Airtable columns only (no invented revenue fields).
  */
 export const hasPremiumFit = (opp) => {
   if (!opp) return false;
@@ -114,49 +93,27 @@ export const hasPremiumFit = (opp) => {
 };
 
 /**
- * isClosedOrBlocked — the record is either terminal (Won/Lost/Disqualified)
- * or explicitly blocked (Do Not Contact / Not interested). Used to route to
- * the Not-a-Fit bucket.
- */
-export const isClosedOrBlocked = (opp) => {
-  if (!opp) return false;
-  const status = String(opp.status || "").toLowerCase();
-  if (["disqualified", "lost"].some((s) => status.includes(s))) return true;
-  const outreach = String(opp.outreach_status || "").toLowerCase();
-  const approval = String(opp.approval_status || "").toLowerCase();
-  if (
-    outreach.includes("do not contact") ||
-    outreach.includes("not interested") ||
-    approval.includes("do not contact") ||
-    approval.includes("blocked")
-  ) {
-    return true;
-  }
-  return false;
-};
-
-/**
- * contactReady — strict evidence gate for the "Contact Now" bucket.
- * Every rule must be satisfied. Returns { ready, reasons } so the UI can
- * hide or explain what's missing.
+ * contactReady — strict evidence gate for "People to contact today".
+ * Returns { ready, reasons } so the UI can hide or explain what's missing.
  *
  *  1. Verified public phone OR email on file
- *  2. Premium-fit evidence (see hasPremiumFit)
- *  3. Source URL recorded (we can trace where this came from)
+ *  2. Premium-fit evidence (see hasPremiumFit) — projects only; partners skip this
+ *  3. Source URL recorded (projects only)
  *  4. Date checked (created_time or last_reviewed on file)
- *  5. No history conflict:
- *      - not closed (Won / Lost / Disqualified)
- *      - not blocked (Do Not Contact / Not interested)
- *  6. It's a BUSINESS or PROFESSIONAL contact, not a homeowner / permit-
- *     address personal contact. See isBusinessContact.
+ *  5. No history conflict (closed / blocked / hunt-rejected)
  */
 export const contactReady = (opp) => {
   if (!opp) return { ready: false, reasons: ["empty"] };
   const reasons = [];
+  const isPartner = opp.lane === "partner";
 
   const status = String(opp.status || "").toLowerCase();
   if (["disqualified", "lost", "won"].some((s) => status.includes(s))) {
     reasons.push("closed");
+  }
+  const hunt = String(opp.hunt_status || "").toLowerCase();
+  if (["rejected", "closed", "disqualified", "paused"].some((s) => hunt.includes(s))) {
+    reasons.push("hunt_blocked");
   }
   const outreach = String(opp.outreach_status || "").toLowerCase();
   const approval = String(opp.approval_status || "").toLowerCase();
@@ -176,27 +133,26 @@ export const contactReady = (opp) => {
   const hasContact = phone.length >= 7 || email.includes("@");
   if (!hasContact) reasons.push("no_contact");
 
-  if (!hasPremiumFit(opp)) reasons.push("not_premium");
-  if (!opp.source_url) reasons.push("no_source_url");
+  if (!isPartner) {
+    if (!hasPremiumFit(opp)) reasons.push("not_premium");
+    if (!opp.source_url) reasons.push("no_source_url");
+  }
   if (!(opp.last_reviewed || opp.created_time)) reasons.push("not_checked");
-  if (!isBusinessContact(opp)) reasons.push("not_business_contact");
 
   return { ready: reasons.length === 0, reasons };
 };
 
 /**
- * needsConfirmation — the record's outreach history is ambiguous:
- * something says a contact was sent (checkbox or status), but Ryan never
- * tapped one of the manual result buttons to confirm the outcome. We surface
- * a "Needs confirmation" flag on the detail page so he can resolve it.
+ * needsConfirmation — outreach history says something was sent, but Ryan never
+ * confirmed a result that advances (or closes) the pipeline stage.
  */
 export const needsConfirmation = (opp) => {
   if (!opp) return false;
   const outreach = String(opp.outreach_status || "").toLowerCase();
   const sentSignal =
     opp.flag_outreach_sent === true ||
-    outreach.includes("sent") ||
-    outreach.includes("reply") ||
+    outreach === "sent" ||
+    outreach.includes("no response") ||
     outreach.includes("no reply");
   if (!sentSignal) return false;
   const status = String(opp.status || "").toLowerCase();
