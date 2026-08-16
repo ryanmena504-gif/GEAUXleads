@@ -5,7 +5,7 @@ import LearningStrip from "@/components/LearningStrip";
 import MorningBrief from "@/components/MorningBrief";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { fmtMoney, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import {
   queueBucket,
   sortForQueue,
@@ -233,14 +233,20 @@ const ReadyRow = ({ opp, sender }) => {
             </details>
           )}
         </Link>
-        {opp.estimated_value ? (
-          <div className="hidden md:block text-right shrink-0">
-            <div className="bh-eyebrow">Possible work value</div>
-            <div className="font-display text-[18px] text-[var(--bh-ink)] tabular-nums">
-              {fmtMoney(opp.estimated_value)}
+        {(() => {
+          const money = moneyDisplay(opp);
+          return money ? (
+            <div className="hidden md:block text-right shrink-0">
+              <div className="bh-eyebrow">Possible work value</div>
+              <div
+                className="font-display text-[18px] text-[var(--bh-ink)] tabular-nums"
+                data-testid={`money-${opp.id}`}
+              >
+                {money}
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null;
+        })()}
       </div>
 
       <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">

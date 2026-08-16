@@ -243,11 +243,37 @@ Message Playbooks editor in Settings is untouched — the Email Now button
 consumes the current playbook values (`first_message_subject`, `first_message`,
 `current_recommendation` for follow-ups) automatically.
 
+## Preview wired to real Airtable + money display (2026-02-16)
+Fresh PAT swapped into `/app/backend/.env`; backend flipped from `sample`
+to `airtable` with **49 real records** (8 Ready to Contact / 2 Contacted /
+39 All Projects).
+
+Diagnosis of the "no money in production" report: the real Airtable base
+has ZERO populated numeric currency values on every record (`Estimated job
+value`, `Closed revenue`, `Estimated gross profit`, `Permit project value`
+all empty on all 49). Two formula fields — `Official project value` and
+`Estimated opportunity value` — compute over those empty currency cells and
+return the placeholder strings `"Not public"` and `"Not estimated yet"` on
+every record.
+
+Fix (transparent, no fake numbers):
+- Airtable mapper now reads three additional money-related fields:
+  `Official project value → official_project_value`,
+  `Estimated opportunity value → opportunity_value_display`,
+  `Permit project value → permit_project_value`.
+- New frontend helper `moneyDisplay(opp)` in `formatters.js` prefers
+  `estimated_value` (number → `$185K`), else falls back to the Airtable
+  formula strings in order:
+  `opportunity_value_display → official_project_value → revenue_potential`.
+- Home Ready rows + Opportunity Detail hero now use `moneyDisplay()`, so
+  the app matches what Ryan sees inside Airtable. When Ryan populates
+  `Estimated job value` on a record, the numeric badge lights up
+  automatically on the next refresh.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped (7am America/Chicago via cron)
-3. Wire preview to real Airtable — pending fresh PAT
-4. Referral prompt after Won — planned
+3. ✅ Preview wired to real Airtable
 
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)

@@ -69,6 +69,12 @@ LIVE_FIELDS: Dict[str, str] = {
     "Permit number": "permit_number",
     "Permit description": "permit_description",
     "Estimated job value": "estimated_value",
+    # Formula money fields — kept as-is (string). The frontend prefers
+    # `estimated_value` (number) when populated, else falls back to these so
+    # the app renders whatever Airtable actually shows Ryan on a given record.
+    "Official project value": "official_project_value",
+    "Estimated opportunity value": "opportunity_value_display",
+    "Permit project value": "permit_project_value",
 
     # Contact block
     "Contact name": "decision_maker",

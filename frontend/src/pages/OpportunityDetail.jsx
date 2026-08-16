@@ -10,7 +10,7 @@ import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
-import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
+import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
 import { queueBucket, outreachAllowed } from "@/lib/queue";
 import {
@@ -271,7 +271,8 @@ const OpportunityDetail = () => {
                 <GovernedSignal label="Freshness" value={opp.freshness} testId="governed-freshness" />
                 <GovernedSignal
                   label="Possible work value"
-                  value={opp.estimated_value ? fmtMoney(opp.estimated_value) : null}
+                  value={moneyDisplay(opp)}
+                  testId="governed-work-value"
                 />
                 <GovernedSignal label="Found on" value={sourceLabel(opp.source)} />
                 <GovernedSignal label="Project type" value={opp.project_type} />

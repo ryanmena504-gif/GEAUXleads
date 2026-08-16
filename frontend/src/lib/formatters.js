@@ -14,6 +14,35 @@ export const fmtMoneyFull = (v) => {
   return `$${n.toLocaleString()}`;
 };
 
+/**
+ * moneyDisplay — the single money renderer for opportunity cards + detail.
+ *
+ *   • If `estimated_value` is a positive number → format as $NK / $N.NM.
+ *   • Else fall back to Airtable's formula strings that Ryan already sees
+ *     inside Airtable: `Estimated opportunity value` (e.g. "Not estimated
+ *     yet") or `Official project value` (e.g. "Not public"), or the
+ *     `Revenue potential` bucket ("$5k-15k").
+ *   • Else return null so the UI can hide the badge entirely.
+ *
+ * Never invents a value. When the app and Airtable disagree, it defers to
+ * Airtable.
+ */
+export const moneyDisplay = (opp) => {
+  if (!opp) return null;
+  const n = Number(opp.estimated_value);
+  if (Number.isFinite(n) && n > 0) return fmtMoney(n);
+  const candidates = [
+    opp.opportunity_value_display,
+    opp.official_project_value,
+    opp.revenue_potential,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+    if (typeof c === "number" && c > 0) return fmtMoney(c);
+  }
+  return null;
+};
+
 export const fmtDate = (iso) => {
   if (!iso) return "—";
   try {
