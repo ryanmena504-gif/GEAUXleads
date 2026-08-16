@@ -84,6 +84,13 @@ export const api = {
   learningInsights: (limit = 3) =>
     client.get("/learning/insights", { params: { limit } }).then((r) => r.data),
 
+  // Morning brief — same content that ships in the 7am email. Used by the
+  // in-app MorningBrief panel and by Settings' "test send" button.
+  morningBrief: () =>
+    client.get("/morning-brief/preview").then((r) => r.data),
+  sendMorningBriefNow: () =>
+    client.post("/morning-brief/send-now").then((r) => r.data),
+
   // User preferences — sender email that appears on mailto: drafts, etc.
   getUserSettings: () =>
     client.get("/settings/user").then((r) => r.data),

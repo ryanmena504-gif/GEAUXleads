@@ -1,10 +1,11 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Request, BackgroundTasks, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import json
 import asyncio
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -957,6 +958,84 @@ async def learning_insights(limit: int = 3):
     osvc = get_opportunity_service()
     all_ops = osvc.all() if hasattr(osvc, "all") else []
     return compute_insights(all_ops, limit=max(1, min(limit, 10)))
+
+
+# ============================================================================
+# Morning Brief — Ryan's 7am glance email + in-app panel. Composes the same
+# dict two ways: as JSON for the frontend MorningBrief component, and as
+# inline-styled HTML for the scheduled email send. The cron endpoint is
+# Bearer-authed and enqueues the work in a background task so the platform
+# scheduler gets its immediate 2xx ack (per skill contract).
+# ============================================================================
+@api_router.get("/morning-brief/preview")
+async def morning_brief_preview():
+    from services.morning_brief_service import compose_brief
+    osvc = get_opportunity_service()
+    hsvc = get_handoff_service()
+    return await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
+
+
+async def _deliver_morning_brief() -> Dict[str, Any]:
+    """Compose + send the brief. Isolated so both the cron worker and the
+    on-demand /send-now endpoint can call it. Never raises — logs and
+    returns a status dict instead so a transient failure doesn't crash
+    the cron worker or the manual test button."""
+    from services.morning_brief_service import compose_brief, render_brief_html
+    from services.email_service import send_outreach_email, EmailSendError
+
+    osvc = get_opportunity_service()
+    hsvc = get_handoff_service()
+    usvc = get_user_settings_service()
+    brief = await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
+
+    settings = await usvc.get() if usvc else USER_SETTINGS_DEFAULTS
+    recipient = (settings.get("sender_email") or "").strip()
+    if not recipient:
+        return {"sent": False, "reason": "no recipient in user_settings"}
+
+    app_base = os.environ.get("PUBLIC_BACKEND_URL") or ""
+    html_body = render_brief_html(brief, app_base_url=app_base.rstrip("/"))
+    subject = f'Morning brief · {brief["counts"].get("total", 0)} things for today'
+    try:
+        result = await send_outreach_email(
+            recipient_email=recipient,
+            subject=subject,
+            html_body=html_body,
+        )
+        return {"sent": True, "recipient": recipient, "email_id": result.get("id"),
+                "counts": brief["counts"]}
+    except EmailSendError as e:
+        logger.error("Morning brief send failed: %s", e)
+        return {"sent": False, "reason": str(e), "counts": brief["counts"]}
+
+
+@api_router.post("/morning-brief/send-now")
+async def morning_brief_send_now():
+    """Trigger a live send immediately — used from Settings for a manual
+    'test the delivery' flow. Same auth model as the rest of the app."""
+    return await _deliver_morning_brief()
+
+
+def _bearer_matches(auth_header: Optional[str]) -> bool:
+    expected = os.environ.get("WEBHOOK_CRON_SECRET") or ""
+    if not expected or not auth_header:
+        return False
+    if not auth_header.lower().startswith("bearer "):
+        return False
+    token = auth_header.split(" ", 1)[1].strip()
+    return hmac.compare_digest(token, expected)
+
+
+@api_router.post("/cron/morning-brief")
+async def cron_morning_brief(
+    background: BackgroundTasks,
+    authorization: Optional[str] = Header(None),
+):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    if not _bearer_matches(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    background.add_task(_deliver_morning_brief)
+    return {"accepted": True}
 
 
 @api_router.get("/kpis/monthly")

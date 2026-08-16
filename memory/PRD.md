@@ -192,11 +192,31 @@ Sample fixtures now include `outreach_status` on 8 records so the strip
 demonstrates end-to-end. When Airtable is wired, the same aggregation runs
 live against confirmed outcomes.
 
+## Morning Brief (2026-02-16)
+Ryan's daily 7am glance — one email + an in-app panel from the same source.
+
+- Backend `services/morning_brief_service.py` composes three sections:
+  New Ready (≤ 24h since `last_classified_at` and `Current Queue = "Ready to Contact"`),
+  Follow-ups due (same buckets as `/api/follow-ups/due`),
+  Estimate deadlines (`outreach_status ∈ {Estimate requested, Estimate sent}` ≥ 7 days).
+- Endpoints: `GET /api/morning-brief/preview` (frontend + testing) and
+  `POST /api/morning-brief/send-now` (Settings "test send" hook).
+- Cron: `.emergent/crons.yml` fires `POST /api/cron/morning-brief` at
+  07:00 America/Chicago; the endpoint requires `Bearer WEBHOOK_CRON_SECRET`
+  and background-schedules the send so the platform gets an immediate 2xx.
+- Delivery: Emergent-managed Resend via the guardrail-gated
+  `send_outreach_email` helper (G2 + G3 structural checks on every send).
+  Recipient is `user_settings.sender_email` — currently
+  `ryanmena@theshirtlesshandyman.com`.
+- Frontend `MorningBrief.jsx` renders the same content at the top of Home
+  when the day's brief has ≥ 1 row; dismiss is UI-only via localStorage,
+  never hits the backend.
+
 ## Ryan's ship order (confirmed 2026-02-16)
-1. **Morning brief** (push or SMS) — 7am nudge with follow-ups due, new Ready records, and estimate deadlines. Turns the app from a tool into a habit.
-2. **Reverse lookup** on inbound call/text — number → lead card with governed context. iOS shortcut + `/api/opportunities/by-phone/{number}` endpoint.
-3. *(Skipped — voice-to-note)*
-4. **Referral prompt after Won** — one-tap "text this client asking for a referral" 5 days after Won status. Turns 1 win into 2-3 leads.
+1. ✅ Learning loop shipped
+2. ✅ Morning brief shipped (7am America/Chicago via cron)
+3. Wire preview to real Airtable — pending fresh PAT
+4. Referral prompt after Won — planned
 
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)

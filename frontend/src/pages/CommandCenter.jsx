@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
 import LearningStrip from "@/components/LearningStrip";
+import MorningBrief from "@/components/MorningBrief";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { fmtMoney, sourceLabel } from "@/lib/formatters";
@@ -480,6 +481,7 @@ const CommandCenter = () => {
         subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
       />
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
+        <MorningBrief />
         <LearningStrip />
         <SectionShell
           testId="section-ready-to-contact"
