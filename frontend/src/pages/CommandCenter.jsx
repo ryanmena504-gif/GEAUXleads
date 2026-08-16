@@ -1,60 +1,408 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopHeader from "@/components/TopHeader";
-import OpportunityRow from "@/components/OpportunityRow";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
-import { contactReady } from "@/lib/priority";
-import { ArrowRight, PhoneCall, Search, Users } from "lucide-react";
+import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import {
+  queueBucket,
+  sortForQueue,
+  allowedAction,
+  whyReady,
+  notReadyReason,
+} from "@/lib/queue";
+import useUserSettings from "@/hooks/useUserSettings";
+import {
+  Mail,
+  Reply,
+  Info,
+  ChevronRight,
+  MapPin,
+  Phone,
+  Sparkles,
+  Clock,
+} from "lucide-react";
 
-const CLOSED_STATUSES = new Set(["Won", "Lost", "Disqualified"]);
+// ─── mailto helpers ───────────────────────────────────────────────────────
+// Draft-only. Opening a draft NEVER writes to Airtable. Ryan chooses whether
+// to press Send inside his native mail app.
 
-const sortByPriority = (items) =>
-  [...items].sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0));
+const enc = encodeURIComponent;
 
-const EmptyState = ({ children }) => (
-  <div className="bh-surface rounded-md p-6 text-sm text-[var(--bh-ink-mute)]">
+const buildFirstDraft = (opp, sender) => {
+  const first = (opp.opportunity_name || opp.name || "there").split(" ")[0];
+  const subject = opp.first_message_subject || `Quick note about ${opp.project_type || "your project"}`;
+  const bodyLines = [
+    `Hi ${opp.decision_maker || first},`,
+    "",
+    opp.first_message ||
+      opp.first_contact_message ||
+      "I came across your recent project and thought I could help.",
+    "",
+    sender?.sender_name ? `— ${sender.sender_name}` : "— Ryan",
+    sender?.sender_phone ? sender.sender_phone : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return { subject, body: bodyLines };
+};
+
+const buildFollowUpDraft = (opp, sender) => {
+  const first = (opp.opportunity_name || opp.name || "there").split(" ")[0];
+  const subject = `Following up · ${opp.project_type || opp.name || "your project"}`;
+  const rec = opp.current_recommendation || "Just checking in to see if now is a better time to chat.";
+  const bodyLines = [
+    `Hi ${opp.decision_maker || first},`,
+    "",
+    rec,
+    "",
+    sender?.sender_name ? `— ${sender.sender_name}` : "— Ryan",
+    sender?.sender_phone ? sender.sender_phone : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return { subject, body: bodyLines };
+};
+
+// ─── UI atoms ─────────────────────────────────────────────────────────────
+
+const Chip = ({ label, value, tone = "neutral" }) => {
+  const styles =
+    tone === "ready"
+      ? { bg: "rgba(214,175,54,0.08)", fg: "var(--bh-brass)", border: "var(--bh-hair-warm)" }
+      : tone === "warn"
+        ? { bg: "rgba(214,175,54,0.05)", fg: "var(--bh-brass-2)", border: "var(--bh-hair-warm)" }
+        : { bg: "var(--bh-surface-2)", fg: "var(--bh-ink-mute)", border: "var(--bh-hair)" };
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-medium tracking-tight"
+      style={{ background: styles.bg, color: styles.fg, borderColor: styles.border }}
+    >
+      <span className="text-[9.5px] uppercase tracking-widest opacity-75">{label}</span>
+      <span>{value}</span>
+    </span>
+  );
+};
+
+const EmptyCard = ({ children, testId }) => (
+  <div
+    data-testid={testId}
+    className="bh-surface rounded-md p-6 text-center text-sm text-[var(--bh-ink-mute)]"
+  >
     {children}
   </div>
 );
 
-const HomeSection = ({ eyebrow, title, hint, icon: Icon, items, empty, to }) => (
-  <section className="space-y-3">
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <div className="bh-eyebrow inline-flex items-center gap-1.5">
-          <Icon size={12} /> {eyebrow}
-        </div>
-        <h2 className="mt-1 font-display text-xl font-semibold tracking-tight text-[var(--bh-ink)]">
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-[var(--bh-ink-3)]">{hint}</p>
-      </div>
-      {to && (
-        <Link
-          to={to}
-          data-testid={`link-open-${eyebrow.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-          className="shrink-0 inline-flex items-center gap-1 text-[12px] text-[var(--bh-brass)] hover:text-[var(--bh-brass-2)]"
-        >
-          See all <ArrowRight size={13} />
-        </Link>
-      )}
-    </div>
+// ─── Row variants ─────────────────────────────────────────────────────────
 
-    <div className="space-y-2">
-      {items === null ? (
-        <EmptyState>Loading your work list…</EmptyState>
-      ) : items.length ? (
-        items.map((opp) => <OpportunityRow key={opp.id} opp={opp} />)
-      ) : (
-        <EmptyState>{empty}</EmptyState>
+const HeaderMeta = ({ opp }) => (
+  <div className="mt-1 flex items-center gap-3 text-[12.5px] text-[var(--bh-ink-mute)] flex-wrap">
+    {opp.project_address && (
+      <span className="inline-flex items-center gap-1.5">
+        <MapPin size={11} strokeWidth={1.75} />
+        {opp.project_address}
+      </span>
+    )}
+    {opp.project_type && <span>· {opp.project_type}</span>}
+    {opp.source && <span>· Found on {sourceLabel(opp.source)}</span>}
+  </div>
+);
+
+/**
+ * ReadyRow — Ready to Contact. Shows governed signals, Priority Explanation
+ * (Why This Matters), Current Recommendation (What to Do Next), and a single
+ * "Open Email Draft" (or "Open Text Draft" when SMS Permission is granted
+ * and no public email is on file).
+ */
+const ReadyRow = ({ opp, sender }) => {
+  const chips = whyReady(opp);
+  const action = allowedAction(opp);
+  const email = opp.email || opp.email_alt;
+  const phone = opp.phone || opp.phone_alt;
+
+  const onEmailDraft = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!email) return;
+    const draft = buildFirstDraft(opp, sender);
+    window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
+  };
+
+  const onSmsDraft = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!phone) return;
+    const draft = buildFirstDraft(opp, sender);
+    const body = `${draft.subject}\n\n${draft.body}`;
+    window.location.href = `sms:${enc(phone)}&body=${enc(body)}`;
+  };
+
+  return (
+    <div
+      data-testid={`ready-row-${opp.id}`}
+      className="bh-surface rounded-md p-4 border-l-2"
+      style={{ borderLeftColor: "var(--bh-brass)" }}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 group">
+          <div className="font-display text-[17px] text-[var(--bh-ink)] group-hover:text-white tracking-tight truncate">
+            {opp.name}
+          </div>
+          <HeaderMeta opp={opp} />
+          {opp.priority_explanation && (
+            <div className="mt-2 text-[13px] text-[var(--bh-ink-2)]">
+              <span className="bh-eyebrow mr-2">Why this matters</span>
+              {opp.priority_explanation}
+            </div>
+          )}
+          {opp.current_recommendation && (
+            <div className="mt-1.5 text-[13px] text-amber-200/90">
+              <span className="bh-eyebrow mr-2">What to do next</span>
+              {opp.current_recommendation}
+            </div>
+          )}
+          {opp.project_fit_reason && (
+            <div className="mt-1.5 text-[12.5px] text-[var(--bh-ink-3)]">
+              <span className="bh-eyebrow mr-2">Fit reason</span>
+              {opp.project_fit_reason}
+            </div>
+          )}
+          {chips.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {chips.map((c) => (
+                <Chip key={c.label} label={c.label} value={c.value} tone="ready" />
+              ))}
+              {typeof opp.governed_priority_score === "number" && (
+                <Chip label="Score" value={opp.governed_priority_score} tone="ready" />
+              )}
+            </div>
+          )}
+          {opp.public_contact_evidence && (
+            <details className="mt-2 group/details">
+              <summary className="cursor-pointer text-[11.5px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1">
+                <Info size={11} /> More details · public contact evidence
+              </summary>
+              <div className="mt-2 text-[12px] text-[var(--bh-ink-3)] leading-relaxed pl-4 border-l bh-hairline">
+                <div>{opp.public_contact_evidence}</div>
+                {opp.contact_verified_date && (
+                  <div className="mt-1 mono text-[10.5px] uppercase tracking-widest opacity-75">
+                    Verified {opp.contact_verified_date}
+                  </div>
+                )}
+                {opp.score_basis && (
+                  <div className="mt-2 pt-2 border-t bh-hairline">
+                    <div className="mono text-[10px] uppercase tracking-widest opacity-75 mb-0.5">
+                      Score basis
+                    </div>
+                    <div>{opp.score_basis}</div>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </Link>
+        {opp.estimated_value ? (
+          <div className="hidden md:block text-right shrink-0">
+            <div className="bh-eyebrow">Possible work value</div>
+            <div className="font-display text-[18px] text-[var(--bh-ink)] tabular-nums">
+              {fmtMoney(opp.estimated_value)}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
+        {action === "email_first" && email && (
+          <button
+            type="button"
+            data-testid={`open-email-draft-${opp.id}`}
+            onClick={onEmailDraft}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium"
+            style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
+          >
+            <Mail size={13} /> Open Email Draft
+          </button>
+        )}
+        {action === "sms_first" && phone && (
+          <button
+            type="button"
+            data-testid={`open-sms-draft-${opp.id}`}
+            onClick={onSmsDraft}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink)]"
+          >
+            <Phone size={13} /> Open Text Draft
+          </button>
+        )}
+        {!action && (
+          <span className="text-[11.5px] text-[var(--bh-ink-3)]">
+            No email or SMS permission on file — open the record to add one.
+          </span>
+        )}
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
+        >
+          Open <ChevronRight size={12} />
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * ContactedRow — a lead Ryan has already reached out to. NEVER shows a
+ * first-contact action. Follow-up draft only.
+ */
+const ContactedRow = ({ opp, sender }) => {
+  const email = opp.email || opp.email_alt;
+  const phone = opp.phone || opp.phone_alt;
+  const action = allowedAction(opp);
+
+  const onFollowUp = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const draft = buildFollowUpDraft(opp, sender);
+    if (action === "email_followup" && email) {
+      window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
+    } else if (action === "sms_followup" && phone) {
+      const body = `${draft.subject}\n\n${draft.body}`;
+      window.location.href = `sms:${enc(phone)}&body=${enc(body)}`;
+    }
+  };
+
+  return (
+    <div
+      data-testid={`contacted-row-${opp.id}`}
+      className="bh-surface rounded-md p-4"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 group">
+          <div className="font-display text-[17px] text-[var(--bh-ink)] group-hover:text-white tracking-tight truncate">
+            {opp.name}
+          </div>
+          <HeaderMeta opp={opp} />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {opp.contact_state && <Chip label="Status" value={opp.contact_state} />}
+            {opp.freshness && <Chip label="Freshness" value={opp.freshness} />}
+            {opp.next_follow_up && (
+              <Chip label="Next follow-up" value={opp.next_follow_up} />
+            )}
+          </div>
+          {opp.current_recommendation && (
+            <div className="mt-2 text-[13px] text-amber-200/90">
+              <span className="bh-eyebrow mr-2">What to do next</span>
+              {opp.current_recommendation}
+            </div>
+          )}
+          {opp.reply_summary && (
+            <div className="mt-1.5 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-2">
+              <span className="bh-eyebrow mr-2">Last reply</span>
+              {opp.reply_summary}
+            </div>
+          )}
+        </Link>
+      </div>
+      <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
+        {(action === "email_followup" || action === "sms_followup") && (
+          <button
+            type="button"
+            data-testid={`open-followup-draft-${opp.id}`}
+            onClick={onFollowUp}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
+          >
+            <Reply size={13} /> Open Follow-Up Draft
+          </button>
+        )}
+        {!action && (
+          <span className="text-[11.5px] text-[var(--bh-ink-3)]">
+            No follow-up channel on file — open the record for details.
+          </span>
+        )}
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
+        >
+          Open <ChevronRight size={12} />
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * AllProjectsRow — no messaging controls of any kind. Shows why the
+ * record is NOT ready (from Contact Readiness governed field).
+ */
+const AllProjectsRow = ({ opp }) => {
+  const reason = notReadyReason(opp);
+  return (
+    <Link
+      to={`/opportunities/${opp.id}`}
+      data-testid={`all-row-${opp.id}`}
+      className="block bh-surface rounded-md p-4 transition-colors duration-150 hover:bg-white/[0.03]"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-[16px] text-[var(--bh-ink)] tracking-tight truncate">
+            {opp.name}
+          </div>
+          <HeaderMeta opp={opp} />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Chip label="Reason" value={reason} tone="warn" />
+            {opp.freshness && <Chip label="Freshness" value={opp.freshness} />}
+            {opp.evidence_status && <Chip label="Evidence" value={opp.evidence_status} />}
+          </div>
+          {opp.current_recommendation && (
+            <div className="mt-2 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-2">
+              <span className="bh-eyebrow mr-2">Recommendation</span>
+              {opp.current_recommendation}
+            </div>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          {typeof opp.governed_priority_score === "number" && (
+            <div className="text-[10.5px] mono uppercase tracking-widest text-[var(--bh-ink-3)]">
+              Score {opp.governed_priority_score}
+            </div>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+};
+
+// ─── Section shell ────────────────────────────────────────────────────────
+
+const SectionShell = ({ eyebrow, title, hint, icon: Icon, count, testId, children }) => (
+  <section data-testid={testId} className="space-y-3">
+    <div>
+      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 flex items-center gap-1.5">
+        {Icon ? <Icon size={11} strokeWidth={1.75} /> : null}
+        {eyebrow}
+      </div>
+      <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+        {title}
+        {typeof count === "number" && (
+          <span className="ml-2 text-[13px] text-[var(--bh-ink-mute)] tabular-nums">
+            ({count})
+          </span>
+        )}
+      </h2>
+      {hint && (
+        <p className="text-[12.5px] text-[var(--bh-ink-mute)] mt-0.5 max-w-2xl leading-relaxed">
+          {hint}
+        </p>
       )}
     </div>
+    {children}
   </section>
 );
 
+// ─── Page ─────────────────────────────────────────────────────────────────
+
 const CommandCenter = () => {
   const [items, setItems] = useState(null);
+  const { settings: senderSettings } = useUserSettings();
 
   const load = useCallback(() => {
     api.listOpportunities().then(setItems).catch(() => setItems([]));
@@ -65,84 +413,103 @@ const CommandCenter = () => {
   }, [load]);
   useLiveUpdates(load);
 
-  const groups = useMemo(() => {
-    if (items === null) {
-      return { contactToday: null, projectsToWatch: null, peopleToKnow: null };
+  const { ready, contacted, all } = useMemo(() => {
+    if (!Array.isArray(items)) return { ready: null, contacted: null, all: null };
+    const readyList = [];
+    const contactedList = [];
+    const allList = [];
+    for (const opp of items) {
+      const bucket = queueBucket(opp);
+      if (bucket === "ready") readyList.push(opp);
+      else if (bucket === "contacted") contactedList.push(opp);
+      else allList.push(opp);
     }
-
-    const active = items.filter((opp) => !CLOSED_STATUSES.has(opp.status));
-    // Strict Contact Ready gate (verified contact + evidence). Partners with a
-    // real public phone/email still qualify without the premium/source rules —
-    // relationship work does not need a remodel "premium" checkbox.
-    // Keep the three home lists mutually exclusive.
-    const contactToday = sortByPriority(
-      active.filter((opp) => contactReady(opp).ready),
-    ).slice(0, 5);
-    const contactIds = new Set(contactToday.map((opp) => opp.id));
-    const projectsToWatch = sortByPriority(
-      active.filter(
-        (opp) => opp.lane !== "partner" && !contactIds.has(opp.id),
-      ),
-    ).slice(0, 5);
-    const peopleToKnow = sortByPriority(
-      active.filter(
-        (opp) => opp.lane === "partner" && !contactIds.has(opp.id),
-      ),
-    ).slice(0, 4);
-
-    return { contactToday, projectsToWatch, peopleToKnow };
+    return {
+      ready: sortForQueue(readyList),
+      contacted: sortForQueue(contactedList),
+      all: sortForQueue(allList),
+    };
   }, [items]);
 
   return (
     <>
       <TopHeader
-        pageTitle="Today"
-        subtitle="Start with people you can actually contact. Keep the rest in view without letting it get in your way."
+        pageTitle="Your work list"
+        subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
       />
-
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
-        <section
-          className="bh-surface rounded-md p-5 border-t border-t-amber-500/60"
-          data-testid="today-intro"
+        <SectionShell
+          testId="section-ready-to-contact"
+          eyebrow="1 · Ready to Contact"
+          title="Ready to Contact"
+          hint="Records the classifier has approved for first contact — verified public business channel, premium fit, and evidence on file. Only list that allows a first-contact action."
+          icon={Mail}
+          count={ready?.length}
         >
-          <div className="bh-eyebrow">Your simple work list</div>
-          <p className="mt-2 text-[15px] leading-relaxed text-[var(--bh-ink-2)] max-w-3xl">
-            Contact-ready people come first — verified public phone or email, and
-            for projects a premium-fit signal plus a source URL. Everything else
-            stays in <strong className="font-medium text-[var(--bh-ink)]">Projects to Watch</strong> or{" "}
-            <strong className="font-medium text-[var(--bh-ink)]">People to Know</strong> until it clears that bar.
-          </p>
-        </section>
+          {ready === null ? (
+            <EmptyCard testId="ready-loading">Loading…</EmptyCard>
+          ) : ready.length === 0 ? (
+            <EmptyCard testId="ready-empty">
+              No records are Ready to Contact yet. The classifier will promote
+              them here once every gate passes.
+            </EmptyCard>
+          ) : (
+            <div className="space-y-2">
+              {ready.map((opp) => (
+                <ReadyRow key={opp.id} opp={opp} sender={senderSettings} />
+              ))}
+            </div>
+          )}
+        </SectionShell>
 
-        <HomeSection
-          eyebrow="Contact ready"
-          title="People to contact today"
-          hint="These cleared the contact-ready gate. Open a draft, send it yourself, then record what happened."
-          icon={PhoneCall}
-          items={groups.contactToday}
-          empty="Nothing is contact-ready right now. Bloodhound will keep researching public business contact details before moving anything here."
-          to="/opportunities"
-        />
+        <SectionShell
+          testId="section-contacted"
+          eyebrow="2 · Contacted"
+          title="Contacted"
+          hint="Records already reached out to. Follow-up drafts only — no first-contact actions here."
+          icon={Reply}
+          count={contacted?.length}
+        >
+          {contacted === null ? (
+            <EmptyCard testId="contacted-loading">Loading…</EmptyCard>
+          ) : contacted.length === 0 ? (
+            <EmptyCard testId="contacted-empty">
+              Nothing to follow up on yet.
+            </EmptyCard>
+          ) : (
+            <div className="space-y-2">
+              {contacted.map((opp) => (
+                <ContactedRow key={opp.id} opp={opp} sender={senderSettings} />
+              ))}
+            </div>
+          )}
+        </SectionShell>
 
-        <HomeSection
-          eyebrow="Projects to watch"
-          title="Worth watching, not ready to contact"
-          hint="These may be good projects, but they still need a verified public contact path or more evidence."
-          icon={Search}
-          items={groups.projectsToWatch}
-          empty="No projects are waiting on a public contact path."
-          to="/intelligence"
-        />
-
-        <HomeSection
-          eyebrow="People to know"
-          title="Potential repeat-work partners"
-          hint="Builders, designers, and remodelers who may send more than one job over time."
-          icon={Users}
-          items={groups.peopleToKnow}
-          empty="No partner relationships are ready to review yet."
-          to="/relationships"
-        />
+        <SectionShell
+          testId="section-all-projects"
+          eyebrow="3 · All Projects"
+          title="All Projects"
+          hint="Everything else — paused, needs proof, needs public contact, needs history check, or not appropriate. Read-only view. No outreach actions."
+          icon={Clock}
+          count={all?.length}
+        >
+          {all === null ? (
+            <EmptyCard testId="all-loading">Loading…</EmptyCard>
+          ) : all.length === 0 ? (
+            <EmptyCard testId="all-empty">Every record is in Ready or Contacted.</EmptyCard>
+          ) : (
+            <div className="space-y-1.5">
+              {all.slice(0, 40).map((opp) => (
+                <AllProjectsRow key={opp.id} opp={opp} />
+              ))}
+              {all.length > 40 && (
+                <div className="pt-2 text-[12px] text-[var(--bh-ink-3)]">
+                  Showing 40 of {all.length}. Open All Projects to see more.
+                </div>
+              )}
+            </div>
+          )}
+        </SectionShell>
       </main>
     </>
   );

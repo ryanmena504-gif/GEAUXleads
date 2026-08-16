@@ -12,6 +12,7 @@ import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
+import { queueBucket } from "@/lib/queue";
 import {
   ArrowLeft,
   MapPin,
@@ -246,8 +247,31 @@ const OpportunityDetail = () => {
                 </div>
 
               <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
-                <OpenInMessages opportunity={opp} variant="panel" />
-                <ContactResults opportunity={opp} onSaved={setOpp} />
+                {(() => {
+                  const bucket = queueBucket(opp);
+                  if (bucket === "all") {
+                    return (
+                      <div
+                        data-testid="no-outreach-notice"
+                        className="rounded-md border p-3 text-[12.5px] text-[var(--bh-ink-3)]"
+                        style={{ borderColor: "var(--bh-hair)" }}
+                      >
+                        This record is in All Projects — the classifier hasn&apos;t
+                        approved outreach yet. Add the missing evidence in
+                        Airtable to promote it to Ready to Contact.
+                      </div>
+                    );
+                  }
+                  // Ready or Contacted: keep the existing device-native draft
+                  // handoff. First-contact vs follow-up copy is decided inside
+                  // OpenInMessages via the record's Contact State field.
+                  return (
+                    <>
+                      <OpenInMessages opportunity={opp} variant="panel" />
+                      <ContactResults opportunity={opp} onSaved={setOpp} />
+                    </>
+                  );
+                })()}
                 <div className="space-y-1.5 pt-1">
                 {ACTION_BUTTONS.map((a) => {
                   return (
@@ -275,7 +299,7 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
-                {opp.lane === "partner" && (
+                {opp.lane === "partner" && queueBucket(opp) !== "all" && (
                   <button
                     type="button"
                     onClick={() => setDraftOpen(true)}

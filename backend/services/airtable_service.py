@@ -144,6 +144,28 @@ LIVE_FIELDS: Dict[str, str] = {
     # Money
     "Closed revenue": "closed_revenue",
     "Estimated gross profit": "estimated_gross_profit",
+
+    # === Governed current-state layer (owned by Airtable + Make) =============
+    # These are the AUTHORITATIVE decision fields. Never written from the
+    # frontend and never recalculated locally — the classifier in Make sets
+    # them and Bloodhound reads them straight through.
+    "Current Queue": "current_queue",
+    "Contact Readiness": "contact_readiness",
+    "Contact State": "contact_state",
+    "Money Signal": "money_signal",
+    "Operator Activity": "operator_activity",
+    "Premium Fit": "premium_fit",
+    "Evidence Status": "evidence_status",
+    "Freshness": "freshness",
+    "Governed Priority Score": "governed_priority_score",
+    "Score Basis": "score_basis",
+    "Priority Explanation": "priority_explanation",
+    "Current Recommendation": "current_recommendation",
+    "Public Contact Evidence": "public_contact_evidence",
+    "Contact Verified Date": "contact_verified_date",
+    "Project Fit Reason": "project_fit_reason",
+    "Last Classified At": "last_classified_at",
+    "Classification Version": "classification_version",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.
@@ -185,6 +207,25 @@ EXPLICIT_READONLY: set = {
     "Closed revenue",
     "Estimated gross profit",
     "SMS Permission",
+    # Governed current-state layer — owned by Airtable + Make. NEVER written
+    # from the app.
+    "Current Queue",
+    "Contact Readiness",
+    "Contact State",
+    "Money Signal",
+    "Operator Activity",
+    "Premium Fit",
+    "Evidence Status",
+    "Freshness",
+    "Governed Priority Score",
+    "Score Basis",
+    "Priority Explanation",
+    "Current Recommendation",
+    "Public Contact Evidence",
+    "Contact Verified Date",
+    "Project Fit Reason",
+    "Last Classified At",
+    "Classification Version",
 }
 
 # Only these Airtable field names may ever be written from the app.
