@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { MessageSquare, Mail, ShieldCheck, ArrowRight, Smartphone, ExternalLink, Reply } from "lucide-react";
-import { api } from "@/lib/api";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
 
@@ -285,20 +284,9 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
     const label = useEmail ? "Open Follow-Up Draft" : "Open Follow-Up Text Draft";
     const Icon = useEmail ? Reply : MessageSquare;
     const external = useEmail && emailIsExternal;
-    const logChannel = useEmail ? "email" : "text";
-    const recipientDisplay = useEmail ? contacts.email.display : contacts.text.display;
-    const onTap = () => {
-      const oppId = opportunity?.id;
-      if (!oppId) return;
-      try {
-        api.logHandoff(oppId, {
-          opportunity_id: oppId,
-          opportunity_name: opportunity?.name,
-          channel: logChannel,
-          recipient: recipientDisplay || null,
-        }).catch(() => {});
-      } catch { /* ignore */ }
-    };
+    // No onClick handler — opening a native draft must cause ZERO API
+    // writes. The handoff audit log is only recorded via the explicit
+    // "I sent it" outcome in ContactResults, never as a side effect.
 
     if (variant === "pill") {
       return (
@@ -307,7 +295,6 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             href={href}
             testid={testid}
             label={label}
-            onClick={onTap}
             external={external}
             size="sm"
             icon={Icon}
@@ -345,7 +332,6 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             href={href}
             testid={testid}
             label={label}
-            onClick={onTap}
             external={external}
             icon={Icon}
           />
@@ -366,26 +352,13 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   // Ready to Contact from here on. Existing first-contact UI.
   const hasBoth = hasText && hasEmail;
 
-  const logTap = (channel, recipient) => {
-    const oppId = opportunity?.id;
-    if (!oppId) return;
-    try {
-      api.logHandoff(oppId, {
-        opportunity_id: oppId,
-        opportunity_name: opportunity?.name,
-        channel,
-        recipient: recipient || null,
-      }).catch(() => {});
-    } catch { /* ignore */ }
-  };
-
+  // Opening a draft must NOT cause any backend write. The "I sent it"
+  // outcome button in ContactResults is the only path that records a
+  // handoff — and only after Ryan explicitly confirms he sent something.
   const onTextTap = () => {
-    logTap("text", contacts.text?.display);
     if (hasBoth) setTextedFirst(true);
   };
-  const onEmailTap = () => {
-    logTap("email", contacts.email?.display);
-  };
+  const onEmailTap = () => { /* no-op — draft opens with zero API writes */ };
 
   // Ready record with no channel at all — do not render an empty gate.
   if (!hasText && !hasEmail) return null;

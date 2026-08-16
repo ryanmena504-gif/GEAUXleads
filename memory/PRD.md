@@ -116,6 +116,24 @@ recalculates, infers, fuzzy-matches, or falls back to legacy fields.
   the chip never fires the row's Open Detail navigation. Purely a link —
   writes nothing, changes no state.
 
+## Zero backend writes on draft-open (2026-02-16)
+Opening any native draft handoff — Open Email Draft, Open Text Draft,
+Open Follow-Up Draft, Draft-a-Note button, drawer open, drawer copy,
+plain record view — now causes ZERO writes to our backend. The
+`api.logHandoff` call was removed from `OpenInMessages.jsx` on every
+tap path; `onEmailTap` is a no-op and `onTextTap` only mutates local UI
+state. The follow-up EmailButton has no `onClick` handler at all.
+
+The `POST /api/opportunities/{id}/result` write on `result-sent` is the
+ONLY explicit outcome path that touches the backend on Ryan's tap. It
+runs only after he confirms "I sent it," it does not change Current
+Queue / Contact Readiness / Contact State (governed fields stay owned by
+Airtable + Make), and it is not a side effect of preparing a draft.
+
+Verified by iteration_10 Playwright request interception + DB delta
+check (test files: `test_iteration_10_no_write_on_draft.py`,
+`test_iteration_9_governed_leaks.py`).
+
 ## Global governed-queue gating (2026-02-16)
 `outreachAllowed(opp)` in `/app/frontend/src/lib/queue.js` is now the SINGLE
 gate every messaging/drafting control routes through. It reads `current_queue`
