@@ -276,6 +276,7 @@ Fix (transparent, no fake numbers):
 3. ✅ Preview wired to real Airtable
 
 ## Backlog / Next
+- **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock
 - **Won streak widget** — small streak counter on the dashboard
