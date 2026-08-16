@@ -109,6 +109,13 @@ recalculates, infers, fuzzy-matches, or falls back to legacy fields.
 - No legacy field, fallback, fuzzy match, inferred phone/email condition, or sample-only flag can override governed state.
 - Opening an email or text draft writes nothing and changes no state (device-native `mailto:` / `sms:` only).
 
+### Ready-to-Contact source chips (2026-02-16)
+- One-tap Source chip on every Ready to Contact row when `source_url` is
+  present on the record. Opens the origin (permit filing, referral note,
+  post URL, etc.) in a new tab. `stopPropagation` on the anchor so tapping
+  the chip never fires the row's Open Detail navigation. Purely a link —
+  writes nothing, changes no state.
+
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock

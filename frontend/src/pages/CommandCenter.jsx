@@ -21,7 +21,47 @@ import {
   Phone,
   Sparkles,
   Clock,
+  ExternalLink,
 } from "lucide-react";
+
+// Short hostname for source-URL chips (e.g. "onestop.nola.gov" → "nola.gov").
+const shortHost = (url) => {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, "");
+    const parts = h.split(".");
+    return parts.length >= 3 ? parts.slice(-2).join(".") : h;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * SourceChip — one-tap link to the origin of a lead (permit filing, listing,
+ * post, etc.). Rendered on Ready to Contact rows so the operator can verify
+ * the source in a single tap. Purely a navigation link — no state changes,
+ * no backend write.
+ */
+const SourceChip = ({ opp }) => {
+  const url = opp?.source_url;
+  if (!url) return null;
+  const host = shortHost(url);
+  const label = host || sourceLabel(opp.source) || "Source";
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid={`source-chip-${opp.id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[12px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)] hover:bg-white/[0.03] transition-colors"
+      title={url}
+    >
+      <ExternalLink size={12} strokeWidth={1.75} />
+      <span className="mono uppercase tracking-widest text-[10px] opacity-75">Source</span>
+      <span className="truncate max-w-[180px]">{label}</span>
+    </a>
+  );
+};
 
 // ─── mailto helpers ───────────────────────────────────────────────────────
 // Draft-only. Opening a draft NEVER writes to Airtable. Ryan chooses whether
@@ -212,6 +252,7 @@ const ReadyRow = ({ opp, sender }) => {
       </div>
 
       <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
+        <SourceChip opp={opp} />
         {action === "email_first" && email && (
           <button
             type="button"
