@@ -1,44 +1,54 @@
-// Governed current-state layer helpers.
+// Governed current-state layer — strict read-through of Airtable + Make.
 //
-// The Airtable Leads table now has 17 governed fields set by the Make
-// classifier. The frontend must NEVER recalculate or override them. This
-// module centralizes the small amount of client-side interpretation we do:
-// which bucket a record belongs in, how to sort within a bucket, what
-// action (if any) is allowed, and how to render the plain-English "why"
-// text from Priority Explanation / Current Recommendation.
+// The Airtable Leads table carries 17 governed fields set by the Make
+// classifier. The frontend NEVER recalculates, infers, or overrides them.
+// Every helper below is an EXACT string equality on a single governed
+// field — no toLowerCase, no fuzzy match, no legacy-field fallback, no
+// phone/email inference. If the classifier hasn't tagged a record, it
+// belongs in All Projects. Full stop.
+//
+// Field ownership:
+//   • Current Queue     → controls which of the three lists a record shows in
+//   • Contact Readiness → controls Paused / not-ready reason on All Projects
+//   • Contact State     → follow-up / lifecycle context on Contacted rows
+//   • Freshness         → tiebreak for sort order (Current → Aging → Stale)
+//
+// Opening an email or text draft writes nothing and changes no state.
 
-// Freshness ordering — governed field values, in descending priority.
-const FRESHNESS_ORDER = { Current: 0, Aging: 1, Stale: 2, Unknown: 3 };
+// The exact governed values that place a record into the Ready / Contacted
+// lists. Anything else (including empty, unclassified, "Watch", "Not Ready")
+// lands in All Projects.
+const READY = "Ready to Contact";
+const CONTACTED = "Contacted";
+
+// Freshness sort rank — only exact governed values count.
+const FRESHNESS_ORDER = { Current: 0, Aging: 1, Stale: 2 };
 
 /**
- * currentQueue — normalized value of the `Current Queue` governed field.
- * Falls back to null when the classifier hasn't tagged the record yet.
+ * currentQueue — the raw governed `Current Queue` string, verbatim.
+ * Returns null if the field is missing or non-string.
  */
 export const currentQueue = (opp) => {
-  const raw = (opp?.current_queue || "").toString().trim();
-  if (!raw) return null;
-  const norm = raw.toLowerCase();
-  if (norm === "ready to contact") return "Ready to Contact";
-  if (norm === "contacted") return "Contacted";
-  if (norm === "all projects" || norm === "watch" || norm === "not ready") return "All Projects";
-  return raw; // pass through any other governed values verbatim
+  const raw = opp?.current_queue;
+  return typeof raw === "string" && raw ? raw : null;
 };
 
 /**
  * queueBucket — which of the three home lists a record belongs to.
- * Ready | Contacted | All. Uses currentQueue as the source of truth.
- * Everything without an explicit "Ready to Contact" or "Contacted" tag
- * falls into All Projects.
+ * Strict exact-string match on Current Queue. No fuzzy match.
+ *   "Ready to Contact" → "ready"
+ *   "Contacted"        → "contacted"
+ *   anything else      → "all"
  */
 export const queueBucket = (opp) => {
   const q = currentQueue(opp);
-  if (q === "Ready to Contact") return "ready";
-  if (q === "Contacted") return "contacted";
+  if (q === READY) return "ready";
+  if (q === CONTACTED) return "contacted";
   return "all";
 };
 
 /**
- * sortForQueue — Governed Priority Score desc, then Freshness rank.
+ * sortForQueue — Governed Priority Score desc, tiebreak Freshness rank asc.
  * Never uses legacy priority_score / lead_score / status.
  */
 export const sortForQueue = (items) =>
@@ -46,21 +56,23 @@ export const sortForQueue = (items) =>
     const scoreA = typeof a.governed_priority_score === "number" ? a.governed_priority_score : -1;
     const scoreB = typeof b.governed_priority_score === "number" ? b.governed_priority_score : -1;
     if (scoreB !== scoreA) return scoreB - scoreA;
-    const rankA = FRESHNESS_ORDER[a.freshness] ?? FRESHNESS_ORDER.Unknown;
-    const rankB = FRESHNESS_ORDER[b.freshness] ?? FRESHNESS_ORDER.Unknown;
+    const rankA = FRESHNESS_ORDER[a.freshness] ?? 99;
+    const rankB = FRESHNESS_ORDER[b.freshness] ?? 99;
     return rankA - rankB;
   });
 
 /**
  * allowedAction — which draft (if any) this record is eligible for.
+ * The GATE is strict Current Queue. The choice between email and SMS is a
+ * presentation-only detail — it selects which mailto:/sms: URL to build.
+ * Opening either draft writes nothing and changes no state.
+ *
  *   "email_first"    → device-native email draft (Ready to Contact only)
  *   "sms_first"      → device-native SMS draft (Ready to Contact only,
- *                       only if the explicit SMS Permission field allows it)
+ *                       only if SMS Permission is explicitly granted)
  *   "email_followup" → follow-up email draft (Contacted only)
  *   "sms_followup"   → follow-up SMS draft (Contacted only, SMS Permission)
- *   null             → NO messaging action of any kind (All Projects, or
- *                       Ready-to-Contact records that have neither a public
- *                       email nor SMS permission)
+ *   null             → no messaging control rendered
  */
 export const allowedAction = (opp) => {
   const bucket = queueBucket(opp);
@@ -80,9 +92,9 @@ export const allowedAction = (opp) => {
 };
 
 /**
- * whyReady — plain-English list of governed signals to show on a Ready row.
- * Never invents anything; each chip only appears when its source field has a
- * value.
+ * whyReady — plain-English list of governed signals shown on a Ready row.
+ * Each chip only appears when its source governed field has a value; nothing
+ * is invented and no legacy field is consulted.
  */
 export const whyReady = (opp) => {
   const chips = [];
@@ -95,11 +107,11 @@ export const whyReady = (opp) => {
 
 /**
  * notReadyReason — plain-English explanation of why a record is in
- * All Projects instead of Ready. Uses Contact Readiness governed field.
+ * All Projects instead of Ready. Reads Contact Readiness verbatim.
+ * NEVER falls back to operator_activity, contact_state, or any legacy field.
  */
 export const notReadyReason = (opp) => {
-  const cr = (opp.contact_readiness || "").toString().trim();
-  if (cr) return cr; // "Needs Public Contact" / "Needs Proof" / "Paused" / etc.
-  if (opp.operator_activity && /paused/i.test(opp.operator_activity)) return "Paused";
+  const cr = opp?.contact_readiness;
+  if (typeof cr === "string" && cr.trim()) return cr.trim();
   return "Not classified yet";
 };

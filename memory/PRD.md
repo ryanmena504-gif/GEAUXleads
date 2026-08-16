@@ -76,6 +76,39 @@ automatically; Ryan always presses Send himself.
 - `GET  /api/handoffs/recent`
 - (+ existing opportunities / drafts / playbook / lane / pipeline endpoints)
 
+## Governed current-state layer (2026-02-16)
+The dashboard's three lists and every action gate are driven STRICTLY by
+17 read-only Airtable fields set by the Make classifier. The frontend never
+recalculates, infers, fuzzy-matches, or falls back to legacy fields.
+
+**Field → DTO mapping (17 governed fields):**
+| Airtable field         | DTO key                  | Governed role                          |
+| ---------------------- | ------------------------ | -------------------------------------- |
+| Current Queue          | current_queue            | Bucket placement (Ready / Contacted / All) |
+| Contact Readiness      | contact_readiness        | Paused + not-ready reason              |
+| Contact State          | contact_state            | Follow-up / lifecycle context only     |
+| Money Signal           | money_signal             | Chip on Ready rows                     |
+| Operator Activity      | operator_activity        | Context only — DOES NOT drive Paused   |
+| Premium Fit            | premium_fit              | Chip on Ready rows                     |
+| Evidence Status        | evidence_status          | Chip on Ready + All Projects rows      |
+| Freshness              | freshness                | Sort tiebreak (Current→Aging→Stale)    |
+| Governed Priority Score| governed_priority_score  | Primary sort within a bucket           |
+| Score Basis            | score_basis              | Score-detail disclosure                |
+| Priority Explanation   | priority_explanation     | "Why this matters" copy on Ready rows  |
+| Current Recommendation | current_recommendation   | "What to do next" copy                 |
+| Public Contact Evidence| public_contact_evidence  | Evidence disclosure on Ready rows      |
+| Contact Verified Date  | contact_verified_date    | Evidence disclosure timestamp          |
+| Project Fit Reason     | project_fit_reason       | "Fit reason" copy on Ready rows        |
+| Last Classified At     | last_classified_at       | Audit only                             |
+| Classification Version | classification_version   | Audit only                             |
+
+**Confirmed invariants (verified end-to-end 2026-02-16):**
+- Current Queue alone controls Ready to Contact, Contacted, and All Projects placement (strict exact-string equality).
+- Contact Readiness alone controls Paused and every other not-ready reason.
+- Contact State only supplies follow-up / lifecycle context on Contacted rows.
+- No legacy field, fallback, fuzzy match, inferred phone/email condition, or sample-only flag can override governed state.
+- Opening an email or text draft writes nothing and changes no state (device-native `mailto:` / `sms:` only).
+
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock

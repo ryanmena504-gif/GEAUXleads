@@ -18,71 +18,35 @@ from services.airtable_service import build_airtable_service_from_env
 log = logging.getLogger("bloodhound.service")
 
 
-def _synthesize_governed(rec: Dict[str, Any]) -> Dict[str, Any]:
-    """Fill in plausible governed-layer values on SAMPLE records so the
-    preview UI exercises the 3-list logic end-to-end when Airtable is not
-    reachable. NEVER runs on real Airtable records — those go through
-    airtable_service._record_to_opportunity() unchanged."""
-    status = str(rec.get("status") or rec.get("status_raw") or "").lower()
-    outreach_sent = bool(rec.get("flag_outreach_sent"))
-    has_phone = bool(rec.get("phone") or rec.get("phone_alt"))
-    has_email = bool(rec.get("email") or rec.get("email_alt"))
-    priority = float(rec.get("priority_score") or 0)
+# The 17 governed fields owned by Airtable + Make. The sample fixtures set
+# these explicitly; we only ensure the KEY exists (None when unset) so the
+# API DTO shape is stable across records. We never invent a governed value.
+GOVERNED_KEYS = (
+    "current_queue",
+    "contact_readiness",
+    "contact_state",
+    "money_signal",
+    "operator_activity",
+    "premium_fit",
+    "evidence_status",
+    "freshness",
+    "governed_priority_score",
+    "score_basis",
+    "priority_explanation",
+    "current_recommendation",
+    "public_contact_evidence",
+    "contact_verified_date",
+    "project_fit_reason",
+    "last_classified_at",
+    "classification_version",
+)
 
-    # Bucket by activity signals — this is a stand-in for what Make would set.
-    if status in ("won", "lost", "disqualified"):
-        queue = "All Projects"
-        readiness = "Not Appropriate"
-    elif outreach_sent or status in ("conversation started", "estimate requested", "estimate sent"):
-        queue = "Contacted"
-        readiness = "Contacted"
-    elif has_phone and has_email and priority >= 60:
-        queue = "Ready to Contact"
-        readiness = "Ready"
-    elif not has_phone and not has_email:
-        queue = "All Projects"
-        readiness = "Needs Public Contact"
-    else:
-        queue = "All Projects"
-        readiness = "Needs Proof"
 
-    rec.setdefault("current_queue", queue)
-    rec.setdefault("contact_readiness", readiness)
-    rec.setdefault("contact_state",
-                   "Follow-Up Due" if queue == "Contacted" else
-                   "Ready for first contact" if queue == "Ready to Contact" else
-                   "Not classified")
-    rec.setdefault("money_signal",
-                   "High" if (rec.get("estimated_value") or 0) >= 100_000 else
-                   "Medium" if (rec.get("estimated_value") or 0) >= 25_000 else
-                   "Low")
-    rec.setdefault("operator_activity",
-                   "Paused" if status == "on hold" else "Active")
-    rec.setdefault("premium_fit", "Strong" if rec.get("flag_premium") else "Standard")
-    rec.setdefault("evidence_status", "Verified" if rec.get("flag_verified") else "Unverified")
-    rec.setdefault("freshness",
-                   "Current" if priority >= 70 else
-                   "Aging" if priority >= 40 else
-                   "Stale")
-    rec.setdefault("governed_priority_score", int(priority) if priority else 20)
-    rec.setdefault("score_basis",
-                   "priority=" + str(int(priority)) + " · has_contact=" +
-                   str(has_phone or has_email) + " · premium=" +
-                   str(bool(rec.get("flag_premium"))))
-    rec.setdefault("priority_explanation",
-                   rec.get("recommendation_reason") or "No governed explanation on file.")
-    rec.setdefault("current_recommendation",
-                   rec.get("next_best_action") or rec.get("recommended_action") or "")
-    if has_phone or has_email:
-        rec.setdefault("public_contact_evidence",
-                       "Public business channel on file: " +
-                       (rec.get("email") or rec.get("phone") or ""))
-    rec.setdefault("contact_verified_date", rec.get("last_reviewed"))
-    rec.setdefault("project_fit_reason",
-                   rec.get("evidence_summary") or rec.get("recommendation_reason") or "")
-    rec.setdefault("last_classified_at", rec.get("created_time"))
-    rec.setdefault("classification_version", "sample-v1")
-    return rec
+# The sample fixtures now carry the 17 governed fields verbatim, so the
+# service layer never synthesises, infers, or overrides governed state.
+# There is intentionally NO helper to backfill governed values — if a fixture
+# omits `current_queue`, that record falls into All Projects, exactly as it
+# would in production when Make hasn't classified a row yet.
 
 # Populated by get_opportunity_service() when Airtable init fails, so
 # /api/config can surface the exact reason (e.g. 401 Unauthorized) without
@@ -123,9 +87,15 @@ class SampleOpportunityService:
     backend_name = "sample"
 
     def __init__(self):
-        self._data: Dict[str, Dict[str, Any]] = {
-            o["id"]: _synthesize_governed(deepcopy(o)) for o in SAMPLE_OPPORTUNITIES
-        }
+        self._data: Dict[str, Dict[str, Any]] = {}
+        for o in SAMPLE_OPPORTUNITIES:
+            rec = deepcopy(o)
+            # Guarantee every governed key exists in the DTO (None when
+            # unset in the fixture). This mirrors how the Airtable service
+            # defaults unmapped keys — it does NOT invent a governed value.
+            for k in GOVERNED_KEYS:
+                rec.setdefault(k, None)
+            self._data[rec["id"]] = rec
 
     def cache_status(self) -> Dict[str, Any]:
         # Sample data lives in-process forever; report as fresh.
