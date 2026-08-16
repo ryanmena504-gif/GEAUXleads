@@ -948,6 +948,49 @@ async def follow_ups_due(limit: int = 20):
 # as a stable fallback for periods with few dated records.
 # ============================================================================
 # ============================================================================
+# Reverse Lookup — GET /api/opportunities/by-phone/{number}
+# Normalizes an incoming phone (strips +1, spaces, dashes, parens) then finds
+# the record whose Contact phone / Phone number best matches the same 10-digit
+# tail. Ryan taps a Shortcut on his phone → app opens straight to this record.
+# Read-only. Zero writes.
+# ============================================================================
+@api_router.get("/opportunities/by-phone/{number}")
+async def find_by_phone(number: str):
+    from services.opportunity_service import get_opportunity_service
+
+    def _digits(v: Any) -> str:
+        return "".join(ch for ch in str(v or "") if ch.isdigit())
+
+    query = _digits(number)
+    if len(query) < 7:
+        raise HTTPException(status_code=400, detail="Phone must have at least 7 digits")
+    tail = query[-10:]  # normalize to last 10 digits (drops +1 country code)
+
+    osvc = get_opportunity_service()
+    all_ops = osvc.all() if hasattr(osvc, "all") else []
+
+    matches = []
+    for o in all_ops:
+        for key in ("phone", "phone_alt", "contact_phone"):
+            candidate = _digits(o.get(key))
+            if candidate and (candidate.endswith(tail) or tail.endswith(candidate[-10:])):
+                matches.append(o)
+                break
+
+    if not matches:
+        raise HTTPException(status_code=404, detail=f"No record matches {number}")
+
+    # Prefer the highest-priority Ready-to-Contact match, then Contacted, then
+    # anything else. Ryan wants the most actionable card, not the newest one.
+    priority = {"Ready to Contact": 0, "Contacted": 1}
+    matches.sort(key=lambda o: (
+        priority.get((o.get("current_queue") or "").strip(), 9),
+        -(o.get("governed_priority_score") or 0),
+    ))
+    return matches[0]
+
+
+# ============================================================================
 # Learning loop — reads through the opportunity list to compute reply-rate and
 # win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).
 # Zero writes. Zero LLM calls. Ryan sees the top ranked pattern on Home.

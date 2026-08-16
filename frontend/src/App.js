@@ -11,6 +11,7 @@ import Relationships from "@/pages/Relationships";
 import Intelligence from "@/pages/Intelligence";
 import ReviewQueue from "@/pages/ReviewQueue";
 import Settings from "@/pages/Settings";
+import Lookup from "@/pages/Lookup";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
             <Route path="/intelligence" element={<Intelligence />} />
             <Route path="/review-queue" element={<ReviewQueue />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/lookup" element={<Lookup />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

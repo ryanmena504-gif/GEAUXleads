@@ -84,6 +84,10 @@ export const api = {
   learningInsights: (limit = 3) =>
     client.get("/learning/insights", { params: { limit } }).then((r) => r.data),
 
+  // Reverse Lookup — matches an inbound call/text number back to a lead.
+  lookupByPhone: (number) =>
+    client.get(`/opportunities/by-phone/${encodeURIComponent(number)}`).then((r) => r.data),
+
   // Morning brief — same content that ships in the 7am email. Used by the
   // in-app MorningBrief panel and by Settings' "test send" button.
   morningBrief: () =>

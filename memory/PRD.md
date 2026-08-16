@@ -270,10 +270,41 @@ Fix (transparent, no fake numbers):
   `Estimated job value` on a record, the numeric badge lights up
   automatically on the next refresh.
 
+## Reverse Lookup + Playbook fallback + PWA Home Screen icon (2026-02-16)
+Three ships in one pass:
+
+**Reverse Lookup** — new endpoint `GET /api/opportunities/by-phone/{number}`
+normalizes any inbound phone (strips `+1`, spaces, dashes, parens) then
+matches against `phone`, `phone_alt`, `contact_phone` on all 49 live
+records. Prefers the highest-priority Ready-to-Contact match, then
+Contacted, then anything else. Verified live: `(985) 626-7619` → Ron Lee
+Homes / RLH Construction (Ready, Score 90), `(985) 875-7576` → Greige
+Interiors (Contacted, Score 64). New page `/lookup?phone=...` renders a
+compact governed card with Email Now / Follow Up Email button, Why This
+Matters, What To Do Next, Readiness, Contact State, and a link to the
+full record. Read-only — never mutates the record.
+
+**Playbook fallback rewritten** — Home Screen `Email Now` now uses
+partner-appropriate copy when Make hasn't drafted the record yet (7/8
+Ready records have empty `First message`). The fallback mirrors the
+approved language format Make uses on the one drafted record (Tristan
+Construction). Preserves priority: real `first_message` → `first_contact_message`
+→ smart fallback based on `lane === 'partner'`.
+
+**PWA Home Screen install** — added `manifest.json`, `apple-touch-icon.png`
+(180x180 brass-B on deep ink), `icon-192.png`, `icon-512.png`, and iOS
+meta tags to `index.html`. Ryan opens the preview on his iPhone in Safari
+→ Share → Add to Home Screen → Bloodhound icon lands on his Home Screen
+→ tapping opens the app full-screen (no Safari chrome). Icon is a
+placeholder until Ryan sends the cartoon character image.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
-2. ✅ Morning brief shipped (7am America/Chicago via cron)
+2. ✅ Morning brief shipped
 3. ✅ Preview wired to real Airtable
+4. ✅ Reverse Lookup shipped
+5. ✅ PWA Home Screen icon (placeholder — awaiting cartoon character asset)
+6. Referral prompt after Won — planned
 
 ## Backlog / Next
 - **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.

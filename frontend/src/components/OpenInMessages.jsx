@@ -42,16 +42,34 @@ const withSignature = (body, senderName, senderPhone) => {
 };
 
 const buildFirstDraft = (opp, sender) => {
-  const first = (opp?.decision_maker || opp?.name || "there").split(" ")[0];
+  const first =
+    (opp?.decision_maker && opp.decision_maker.split(" ")[0]) ||
+    (opp?.name && opp.name.split(" ")[0]) ||
+    "there";
+  const isPartner = (opp?.lane || "").toLowerCase() === "partner";
+  const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
+  const partnerFallback = [
+    `I'm ${senderName} with The Shirtless Handyman. I came across ${opp?.name || "your team"} while looking at the kind of work being done around the area.`,
+    "",
+    "We handle seamless finish work when a project calls for something beyond tile or paint: microcement, lime plaster, waterproof grout-free showers, feature walls, and similar details. Not every job needs it, but it can be a strong option on the right project — happy to be a resource whenever it comes up.",
+    "",
+    "Would love to trade referrals or meet up for a quick coffee if you're open to it.",
+  ].join("\n");
+  const projectFallback = [
+    `I'm ${senderName} with The Shirtless Handyman. I came across your ${opp?.project_type || "project"} and wanted to reach out.`,
+    "",
+    "We handle seamless finish work when a project calls for something beyond tile or paint: microcement, lime plaster, waterproof grout-free showers, feature walls, and similar details. Happy to answer any questions or share references whenever you're ready.",
+  ].join("\n");
+  const fallbackBody = isPartner ? partnerFallback : projectFallback;
   const subject =
     opp?.first_message_subject ||
-    `Quick note about ${opp?.project_type || "your project"}`;
+    (isPartner
+      ? `${senderName} at The Shirtless Handyman — quick intro`
+      : `Quick note about your ${opp?.project_type || "project"}`);
   const body = [
-    `Hi ${first},`,
+    `Hi ${opp?.decision_maker || first},`,
     "",
-    opp?.first_message ||
-      opp?.first_contact_message ||
-      "I came across your recent project and thought I could help.",
+    opp?.first_message || opp?.first_contact_message || fallbackBody,
   ]
     .filter(Boolean)
     .join("\n");

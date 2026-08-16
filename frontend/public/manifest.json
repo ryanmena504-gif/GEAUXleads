@@ -1,0 +1,25 @@
+{
+  "name": "Bloodhound",
+  "short_name": "Bloodhound",
+  "description": "Owner-operated project book for The Shirtless Handyman",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1c1915",
+  "theme_color": "#1c1915",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}
