@@ -116,6 +116,47 @@ recalculates, infers, fuzzy-matches, or falls back to legacy fields.
   the chip never fires the row's Open Detail navigation. Purely a link —
   writes nothing, changes no state.
 
+## Global governed-queue gating (2026-02-16)
+`outreachAllowed(opp)` in `/app/frontend/src/lib/queue.js` is now the SINGLE
+gate every messaging/drafting control routes through. It reads `current_queue`
+verbatim and returns one of three values:
+
+- `first_contact` (Current Queue = "Ready to Contact"): Open Email Draft;
+  Open Text Draft only when SMS Permission is granted; Draft-a-Note allowed
+  for partners; "I sent it" outcome button visible.
+- `follow_up` (Current Queue = "Contacted"): exactly ONE Open Follow-Up
+  Draft button. Text / Email / Contact them / Draft a Note / I sent it all
+  hidden. Non-message outcome buttons (replied / estimate / no-reply /
+  not-interested / Won / Lost) remain.
+- `none` (everything else including "All Projects" and unclassified):
+  ZERO messaging or draft controls anywhere in the app. Status buttons
+  (Won / Lost / Get more info first) remain — they're non-message state
+  changes.
+
+Enforcement surfaces:
+- OpenInMessages component (panel + pill variants) gates internally, so
+  every caller — dashboard, opportunity detail, People to Know, Time to
+  Nudge, Draft-a-Note drawer footer — inherits the same rule.
+- ContactResults strips "I sent it" outside `first_contact` and returns
+  null on `none`.
+- NextBestAction and Relationships gate the Draft-a-Note button by
+  `outreachAllowed(opp) === "first_contact"`.
+- OpportunityDetail hero now leads with governed badges (Current Queue,
+  Contact Readiness, Contact State) and a large Governed Priority Score.
+  Money Signal / Premium Fit / Evidence Status / Freshness render as
+  primary signals. Priority Explanation / Current Recommendation /
+  Project Fit Reason follow. Legacy meters remain under "More details ·
+  legacy signals" with `opacity-70` so they never visually outrank the
+  governed layer.
+
+## Sidebar + filter cleanup (2026-02-16)
+- Sidebar: `Today` → `Home`; `People to Know` link removed. Route
+  `/relationships` remains directly reachable.
+- BottomNav: 3 columns — Home / Projects / Settings.
+- All Projects `Lane` filter: exposes only `market_capture`. `partner`
+  and `non_permit` are still valid record-level classifications but no
+  longer visible operating buckets.
+
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock

@@ -7,6 +7,7 @@ import OpenInMessages from "@/components/OpenInMessages";
 import { PriorityBand } from "@/components/PriorityBadge";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
+import { outreachAllowed } from "@/lib/queue";
 import {
   ExternalLink,
   Globe,
@@ -61,10 +62,6 @@ const PublicLinks = ({ person }) => {
 };
 
 const PartnerCard = ({ person, linkedProjects, onDraft }) => {
-  const hasContact = Boolean(
-    person.contact_phone || person.phone || person.contact_email || person.email,
-  );
-
   return (
     <article
       data-testid={`partner-row-${person.id}`}
@@ -146,26 +143,44 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
             <div className="sm:hidden">
               <ContactBadge opportunity={person} />
             </div>
-            {hasContact ? (
-              <OpenInMessages opportunity={person} variant="pill" />
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full border bh-hairline px-2.5 py-1 text-[11px] text-[var(--bh-ink-mute)]">
-                <PhoneCall size={11} /> Needs a public phone or email
-              </span>
+            {(() => {
+              const mode = outreachAllowed(person);
+              // All Projects (or unclassified): show the governed reason and
+              // NO messaging or draft controls. This is the fix for the
+              // Greige Interiors leak — Contacted records also route here.
+              if (mode === "none") {
+                return (
+                  <span
+                    data-testid={`partner-no-outreach-${person.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border bh-hairline px-2.5 py-1 text-[11px] text-[var(--bh-ink-mute)]"
+                  >
+                    <PhoneCall size={11} />
+                    {person.contact_readiness || "Not classified for outreach yet"}
+                  </span>
+                );
+              }
+              // Ready or Contacted: the OpenInMessages component itself is
+              // strictly gated by outreachAllowed(), so pill mode renders the
+              // right buttons (Email + Text for Ready; single Follow-Up for
+              // Contacted) or nothing when no channel is on file.
+              return <OpenInMessages opportunity={person} variant="pill" />;
+            })()}
+            {/* Draft a note is a first-contact action — Ready to Contact only. */}
+            {outreachAllowed(person) === "first_contact" && (
+              <button
+                type="button"
+                onClick={() => onDraft(person)}
+                data-testid={`partner-draft-${person.id}`}
+                className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors"
+                style={{
+                  background: "var(--bh-brass-mute)",
+                  borderColor: "var(--bh-hair-warm)",
+                  color: "var(--bh-brass)",
+                }}
+              >
+                <PenLine size={12} /> Draft a note
+              </button>
             )}
-            <button
-              type="button"
-              onClick={() => onDraft(person)}
-              data-testid={`partner-draft-${person.id}`}
-              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors"
-              style={{
-                background: "var(--bh-brass-mute)",
-                borderColor: "var(--bh-hair-warm)",
-                color: "var(--bh-brass)",
-              }}
-            >
-              <PenLine size={12} /> Draft a note
-            </button>
           </div>
         </div>
       </div>

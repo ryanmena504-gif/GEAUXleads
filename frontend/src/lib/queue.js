@@ -34,6 +34,32 @@ export const currentQueue = (opp) => {
 };
 
 /**
+ * outreachAllowed — the SINGLE global gate for every messaging/drafting
+ * control across the entire app. Returns one of four values:
+ *
+ *   "first_contact" → Current Queue = "Ready to Contact"
+ *                     Show Open Email Draft; Open Text Draft only when
+ *                     SMS Permission is explicitly granted.
+ *   "follow_up"     → Current Queue = "Contacted"
+ *                     Show Open Follow-Up Draft only.
+ *                     Hide Text / Email / Draft a Note / I sent it and every
+ *                     initial-contact control.
+ *   "none"          → Current Queue = "All Projects" (or any other value,
+ *                     or unclassified). Hide every messaging and draft
+ *                     control. No exceptions.
+ *
+ * Every draft renderer in the codebase MUST route through this helper. Do
+ * not add ad-hoc phone/email/priority fallbacks — Airtable + Make own the
+ * classification and this function is their read-through.
+ */
+export const outreachAllowed = (opp) => {
+  const q = currentQueue(opp);
+  if (q === "Ready to Contact") return "first_contact";
+  if (q === "Contacted") return "follow_up";
+  return "none";
+};
+
+/**
  * queueBucket — which of the three home lists a record belongs to.
  * Strict exact-string match on Current Queue. No fuzzy match.
  *   "Ready to Contact" → "ready"

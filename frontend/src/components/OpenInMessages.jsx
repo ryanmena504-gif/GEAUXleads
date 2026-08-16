@@ -1,50 +1,34 @@
 import React, { useState } from "react";
-import { MessageSquare, Mail, Lock, ShieldCheck, ArrowRight, Smartphone, ExternalLink } from "lucide-react";
+import { MessageSquare, Mail, ShieldCheck, ArrowRight, Smartphone, ExternalLink, Reply } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { outreachAllowed } from "@/lib/queue";
 
 /**
- * OpenInMessages — approval-only lead-contact selector.
+ * OpenInMessages — approval-only lead-contact selector, strictly gated by
+ * the governed `Current Queue` field.
  *
- * Three visible choices per lead:
- *   • TEXT  — sms: handoff (Apple Messages)
- *   • EMAIL — mailto: handoff (Apple Mail on iPhone)
- *   • BOTH  — appears only when phone AND email both exist. Opens Messages
- *             first; a follow-up "Open email draft" button appears so the
- *             user can hand off to Mail themselves after returning.
+ *   • Current Queue = "Ready to Contact" → Open Email Draft; Open Text
+ *     Draft only when SMS Permission is granted.
+ *   • Current Queue = "Contacted"        → Open Follow-Up Draft only.
+ *   • Current Queue = "All Projects"     → NOTHING is rendered.
+ *
+ * Every code path — dashboard, opportunity detail, People to Know cards,
+ * Time to Nudge rows, Draft-a-Note drawer footer — flows through this
+ * component, so gating here fixes gating everywhere.
  *
  * Draft handoffs are logged separately from confirmed results. Nothing is
  * sent, scheduled, or marked sent when a draft is opened.
  */
 
-// Default sender identity — Ryan's fixed business phone + email for The
-// Shirtless Handyman. Ryan can override these in Settings, but every email
-// draft is signed with this identity by default. Bloodhound never CONNECTS
-// to any account; the values just appear inside the mailto: body so the
-// recipient sees the right contact info.
+// Default sender identity — Ryan's fixed business phone + email.
 const DEFAULT_SENDER_EMAIL = "ryanmena@theshirtlesshandyman.com";
 const DEFAULT_SENDER_NAME = "Ryan Mena";
 const DEFAULT_SENDER_PHONE = "(504) 264-4919";
 const DEFAULT_EMAIL_PROVIDER = "apple";
 const EMAIL_SUBJECT = "Quick question about your project";
+const FOLLOWUP_SUBJECT_PREFIX = "Following up";
 
-/**
- * Build the email-compose URL for the configured provider.
- *
- * Gmail  — https://mail.google.com/mail/?authuser=<sender>&view=cm&... — the
- *          `authuser` parameter forces Gmail Web to compose from Ryan's
- *          business account regardless of which browser or device he uses.
- *          On mobile, this URL deep-links into the Gmail app with the same
- *          account pinned.
- * Outlook — https://outlook.office.com/mail/deeplink/compose?... — opens
- *          Outlook Web with the recipient / subject / body pre-filled.
- *          Uses whichever Microsoft account is signed in; if multiple, the
- *          user picks. There is no reliable equivalent of Gmail's authuser.
- * Apple / mailto — the classic behaviour: uses whatever default mail app is
- *          set on the current device. Correct for iPhone (uses Ryan's
- *          business email if that's his default account), unpredictable on
- *          laptops. Included as a fallback and for Apple-Mail-only users.
- */
 const buildEmailComposeUrl = (recipient, body, subject, sender, provider) => {
   if (!recipient) return { href: null, external: false };
   const clean = String(recipient).trim();
@@ -79,7 +63,6 @@ const buildEmailComposeUrl = (recipient, body, subject, sender, provider) => {
       external: true,
     };
   }
-  // Apple Mail / default mail app — plain mailto:.
   const mailtoParts = [
     `subject=${encodeURIComponent(finalSubject)}`,
     `body=${encodeURIComponent(finalBody)}`,
@@ -90,9 +73,6 @@ const buildEmailComposeUrl = (recipient, body, subject, sender, provider) => {
   };
 };
 
-// iOS is strict: sms: URLs must contain digits (with optional leading `+`)
-// only — no parens, no spaces, no dashes. Otherwise Safari throws
-// "Failed to load" and refuses to hand off to Messages.
 const sanitizeSmsUrl = (rawUrl) => {
   if (typeof rawUrl !== "string") return null;
   const trimmed = rawUrl.trim();
@@ -119,10 +99,6 @@ const buildIosSmsHref = (phone, body) => {
   return `sms:${cleanPhone}${q}`;
 };
 
-// mailto: signature. Includes the sender's name, business, phone, and
-// email so it's visible in the composed draft — iPhone/Mac Mail can't be
-// forced to a specific From account via mailto, so this at least makes
-// sure the recipient sees the right contact info.
 const withSignature = (body, senderName, senderEmail, senderPhone) => {
   const base = (body || "").trim();
   const name = (senderName || DEFAULT_SENDER_NAME).trim();
@@ -137,29 +113,12 @@ const withSignature = (body, senderName, senderEmail, senderPhone) => {
   return `${base}${signature}`;
 };
 
-const buildMailtoHref = (email) => {
-  if (!email) return null;
-  const clean = String(email).trim();
-  if (!clean.includes("@")) return null;
-  const params = [
-    `subject=${encodeURIComponent(EMAIL_SUBJECT)}`,
-  ];
-  return `mailto:${clean}?${params.join("&")}`;
-};
-
-const buildMailtoWithBody = (email, body, senderName, senderEmail, senderPhone) => {
-  if (!email) return null;
-  const clean = String(email).trim();
-  if (!clean.includes("@")) return null;
-  const params = [
-    `subject=${encodeURIComponent(EMAIL_SUBJECT)}`,
-    `body=${encodeURIComponent(withSignature(body, senderName, senderEmail, senderPhone))}`,
-  ];
-  return `mailto:${clean}?${params.join("&")}`;
-};
-
 const pickMessage = (opp) =>
   opp?.first_contact_message || opp?.first_message || "";
+
+const pickFollowupBody = (opp) =>
+  opp?.current_recommendation ||
+  "Just checking in — happy to answer any questions or share more detail whenever you have a minute.";
 
 const cleanDisplayPhone = (p) => {
   if (!p) return null;
@@ -167,31 +126,32 @@ const cleanDisplayPhone = (p) => {
   return s || null;
 };
 
-export const resolveContacts = (opp, senderIdentity, emailProvider) => {
-  if (!opp) return { text: null, email: null };
-  const iphoneFormula = (opp.open_approved_message_iphone || "").toString().trim();
-  const phoneRaw = (opp.contact_phone || opp.phone || opp.phone_number || "").toString().trim();
-  const emailRaw = (opp.contact_email || opp.email || "").toString().trim();
-  const message = pickMessage(opp);
-  const senderName = senderIdentity?.name;
-  const senderEmail = senderIdentity?.email;
-  const senderPhone = senderIdentity?.phone;
-  // Native Mail is deliberate. The previous Gmail web default sometimes
-  // opened an inbox in Safari rather than a compose screen on iPhone.
-  const provider = emailProvider === "outlook" ? "outlook" : "apple";
+// SMS Permission is explicit and governed. Only these values unlock a text
+// draft; anything else (empty, "No", "unknown", etc.) keeps SMS hidden.
+const smsPermitted = (opp) =>
+  /yes|granted|opted[\s-]?in|true/i.test((opp?.sms_permission || "").toString());
+
+const buildContacts = ({ opp, senderIdentity, provider, mode }) => {
+  const iphoneFormula = (opp?.open_approved_message_iphone || "").toString().trim();
+  const phoneRaw = (opp?.contact_phone || opp?.phone || opp?.phone_number || "").toString().trim();
+  const emailRaw = (opp?.contact_email || opp?.email || "").toString().trim();
+  const isFollowup = mode === "follow_up";
+  const subject = isFollowup
+    ? `${FOLLOWUP_SUBJECT_PREFIX} · ${opp?.project_type || opp?.name || "your project"}`
+    : EMAIL_SUBJECT;
+  const body = isFollowup ? pickFollowupBody(opp) : pickMessage(opp);
+  const allowSms = isFollowup ? true : smsPermitted(opp); // permission gate
 
   let textHref = null;
   let textDisplay = null;
-  if (iphoneFormula.toLowerCase().startsWith("sms:")) {
-    textHref = sanitizeSmsUrl(iphoneFormula);
-    textDisplay = cleanDisplayPhone(phoneRaw) || "iPhone formula";
-  } else if (phoneRaw && message) {
-    textHref = buildIosSmsHref(phoneRaw, message);
-    textDisplay = cleanDisplayPhone(phoneRaw);
-  } else if (phoneRaw) {
-    // Phone exists but no message body — still allow the handoff.
-    textHref = buildIosSmsHref(phoneRaw, "");
-    textDisplay = cleanDisplayPhone(phoneRaw);
+  if (allowSms) {
+    if (iphoneFormula.toLowerCase().startsWith("sms:")) {
+      textHref = sanitizeSmsUrl(iphoneFormula);
+      textDisplay = cleanDisplayPhone(phoneRaw) || "iPhone formula";
+    } else if (phoneRaw) {
+      textHref = buildIosSmsHref(phoneRaw, body);
+      textDisplay = cleanDisplayPhone(phoneRaw);
+    }
   }
 
   let emailBundle = { href: null, external: false };
@@ -199,20 +159,38 @@ export const resolveContacts = (opp, senderIdentity, emailProvider) => {
   if (emailRaw && emailRaw.includes("@")) {
     emailBundle = buildEmailComposeUrl(
       emailRaw,
-      message,
-      EMAIL_SUBJECT,
-      { name: senderName, email: senderEmail, phone: senderPhone },
+      body,
+      subject,
+      {
+        name: senderIdentity?.name,
+        email: senderIdentity?.email,
+        phone: senderIdentity?.phone,
+      },
       provider,
     );
     emailDisplay = emailRaw;
   }
 
   return {
+    subject,
     text: textHref ? { href: textHref, display: textDisplay } : null,
     email: emailBundle.href
       ? { href: emailBundle.href, display: emailDisplay, external: emailBundle.external }
       : null,
   };
+};
+
+/**
+ * resolveContacts — kept as a named export for other pages (e.g. Intelligence).
+ * Now respects the governed queue: returns empty contacts when Current Queue
+ * is not "Ready to Contact" or "Contacted".
+ */
+export const resolveContacts = (opp, senderIdentity, emailProvider) => {
+  const mode = outreachAllowed(opp);
+  if (mode === "none") return { text: null, email: null };
+  const provider = emailProvider === "outlook" ? "outlook" : (emailProvider || DEFAULT_EMAIL_PROVIDER);
+  const c = buildContacts({ opp, senderIdentity, provider, mode });
+  return { text: c.text, email: c.email };
 };
 
 const btnBase =
@@ -224,19 +202,11 @@ const SIZE = {
   sm: "h-8 px-2.5 text-[12px]",
 };
 
-const primary = {
-  background: "var(--bh-brass)",
-  color: "var(--bh-surface)",
-};
+const primary = { background: "var(--bh-brass)", color: "var(--bh-surface)" };
 const secondary = {
   background: "var(--bh-surface)",
   border: "1px solid var(--bh-hair-strong)",
   color: "var(--bh-ink)",
-};
-const disabled = {
-  background: "var(--bh-surface-2)",
-  border: "1px solid var(--bh-hair)",
-  color: "var(--bh-ink-mute)",
 };
 
 const TextButton = ({ href, testid, label, onClick, styleOverride, size = "md" }) => (
@@ -251,7 +221,7 @@ const TextButton = ({ href, testid, label, onClick, styleOverride, size = "md" }
   </a>
 );
 
-const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md", external = false }) => (
+const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md", external = false, icon: Icon = Mail }) => (
   <a
     href={href}
     data-testid={testid}
@@ -260,30 +230,21 @@ const EmailButton = ({ href, testid, label, onClick, styleOverride, size = "md",
     style={styleOverride || primary}
     {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
   >
-    <Mail size={size === "sm" ? 12 : 14} /> {label}
+    <Icon size={size === "sm" ? 12 : 14} /> {label}
     {external && <ExternalLink size={size === "sm" ? 10 : 11} className="opacity-70" />}
   </a>
-);
-
-const DisabledButton = ({ size = "md" }) => (
-  <button
-    type="button"
-    disabled
-    data-testid="open-in-messages-disabled"
-    className={`${btnBase} ${SIZE[size]} cursor-not-allowed`}
-    style={disabled}
-  >
-    <Lock size={size === "sm" ? 12 : 14} /> Public contact needed
-  </button>
 );
 
 /**
  * @param {object} props
  * @param {object} props.opportunity — full opportunity DTO
- * @param {"pill"|"panel"|"row"} [props.variant]
+ * @param {"pill"|"panel"} [props.variant]
  */
 export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const { settings } = useUserSettings();
+  // All hooks live at the top so Rules of Hooks are respected regardless
+  // of which governed branch renders below.
+  const [textedFirst, setTextedFirst] = useState(false);
   const senderIdentity = {
     name: settings?.sender_name,
     email: settings?.sender_email,
@@ -292,40 +253,130 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const emailProvider = (settings?.email_provider || DEFAULT_EMAIL_PROVIDER).toLowerCase() === "outlook"
     ? "outlook"
     : "apple";
-  const contacts = resolveContacts(opportunity, senderIdentity, emailProvider);
-  const hasText = !!contacts.text;
-  const hasEmail = !!contacts.email;
-  const hasBoth = hasText && hasEmail;
-  const emailIsExternal = !!contacts.email?.external;
   const providerLabel =
     emailProvider === "gmail" ? "Gmail"
     : emailProvider === "outlook" ? "Outlook"
     : "Apple Mail";
 
-  // Once the user taps a TEXT handoff on a BOTH lead, reveal a follow-up
-  // "Open email draft" primary button. Do NOT auto-launch Mail — the user
-  // presses it themselves after returning from Messages.
-  const [textedFirst, setTextedFirst] = useState(false);
+  const mode = outreachAllowed(opportunity);
 
-  // Fire-and-forget handoff logger. We deliberately do NOT block navigation
-  // (no preventDefault, no await), so the sms:/mailto:/Gmail-compose URL
-  // still opens on the same user gesture. If the POST fails we swallow it —
-  // this is a log, not a gate.
+  // GLOBAL GATE #1 — All Projects (or unclassified): render nothing anywhere.
+  if (mode === "none") return null;
+
+  const contacts = buildContacts({
+    opp: opportunity,
+    senderIdentity,
+    provider: emailProvider,
+    mode,
+  });
+  const hasText = !!contacts.text;
+  const hasEmail = !!contacts.email;
+  const emailIsExternal = !!contacts.email?.external;
+
+  // GLOBAL GATE #2 — Contacted: exactly ONE follow-up draft button. No
+  // Text / Email / Contact them / Draft a Note controls, ever.
+  if (mode === "follow_up") {
+    // Prefer email for follow-ups; fall back to SMS only if there is no
+    // email on file. If neither channel is available, render nothing.
+    if (!hasEmail && !hasText) return null;
+    const useEmail = hasEmail;
+    const href = useEmail ? contacts.email.href : contacts.text.href;
+    const testid = useEmail ? "open-followup-email-draft" : "open-followup-sms-draft";
+    const label = useEmail ? "Open Follow-Up Draft" : "Open Follow-Up Text Draft";
+    const Icon = useEmail ? Reply : MessageSquare;
+    const external = useEmail && emailIsExternal;
+    const logChannel = useEmail ? "email" : "text";
+    const recipientDisplay = useEmail ? contacts.email.display : contacts.text.display;
+    const onTap = () => {
+      const oppId = opportunity?.id;
+      if (!oppId) return;
+      try {
+        api.logHandoff(oppId, {
+          opportunity_id: oppId,
+          opportunity_name: opportunity?.name,
+          channel: logChannel,
+          recipient: recipientDisplay || null,
+        }).catch(() => {});
+      } catch { /* ignore */ }
+    };
+
+    if (variant === "pill") {
+      return (
+        <div className="flex items-center gap-1.5" data-testid="lead-followup-pill">
+          <EmailButton
+            href={href}
+            testid={testid}
+            label={label}
+            onClick={onTap}
+            external={external}
+            size="sm"
+            icon={Icon}
+          />
+        </div>
+      );
+    }
+    return (
+      <div
+        className="rounded-md border p-4 space-y-3"
+        style={{ background: "var(--bh-brass-mute)", borderColor: "var(--bh-hair-warm)" }}
+        data-testid="open-followup-panel"
+      >
+        <div className="flex items-center gap-2">
+          <Reply size={13} style={{ color: "var(--bh-brass)" }} />
+          <span className="bh-eyebrow" style={{ color: "var(--bh-brass)" }}>
+            Follow up
+          </span>
+          {opportunity?.contact_state && (
+            <span
+              className="text-[10.5px] px-2 py-0.5 rounded-full font-medium tabular-nums"
+              style={{
+                background: "var(--bh-surface)",
+                border: "1px solid var(--bh-hair-warm)",
+                color: "var(--bh-brass)",
+              }}
+              data-testid="followup-contact-state"
+            >
+              {opportunity.contact_state}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2" data-testid="lead-followup-choices">
+          <EmailButton
+            href={href}
+            testid={testid}
+            label={label}
+            onClick={onTap}
+            external={external}
+            icon={Icon}
+          />
+        </div>
+        <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)]">
+          {useEmail
+            ? <>Opens a draft in {providerLabel}. Nothing sends until you press Send yourself.</>
+            : <>Opens Messages on this device. Nothing sends until you press Send yourself.</>}
+        </div>
+        <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
+          <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
+          Follow-up draft only. First-contact controls stay hidden on Contacted records.
+        </div>
+      </div>
+    );
+  }
+
+  // Ready to Contact from here on. Existing first-contact UI.
+  const hasBoth = hasText && hasEmail;
+
   const logTap = (channel, recipient) => {
     const oppId = opportunity?.id;
     if (!oppId) return;
     try {
-      api
-        .logHandoff(oppId, {
-          opportunity_id: oppId,
-          opportunity_name: opportunity?.name,
-          channel,
-          recipient: recipient || null,
-        })
-        .catch(() => {});
-    } catch {
-      /* never break the native handoff */
-    }
+      api.logHandoff(oppId, {
+        opportunity_id: oppId,
+        opportunity_name: opportunity?.name,
+        channel,
+        recipient: recipient || null,
+      }).catch(() => {});
+    } catch { /* ignore */ }
   };
 
   const onTextTap = () => {
@@ -336,46 +387,29 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
     logTap("email", contacts.email?.display);
   };
 
-  if (!hasText && !hasEmail) {
-    return (
-      <div
-        className="rounded-md border p-4 space-y-2"
-        style={{ background: "var(--bh-surface-2)", borderColor: "var(--bh-hair)" }}
-        data-testid="open-in-messages-panel"
-      >
-        <div className="flex items-center gap-2">
-          <MessageSquare size={13} style={{ color: "var(--bh-ink-mute)" }} />
-          <span className="bh-eyebrow" style={{ color: "var(--bh-ink-mute)" }}>
-            Contact them
-          </span>
-        </div>
-        <DisabledButton />
-        <div className="text-[12px] leading-relaxed text-[var(--bh-ink-3)]">
-          Add a phone number or email for this person and this button will
-          light up.
-        </div>
-      </div>
-    );
-  }
+  // Ready record with no channel at all — do not render an empty gate.
+  if (!hasText && !hasEmail) return null;
 
-  // Compact variant for row lists — show just the buttons, no chrome.
   if (variant === "pill") {
     return (
       <div className="flex items-center gap-1.5" data-testid="lead-contact-pill">
-        {hasText && (
-          <TextButton
-            href={contacts.text.href}
-            testid="lead-contact-text"
-            label="Text"
-            size="sm"
-          />
-        )}
         {hasEmail && (
           <EmailButton
             href={contacts.email.href}
-            testid="lead-contact-email"
-            label="Email"
-            styleOverride={hasText ? secondary : primary}
+            testid="open-email-draft"
+            label="Open Email Draft"
+            onClick={onEmailTap}
+            size="sm"
+            external={emailIsExternal}
+          />
+        )}
+        {hasText && (
+          <TextButton
+            href={contacts.text.href}
+            testid="open-text-draft"
+            label="Open Text Draft"
+            onClick={onTextTap}
+            styleOverride={hasEmail ? secondary : primary}
             size="sm"
           />
         )}
@@ -407,45 +441,44 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             }}
             data-testid="lead-contact-both-badge"
           >
-            Text + Email
+            Email + Text
           </span>
         )}
       </div>
 
-      {/* Buttons */}
       <div className="flex flex-wrap gap-2" data-testid="lead-contact-choices">
         {hasBoth ? (
           <>
-            <TextButton
-              href={contacts.text.href}
-              testid="lead-contact-text"
-              label={textedFirst ? "Reopen text draft" : "Contact by text"}
-              onClick={onTextTap}
-              styleOverride={textedFirst ? secondary : primary}
-            />
             <EmailButton
               href={contacts.email.href}
-              testid="lead-contact-email"
-              label={textedFirst ? "Now open email draft" : "Contact by email"}
+              testid="open-email-draft"
+              label={textedFirst ? "Reopen email draft" : "Open Email Draft"}
               onClick={onEmailTap}
-              styleOverride={textedFirst ? primary : secondary}
+              styleOverride={textedFirst ? secondary : primary}
               external={emailIsExternal}
             />
+            <TextButton
+              href={contacts.text.href}
+              testid="open-text-draft"
+              label={textedFirst ? "Now open text draft" : "Open Text Draft"}
+              onClick={onTextTap}
+              styleOverride={textedFirst ? primary : secondary}
+            />
           </>
-        ) : hasText ? (
-          <TextButton
-            href={contacts.text.href}
-            testid="lead-contact-text"
-            label="Contact them"
-            onClick={onTextTap}
-          />
-        ) : (
+        ) : hasEmail ? (
           <EmailButton
             href={contacts.email.href}
-            testid="lead-contact-email"
-            label="Contact them"
+            testid="open-email-draft"
+            label="Open Email Draft"
             onClick={onEmailTap}
             external={emailIsExternal}
+          />
+        ) : (
+          <TextButton
+            href={contacts.text.href}
+            testid="open-text-draft"
+            label="Open Text Draft"
+            onClick={onTextTap}
           />
         )}
       </div>
@@ -468,27 +501,25 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
         {hasText && (
           <div className="text-[11px] leading-relaxed text-[var(--bh-ink-3)] inline-flex items-center gap-1.5" data-testid="handoff-iphone-hint">
             <Smartphone size={11} strokeWidth={1.75} style={{ color: "var(--bh-brass)" }} />
-            Texts open Messages on this device. Open Bloodhound on your iPhone to text from{" "}
-            {senderIdentity.phone || DEFAULT_SENDER_PHONE}.
+            Text drafts open Messages on this device. SMS Permission on file: {opportunity?.sms_permission || "not set"}.
           </div>
         )}
       </div>
 
-      {/* Verified recipient(s) */}
       <div className="text-[12px] leading-relaxed text-[var(--bh-ink-2)] space-y-0.5">
-        {contacts.text && (
-          <div data-testid="lead-contact-text-display">
-            <span className="text-[var(--bh-ink-3)]">Text →</span>{" "}
-            <strong className="font-medium">{contacts.text.display}</strong>
-          </div>
-        )}
         {contacts.email && (
           <div data-testid="lead-contact-email-display">
             <span className="text-[var(--bh-ink-3)]">Email →</span>{" "}
             <strong className="font-medium">{contacts.email.display}</strong>
             <span className="text-[var(--bh-ink-3)]">
-              {" "}· subject &ldquo;{EMAIL_SUBJECT}&rdquo;
+              {" "}· subject &ldquo;{contacts.subject}&rdquo;
             </span>
+          </div>
+        )}
+        {contacts.text && (
+          <div data-testid="lead-contact-text-display">
+            <span className="text-[var(--bh-ink-3)]">Text →</span>{" "}
+            <strong className="font-medium">{contacts.text.display}</strong>
           </div>
         )}
       </div>

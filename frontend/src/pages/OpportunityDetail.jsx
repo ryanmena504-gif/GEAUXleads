@@ -12,7 +12,7 @@ import ContactResults from "@/components/ContactResults";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
-import { queueBucket } from "@/lib/queue";
+import { queueBucket, outreachAllowed } from "@/lib/queue";
 import {
   ArrowLeft,
   MapPin,
@@ -38,6 +38,46 @@ const ACTION_BUTTONS = [
   { label: "Won", status: "Won", icon: Trophy, tone: "success" },
   { label: "Lost", status: "Lost", icon: XCircle, tone: "danger" },
 ];
+
+// Governed queue chip colors — Ready is brass, Contacted is olive/warm,
+// All Projects is a muted neutral so it never visually outranks the two
+// active queues.
+const QUEUE_CHIP_STYLES = {
+  "Ready to Contact": { fg: "var(--bh-brass)", bg: "var(--bh-brass-mute)", border: "var(--bh-hair-warm)" },
+  Contacted: { fg: "var(--bh-olive)", bg: "var(--bh-olive-mute)", border: "rgba(107,122,85,0.32)" },
+  "All Projects": { fg: "var(--bh-ink-mute)", bg: "var(--bh-surface-2)", border: "var(--bh-hair)" },
+};
+
+const GovernedChip = ({ label, value, tone = "neutral", testId }) => {
+  if (value === null || value === undefined || value === "") return null;
+  const styles =
+    tone === "queue"
+      ? QUEUE_CHIP_STYLES[value] || QUEUE_CHIP_STYLES["All Projects"]
+      : tone === "warn"
+        ? { fg: "var(--bh-brass-2)", bg: "var(--bh-brass-mute)", border: "var(--bh-hair-warm)" }
+        : { fg: "var(--bh-ink-2)", bg: "var(--bh-surface-2)", border: "var(--bh-hair)" };
+  return (
+    <span
+      data-testid={testId}
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium tracking-tight"
+      style={{ color: styles.fg, background: styles.bg, borderColor: styles.border }}
+    >
+      <span className="mono text-[9px] uppercase tracking-widest opacity-75">{label}</span>
+      <span>{value}</span>
+    </span>
+  );
+};
+
+const GovernedSignal = ({ label, value, testId }) => (
+  <div data-testid={testId}>
+    <div className="mono text-[9.5px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
+      {label}
+    </div>
+    <div className="mt-0.5 text-[13px] text-[var(--bh-ink)] font-medium">
+      {value ?? <span className="text-[var(--bh-ink-3)] italic">—</span>}
+    </div>
+  </div>
+);
 
 const activityIcon = (t) => {
   const map = {
@@ -180,9 +220,35 @@ const OpportunityDetail = () => {
         >
           <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <StatusBadge status={opp.status} />
-                <PriorityBand band={opp.priority_band} score={opp.priority_score} />
+              {/* Primary governed badges — Current Queue is the single source
+                  of truth for placement and every action gate. Contact
+                  Readiness supplies the not-ready reason; Contact State
+                  supplies follow-up context. */}
+              <div
+                className="flex items-center gap-2 flex-wrap"
+                data-testid="governed-badges"
+              >
+                <GovernedChip
+                  label="Queue"
+                  value={opp.current_queue || "Not classified"}
+                  tone="queue"
+                  testId="governed-current-queue"
+                />
+                {opp.contact_readiness && (
+                  <GovernedChip
+                    label="Readiness"
+                    value={opp.contact_readiness}
+                    tone="warn"
+                    testId="governed-contact-readiness"
+                  />
+                )}
+                {opp.contact_state && queueBucket(opp) !== "all" && (
+                  <GovernedChip
+                    label="State"
+                    value={opp.contact_state}
+                    testId="governed-contact-state"
+                  />
+                )}
               </div>
               <h1 className="mt-2 font-display text-3xl lg:text-4xl font-bold text-[var(--bh-ink)] tracking-tight">
                 {opp.name}
@@ -191,62 +257,60 @@ const OpportunityDetail = () => {
                 <MapPin size={14} className="text-[var(--bh-ink-mute)]" />
                 {opp.project_address}
               </div>
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 min-w-0">
-                <div>
-                  <div className="bh-eyebrow">
-                    Priority
-                  </div>
-                  <div className="mt-1">
-                    <PriorityScore
-                      score={opp.priority_score}
-                      band={opp.priority_band}
-                      size="lg"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="bh-eyebrow">
-                    Possible work value
-                  </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 min-w-0">
+                <div data-testid="governed-priority-score">
+                  <div className="bh-eyebrow">Governed priority score</div>
                   <div className="font-display text-2xl lg:text-3xl font-bold text-[var(--bh-ink)] tabular-nums mt-1">
-                    {fmtMoney(opp.estimated_value)}
+                    {typeof opp.governed_priority_score === "number"
+                      ? opp.governed_priority_score
+                      : <span className="text-[var(--bh-ink-mute)] italic text-[16px]">Not scored</span>}
                   </div>
                 </div>
-                <div>
-                  <div className="bh-eyebrow">
-                    Found on
-                  </div>
-                  <div className="mt-1 text-[var(--bh-ink)] font-medium">
-                    {sourceLabel(opp.source)}
-                  </div>
-                </div>
-                <div>
-                  <div className="bh-eyebrow">
-                    Project type
-                  </div>
-                  <div className="mt-1 text-[var(--bh-ink)] font-medium">
-                    {opp.project_type}
-                  </div>
-                </div>
+                <GovernedSignal label="Money signal" value={opp.money_signal} testId="governed-money-signal" />
+                <GovernedSignal label="Premium fit" value={opp.premium_fit} testId="governed-premium-fit" />
+                <GovernedSignal label="Evidence" value={opp.evidence_status} testId="governed-evidence-status" />
+                <GovernedSignal label="Freshness" value={opp.freshness} testId="governed-freshness" />
+                <GovernedSignal
+                  label="Possible work value"
+                  value={opp.estimated_value ? fmtMoney(opp.estimated_value) : null}
+                />
+                <GovernedSignal label="Found on" value={sourceLabel(opp.source)} />
+                <GovernedSignal label="Project type" value={opp.project_type} />
               </div>
+              {(opp.priority_explanation || opp.current_recommendation || opp.project_fit_reason) && (
+                <div className="mt-5 border-t bh-hairline pt-4 space-y-3">
+                  {opp.priority_explanation && (
+                    <div data-testid="governed-why-this-matters">
+                      <div className="bh-eyebrow">Why this matters</div>
+                      <p className="mt-1 text-sm text-[var(--bh-ink-2)] leading-relaxed">
+                        {opp.priority_explanation}
+                      </p>
+                    </div>
+                  )}
+                  {opp.current_recommendation && (
+                    <div data-testid="governed-what-to-do-next">
+                      <div className="bh-eyebrow">What to do next</div>
+                      <p className="mt-1 text-sm text-amber-200/90 leading-relaxed">
+                        {opp.current_recommendation}
+                      </p>
+                    </div>
+                  )}
+                  {opp.project_fit_reason && (
+                    <div data-testid="governed-project-fit-reason">
+                      <div className="bh-eyebrow">Project fit reason</div>
+                      <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] leading-relaxed">
+                        {opp.project_fit_reason}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Primary action panel */}
             <div className="bh-surface-2 rounded p-4 min-w-0">
-                <div className="bh-eyebrow">
-                  What to do next
-                </div>
-                <div className="mt-1.5">
-                  <MissionBadge mission={opp.daily_mission} />
-                </div>
-                <div className="mt-3 font-display text-lg font-semibold text-[var(--bh-ink)] leading-snug">
-                  {opp.recommended_action}
-                </div>
-                <div className="mt-2 text-sm text-amber-200/90">
-                  → {opp.next_best_action}
-                </div>
-
-              <div className="mt-4 border-t bh-hairline pt-3 space-y-2">
+              <div className="bh-eyebrow">Actions</div>
+              <div className="mt-3 border-t bh-hairline pt-3 space-y-2">
                 {(() => {
                   const bucket = queueBucket(opp);
                   if (bucket === "all") {
@@ -262,9 +326,6 @@ const OpportunityDetail = () => {
                       </div>
                     );
                   }
-                  // Ready or Contacted: keep the existing device-native draft
-                  // handoff. First-contact vs follow-up copy is decided inside
-                  // OpenInMessages via the record's Contact State field.
                   return (
                     <>
                       <OpenInMessages opportunity={opp} variant="panel" />
@@ -299,7 +360,10 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
-                {opp.lane === "partner" && queueBucket(opp) !== "all" && (
+                {/* Draft a note is a first-contact action — strictly
+                    limited to Ready to Contact partner records. Hidden on
+                    Contacted and All Projects, no exceptions. */}
+                {opp.lane === "partner" && outreachAllowed(opp) === "first_contact" && (
                   <button
                     type="button"
                     onClick={() => setDraftOpen(true)}
@@ -403,13 +467,16 @@ const OpportunityDetail = () => {
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-4">
-                <Meter label="Opportunity Fit" level={opp.opportunity_fit} />
-                <Meter label="Momentum" level={opp.momentum} />
-                <Meter label="Reachability" level={opp.reachability} />
-                <Meter label="Can I reach them?" level={opp.contact_confidence} />
-                <Meter label="How solid is the info" level={opp.evidence_confidence} />
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-4 opacity-70">
+              <div className="col-span-full mb-1 mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
+                More details · legacy signals (Airtable + Make own the governed layer above)
               </div>
+              <Meter label="Opportunity Fit" level={opp.opportunity_fit} />
+              <Meter label="Momentum" level={opp.momentum} />
+              <Meter label="Reachability" level={opp.reachability} />
+              <Meter label="Can I reach them?" level={opp.contact_confidence} />
+              <Meter label="How solid is the info" level={opp.evidence_confidence} />
+            </div>
             </section>
 
             {/* Contact */}

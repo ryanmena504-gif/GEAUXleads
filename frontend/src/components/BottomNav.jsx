@@ -2,16 +2,14 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
-  LayoutDashboard,
+  Home,
   Crosshair,
-  Network,
   Sliders,
 } from "lucide-react";
 
 const nav = [
-  { to: "/", label: "Today", icon: LayoutDashboard },
+  { to: "/", label: "Home", icon: Home },
   { to: "/opportunities", label: "Projects", icon: Crosshair },
-  { to: "/relationships", label: "People", icon: Network },
   { to: "/settings", label: "Settings", icon: Sliders },
 ];
 
@@ -21,7 +19,7 @@ export const BottomNav = () => (
     className="lg:hidden fixed bottom-0 inset-x-0 z-30 bh-surface border-t bh-hairline"
     style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
   >
-    <div className="grid grid-cols-4">
+    <div className="grid grid-cols-3">
       {nav.map((item) => (
         <NavLink
           key={item.to}

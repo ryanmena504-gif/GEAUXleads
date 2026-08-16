@@ -2,18 +2,19 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
-  Sun,
+  Home,
   FileText,
-  Users,
   Sliders,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 
+// Sidebar shows ONLY the governed operating structure: Home (the 3-queue
+// dashboard), All Projects (governed list), Settings. Partner and
+// non-permit information stays as detail/context on individual records.
 const nav = [
-  { to: "/", label: "Today", icon: Sun },
+  { to: "/", label: "Home", icon: Home },
   { to: "/opportunities", label: "All Projects", icon: FileText },
-  { to: "/relationships", label: "People to Know", icon: Users },
   { to: "/settings", label: "Settings", icon: Sliders },
 ];
 

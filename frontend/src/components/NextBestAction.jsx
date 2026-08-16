@@ -17,6 +17,7 @@ import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 import { priorityLevel, priorityReason } from "@/lib/priority";
+import { outreachAllowed } from "@/lib/queue";
 
 const Stat = ({ label, value }) => (
   <div>
@@ -199,7 +200,7 @@ export const NextBestAction = () => {
 
       {/* Action buttons */}
       <div className="px-5 sm:px-7 pb-5 pt-3 border-t bh-hairline flex flex-wrap gap-2">
-        {l.lane === "partner" && (
+        {l.lane === "partner" && outreachAllowed(l) === "first_contact" && (
           <button
             onClick={() => setDraftDrawerOpen(true)}
             data-testid="nba-draft-note"

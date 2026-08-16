@@ -24,10 +24,11 @@ export const STATUSES = [
 
 export const BANDS = ["A", "B", "C", "D"];
 
+// Only the governed Market Capture lane is exposed as a filter in All
+// Projects. Partner and non-permit lanes stay as record-level context but
+// are not visible operating buckets — the three governed queues own that.
 export const LANES = [
   { key: "market_capture", label: "Projects" },
-  { key: "partner", label: "People to Know" },
-  { key: "non_permit", label: "Projects to Watch" },
 ];
 
 export const LANE_LABEL = {
