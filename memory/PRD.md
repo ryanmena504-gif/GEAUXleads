@@ -175,6 +175,29 @@ Enforcement surfaces:
   and `non_permit` are still valid record-level classifications but no
   longer visible operating buckets.
 
+## Learning loop (2026-02-16)
+Read-only outcome-aggregation layer. `/api/learning/insights` scans the
+opportunity list, computes reply-rate and win-rate per governed dimension
+(Money Signal, Premium Fit, Freshness, Evidence Status, Source), and ranks
+patterns by |delta from baseline| × sqrt(sample size). Frontend
+`LearningStrip` renders up to 3 insights above the three-list dashboard.
+
+Guarantees:
+- Zero writes. Never mutates opportunities, Airtable, or any store.
+- Zero LLM. Pure Python aggregation.
+- Sample-safe. Requires ≥3 observations per bucket AND ≥6 total outcomes.
+- Silent when there isn't enough signal — the dashboard stays calm.
+
+Sample fixtures now include `outreach_status` on 8 records so the strip
+demonstrates end-to-end. When Airtable is wired, the same aggregation runs
+live against confirmed outcomes.
+
+## Ryan's ship order (confirmed 2026-02-16)
+1. **Morning brief** (push or SMS) — 7am nudge with follow-ups due, new Ready records, and estimate deadlines. Turns the app from a tool into a habit.
+2. **Reverse lookup** on inbound call/text — number → lead card with governed context. iOS shortcut + `/api/opportunities/by-phone/{number}` endpoint.
+3. *(Skipped — voice-to-note)*
+4. **Referral prompt after Won** — one-tap "text this client asking for a referral" 5 days after Won status. Turns 1 win into 2-3 leads.
+
 ## Backlog / Next
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock

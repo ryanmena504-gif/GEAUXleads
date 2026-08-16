@@ -946,6 +946,19 @@ async def follow_ups_due(limit: int = 20):
 # else `created_time`, as the "settled at" proxy. All-time Won is included
 # as a stable fallback for periods with few dated records.
 # ============================================================================
+# ============================================================================
+# Learning loop — reads through the opportunity list to compute reply-rate and
+# win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).
+# Zero writes. Zero LLM calls. Ryan sees the top ranked pattern on Home.
+# ============================================================================
+@api_router.get("/learning/insights")
+async def learning_insights(limit: int = 3):
+    from services.learning_service import compute_insights
+    osvc = get_opportunity_service()
+    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    return compute_insights(all_ops, limit=max(1, min(limit, 10)))
+
+
 @api_router.get("/kpis/monthly")
 async def monthly_kpis():
     from datetime import datetime, timezone as _tz

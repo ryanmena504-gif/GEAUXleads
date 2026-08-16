@@ -79,6 +79,11 @@ export const api = {
     client.get("/follow-ups/due", { params: { limit } }).then((r) => r.data),
   monthlyKpis: () => client.get("/kpis/monthly").then((r) => r.data),
 
+  // Learning loop — top patterns the app has learned from Ryan's confirmed
+  // outcomes. Read-only. Silent if there aren't enough observations yet.
+  learningInsights: (limit = 3) =>
+    client.get("/learning/insights", { params: { limit } }).then((r) => r.data),
+
   // User preferences — sender email that appears on mailto: drafts, etc.
   getUserSettings: () =>
     client.get("/settings/user").then((r) => r.data),
