@@ -30,7 +30,6 @@ import {
   XCircle,
   Gauge,
   Target,
-  PenLine,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -360,25 +359,9 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
-                {/* Draft a note is a first-contact action — strictly
-                    limited to Ready to Contact partner records. Hidden on
-                    Contacted and All Projects, no exceptions. */}
-                {opp.lane === "partner" && outreachAllowed(opp) === "first_contact" && (
-                  <button
-                    type="button"
-                    onClick={() => setDraftOpen(true)}
-                    data-testid="action-draft-note"
-                    className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border transition-colors duration-150"
-                    style={{
-                      background: "var(--bh-brass-mute)",
-                      borderColor: "var(--bh-hair-warm)",
-                      color: "var(--bh-brass)",
-                    }}
-                  >
-                    <PenLine size={14} />
-                    Draft a note
-                  </button>
-                )}
+                {/* Draft a Note is retired. The single Email Now / Follow
+                    Up Email button in OpenInMessages is the ONLY outreach
+                    entry point on Ready and Contacted records. */}
                 </div>
               </div>
             </div>

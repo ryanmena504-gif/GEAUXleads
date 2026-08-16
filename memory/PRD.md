@@ -212,6 +212,37 @@ Ryan's daily 7am glance — one email + an in-app panel from the same source.
   when the day's brief has ≥ 1 row; dismiss is UI-only via localStorage,
   never hits the backend.
 
+## Email Now workflow (2026-02-16)
+Collapsed every outreach entry point into ONE button per record type:
+
+- **Ready to Contact**: single primary button `Email Now`. One tap → native
+  `mailto:` with the verified public business email + playbook subject +
+  personalized playbook body + signature. No intermediate modal, drawer,
+  template picker, copy button, preview, or second action.
+- **Contacted**: single button `Follow Up Email` with a preloaded follow-up
+  body via mailto. Initial-contact controls stay hidden.
+- **All Projects**: zero email / text / draft / message controls.
+
+Retired everywhere: `Open Email Draft`, `Open Text Draft`, `Open Follow-Up
+Draft`, `Draft a Note` button (partner card + NextBestAction + Detail hero),
+DraftNoteDrawer as an outreach entry point, SMS-first fallback on Ready
+records. The `Draft a Note` button is gone from every visible surface;
+`DraftNoteDrawer.jsx` file remains on disk but is now unreachable via UI.
+
+Guarantees preserved:
+- Clicking Email Now or Follow Up Email makes ZERO backend writes.
+- No handoff endpoint call, no audit log, no Airtable write, no
+  contact_handoffs row, no Current Queue / Contact State / outreach-status
+  / approval-status / governed-field mutation.
+- No Gmail API / Resend / Twilio / SMTP / campaign system for lead
+  outreach. Browser opens a plain `mailto:` — Ryan presses Send himself.
+- If no verified public business email is on file, `Email Now` does NOT
+  render. SMS is never substituted just because a phone number exists.
+
+Message Playbooks editor in Settings is untouched — the Email Now button
+consumes the current playbook values (`first_message_subject`, `first_message`,
+`current_recommendation` for follow-ups) automatically.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped (7am America/Chicago via cron)

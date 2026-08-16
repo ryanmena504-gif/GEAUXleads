@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 11 — verified the single-button Email Now (Ready) + Follow Up Email (Contacted) rewrite end-to-end. Static grep across /app/frontend/src returns 0 matches for the retired testids (open-email-draft, open-sms-draft, open-text-draft, open-followup-draft, action-draft-note, nba-draft-note, partner-draft-). Live UI: (Home) opp_004, opp_001, opp_sweeney, opp_002 render exactly ONE email-now-{id} each; opp_008, opp_009, opp_011, opp_015, opp_greige render exactly ONE follow-up-email-{id} each; forbidden testids = 0. (Detail /opportunities/opp_sweeney) 1× email-now-opp_sweeney with correct mailto colleen@sweeneyrestoration.example.com?subject=Quick note about Historic restoration&body=Hi Colleen,... + signature. (Detail /opportunities/opp_greige) 1× follow-up-email-opp_greige with mailto hello@greigeinteriors.example.com?subject=Following up · Interior design partnership&body=... — no email-now, no result-sent, no draft controls. (Detail /opportunities/opp_louisiana) no-outreach-notice rendered, ZERO email/text/draft/result controls, Won/Lost/Get more info first still present. (Relationships) sweeney pill = email-now-opp_sweeney, greige pill = follow-up-email-opp_greige, louisiana pill = partner-no-outreach-opp_louisiana, 0 partner-draft-*. Playwright request interception on hound-priorities host across ALL Email Now + Follow Up Email clicks (home + detail, sweeney + greige) recorded 0 POST/PATCH/PUT/DELETE to /api/* — external hosts filtered. DB baseline before/after: contact_handoffs total = 4, sweeney = 0, greige = 0 (unchanged). 'I sent it' regression: clicking result-sent-opp_sweeney (after accepting confirm dialog) fired exactly 1 POST /api/opportunities/opp_sweeney/result and rendered 'Saved as sent' toast. Backend regression /app/backend/tests/test_iteration_9_governed_leaks.py 6/6 passed (total=18, buckets 4/5/9, ordering opp_004→opp_001→opp_sweeney→opp_002).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CommandCenter (Home) Ready/Contacted rows", "issues": ["ReadyRow and ContactedRow build their mailto and navigate via `window.location.href = mailto:...` inside an onClick handler, whereas OpenInMessages (used on Detail + NBA + Relationships) uses a plain <a href=mailto:>. Both work, but the anchor form is preferred (right-click Copy Link Address, keyboard access, external-tap behaviour on mobile). Consider unifying the home rows to also use an anchor tag to remove the duplicated buildFirstDraft/buildFollowUpDraft helpers in CommandCenter.jsx and route through OpenInMessages for a single source of truth for subject/body/signature."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_9_governed_leaks.py",
+    "/app/backend/tests/test_iteration_10_no_write_on_draft.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "queue.js allowedAction: SMS branches are gone; returns only email_first / email_followup / null gated by exact-string Current Queue + presence of an @-containing email. Strict, correct.",
+    "OpenInMessages.jsx: returns null when outreachAllowed==='none' OR no email present — SMS is never substituted when only a phone is on file. One anchor tag with mailto: is the sole render path (pill or panel). Zero side effects on click.",
+    "CommandCenter.jsx ReadyRow/ContactedRow: duplicates buildFirstDraft/buildFollowUpDraft from OpenInMessages.jsx. DRY violation — extract to a shared /lib/mailto.js and consume from both. Not blocking.",
+    "OpportunityDetail.jsx: Draft-a-Note button removed from action stack; hero uses OpenInMessages panel + ContactResults. queueBucket==='all' branch shows no-outreach-notice and hides OpenInMessages + ContactResults entirely. Correct.",
+    "NextBestAction.jsx and Relationships.jsx: PenLine icon is still imported but never used (Draft-a-Note button removed). Minor lint noise — safe to remove imports.",
+    "Backend POST /api/opportunities/{id}/handoff endpoint (server.py:787) and api.logHandoff() client wrapper remain but have zero call sites in the UI. Recommend deleting or marking @deprecated to prevent accidental re-adoption.",
+    "ContactResults 'I sent it' path uses window.confirm() — the ONE explicit outcome write. Correctly gated to Ready via firstContactOnly filter (mode!=='first_contact' hides it on Contacted)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. contact_handoffs baseline: total=4, opp_sweeney=0, opp_greige=0 — unchanged after the full Email Now + Follow Up Email click sweep.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Zero-write single-button outreach invariant is enforced. Next iteration only needs to re-run: (1) static grep for retired testids returns 0, (2) mailto href on email-now-opp_sweeney and follow-up-email-opp_greige, (3) request interception for /api/* writes across Email Now + Follow Up Email clicks = 0, (4) result-sent-opp_sweeney still fires 1 POST after accepting confirm dialog. Backend regression file: /app/backend/tests/test_iteration_9_governed_leaks.py.",
+  "rca of the issue": "N/A — iteration 11 confirmed the single-button rewrite. Every retired draft/SMS/draft-a-note testid is gone from the DOM on Home, Detail, and Relationships; Email Now (Ready) and Follow Up Email (Contacted) each render exactly once per eligible record and open a plain mailto with the playbook subject/body + signature; opening either fires zero /api/* writes and does not create a contact_handoffs row; result-sent remains the single explicit outcome write path."
+}

@@ -89,32 +89,22 @@ export const sortForQueue = (items) =>
 
 /**
  * allowedAction — which draft (if any) this record is eligible for.
- * The GATE is strict Current Queue. The choice between email and SMS is a
- * presentation-only detail — it selects which mailto:/sms: URL to build.
+ * The GATE is strict Current Queue. Ready to Contact + Contacted only ever
+ * use EMAIL — never SMS as a fallback — because the app has moved to a
+ * single-button "Email Now" / "Follow Up Email" workflow. If there is no
+ * verified public business email, the button does not render.
  * Opening either draft writes nothing and changes no state.
  *
- *   "email_first"    → device-native email draft (Ready to Contact only)
- *   "sms_first"      → device-native SMS draft (Ready to Contact only,
- *                       only if SMS Permission is explicitly granted)
- *   "email_followup" → follow-up email draft (Contacted only)
- *   "sms_followup"   → follow-up SMS draft (Contacted only, SMS Permission)
+ *   "email_first"    → Email Now button on Ready to Contact rows
+ *   "email_followup" → Follow Up Email button on Contacted rows
  *   null             → no messaging control rendered
  */
 export const allowedAction = (opp) => {
   const bucket = queueBucket(opp);
   if (bucket === "all") return null;
   const hasEmail = /@/.test(opp?.email || opp?.email_alt || "");
-  const smsPermitted =
-    /yes|granted|opted[\s-]?in|true/i.test((opp?.sms_permission || "").toString());
-  if (bucket === "ready") {
-    if (hasEmail) return "email_first";
-    if (smsPermitted) return "sms_first";
-    return null;
-  }
-  // bucket === "contacted"
-  if (hasEmail) return "email_followup";
-  if (smsPermitted) return "sms_followup";
-  return null;
+  if (!hasEmail) return null;
+  return bucket === "ready" ? "email_first" : "email_followup";
 };
 
 /**

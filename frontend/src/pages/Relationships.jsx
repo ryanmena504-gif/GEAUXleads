@@ -14,7 +14,6 @@ import {
   Handshake,
   Instagram,
   MapPin,
-  PenLine,
   PhoneCall,
 } from "lucide-react";
 
@@ -165,22 +164,8 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
               // Contacted) or nothing when no channel is on file.
               return <OpenInMessages opportunity={person} variant="pill" />;
             })()}
-            {/* Draft a note is a first-contact action — Ready to Contact only. */}
-            {outreachAllowed(person) === "first_contact" && (
-              <button
-                type="button"
-                onClick={() => onDraft(person)}
-                data-testid={`partner-draft-${person.id}`}
-                className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] transition-colors"
-                style={{
-                  background: "var(--bh-brass-mute)",
-                  borderColor: "var(--bh-hair-warm)",
-                  color: "var(--bh-brass)",
-                }}
-              >
-                <PenLine size={12} /> Draft a note
-              </button>
-            )}
+            {/* Draft-a-note retired app-wide. Email Now / Follow Up Email
+                inside OpenInMessages is the single outreach entry point. */}
           </div>
         </div>
       </div>

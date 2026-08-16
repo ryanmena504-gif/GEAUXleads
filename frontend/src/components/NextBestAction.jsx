@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
-  PenLine,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
@@ -200,20 +199,8 @@ export const NextBestAction = () => {
 
       {/* Action buttons */}
       <div className="px-5 sm:px-7 pb-5 pt-3 border-t bh-hairline flex flex-wrap gap-2">
-        {l.lane === "partner" && outreachAllowed(l) === "first_contact" && (
-          <button
-            onClick={() => setDraftDrawerOpen(true)}
-            data-testid="nba-draft-note"
-            className="h-11 px-4 rounded border text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
-            style={{
-              background: "var(--bh-brass-mute)",
-              borderColor: "var(--bh-hair-warm)",
-              color: "var(--bh-brass)",
-            }}
-          >
-            <PenLine size={13} /> Draft a note
-          </button>
-        )}
+        {/* Draft-a-note retired — Email Now / Follow Up Email inside
+            OpenInMessages is the single outreach entry point. */}
         <button
           onClick={() => act("hold")}
           disabled={busy === "hold"}

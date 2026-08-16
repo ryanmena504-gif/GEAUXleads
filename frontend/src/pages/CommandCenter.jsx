@@ -160,7 +160,6 @@ const ReadyRow = ({ opp, sender }) => {
   const chips = whyReady(opp);
   const action = allowedAction(opp);
   const email = opp.email || opp.email_alt;
-  const phone = opp.phone || opp.phone_alt;
 
   const onEmailDraft = (e) => {
     e.preventDefault();
@@ -168,15 +167,6 @@ const ReadyRow = ({ opp, sender }) => {
     if (!email) return;
     const draft = buildFirstDraft(opp, sender);
     window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
-  };
-
-  const onSmsDraft = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!phone) return;
-    const draft = buildFirstDraft(opp, sender);
-    const body = `${draft.subject}\n\n${draft.body}`;
-    window.location.href = `sms:${enc(phone)}&body=${enc(body)}`;
   };
 
   return (
@@ -258,27 +248,17 @@ const ReadyRow = ({ opp, sender }) => {
         {action === "email_first" && email && (
           <button
             type="button"
-            data-testid={`open-email-draft-${opp.id}`}
+            data-testid={`email-now-${opp.id}`}
             onClick={onEmailDraft}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium"
+            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md text-[13px] font-semibold"
             style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
           >
-            <Mail size={13} /> Open Email Draft
-          </button>
-        )}
-        {action === "sms_first" && phone && (
-          <button
-            type="button"
-            data-testid={`open-sms-draft-${opp.id}`}
-            onClick={onSmsDraft}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink)]"
-          >
-            <Phone size={13} /> Open Text Draft
+            <Mail size={13} /> Email Now
           </button>
         )}
         {!action && (
           <span className="text-[11.5px] text-[var(--bh-ink-3)]">
-            No email or SMS permission on file — open the record to add one.
+            No verified public business email on file — open the record to add one.
           </span>
         )}
         <Link
@@ -298,19 +278,14 @@ const ReadyRow = ({ opp, sender }) => {
  */
 const ContactedRow = ({ opp, sender }) => {
   const email = opp.email || opp.email_alt;
-  const phone = opp.phone || opp.phone_alt;
   const action = allowedAction(opp);
 
   const onFollowUp = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (action !== "email_followup" || !email) return;
     const draft = buildFollowUpDraft(opp, sender);
-    if (action === "email_followup" && email) {
-      window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
-    } else if (action === "sms_followup" && phone) {
-      const body = `${draft.subject}\n\n${draft.body}`;
-      window.location.href = `sms:${enc(phone)}&body=${enc(body)}`;
-    }
+    window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
   };
 
   return (
@@ -346,19 +321,19 @@ const ContactedRow = ({ opp, sender }) => {
         </Link>
       </div>
       <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
-        {(action === "email_followup" || action === "sms_followup") && (
+        {action === "email_followup" && (
           <button
             type="button"
-            data-testid={`open-followup-draft-${opp.id}`}
+            data-testid={`follow-up-email-${opp.id}`}
             onClick={onFollowUp}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
+            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md text-[13px] font-semibold border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
           >
-            <Reply size={13} /> Open Follow-Up Draft
+            <Reply size={13} /> Follow Up Email
           </button>
         )}
         {!action && (
           <span className="text-[11.5px] text-[var(--bh-ink-3)]">
-            No follow-up channel on file — open the record for details.
+            No verified public business email on file — open the record for details.
           </span>
         )}
         <Link
