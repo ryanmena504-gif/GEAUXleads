@@ -292,19 +292,25 @@ Construction). Preserves priority: real `first_message` → `first_contact_messa
 → smart fallback based on `lane === 'partner'`.
 
 **PWA Home Screen install** — added `manifest.json`, `apple-touch-icon.png`
-(180x180 brass-B on deep ink), `icon-192.png`, `icon-512.png`, and iOS
+(180x180), `icon-192.png`, `icon-512.png`, `favicon-32.png`, and iOS
 meta tags to `index.html`. Ryan opens the preview on his iPhone in Safari
 → Share → Add to Home Screen → Bloodhound icon lands on his Home Screen
-→ tapping opens the app full-screen (no Safari chrome). Icon is a
-placeholder until Ryan sends the cartoon character image.
+→ tapping opens the app full-screen (no Safari chrome).
+
+**Custom Home Screen icon (2026-02-17)** — Ryan uploaded his Shirtless
+Handyman cartoon character artwork; all four icon files were regenerated
+from the 1024x1024 source at proper sizes (180/192/512/32) with Lanczos
+resampling. Manifest `purpose` set to `any` (no maskable crop) so the
+character composition is preserved edge-to-edge on iOS Home Screen.
 
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped
 3. ✅ Preview wired to real Airtable
 4. ✅ Reverse Lookup shipped
-5. ✅ PWA Home Screen icon (placeholder — awaiting cartoon character asset)
-6. Referral prompt after Won — planned
+5. ✅ PWA Home Screen icon (custom cartoon character shipped 2026-02-17)
+6. ✅ iOS Shortcut recipe for Reverse Lookup delivered (instructions only)
+7. Referral prompt after Won — planned
 
 ## Backlog / Next
 - **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.
