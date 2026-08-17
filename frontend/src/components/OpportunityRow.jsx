@@ -5,7 +5,7 @@ import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import LaneBadge from "@/components/LaneBadge";
 import ContactBadge from "@/components/ContactBadge";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
 
 /**
@@ -77,10 +77,18 @@ export const OpportunityRow = ({ opp }) => (
       </div>
 
       <div className="flex-col items-end text-right hidden md:flex shrink-0">
-        <div className="bh-eyebrow">Possible work value</div>
-        <div className="font-display text-[20px] text-[var(--bh-ink)] tabular-nums mt-0.5">
-          {fmtMoney(opp.estimated_value)}
-        </div>
+        {(() => {
+          const money = moneyDisplay(opp);
+          if (!money) return null;
+          return (
+            <>
+              <div className="bh-eyebrow">Possible work value</div>
+              <div className="font-display text-[20px] text-[var(--bh-ink)] tabular-nums mt-0.5">
+                {money}
+              </div>
+            </>
+          );
+        })()}
         {opp.decision_maker && (
           <div className="text-[12px] text-[var(--bh-ink-mute)] mt-2 truncate max-w-[180px]">
             {opp.decision_maker}

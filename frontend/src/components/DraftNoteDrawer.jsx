@@ -216,7 +216,6 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, opp.id]);
 
   const switchPlaybook = useCallback(

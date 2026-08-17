@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sun, Coffee, Flag, Clock, ChevronRight, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { fmtMoney } from "@/lib/formatters";
+import { moneyDisplay } from "@/lib/formatters";
 
 /**
  * MorningBrief — the same content that ships in the 7am email, rendered as
@@ -51,7 +51,7 @@ const Section = ({ eyebrow, icon: Icon, items, emptyText, renderNote }) => {
               </div>
               <div className="mt-0.5 text-[11.5px] text-[var(--bh-ink-3)] truncate">
                 {r.project_type ? `${r.project_type} · ` : ""}
-                {r.estimated_value ? `${fmtMoney(r.estimated_value)} · ` : ""}
+                {(() => { const m = moneyDisplay(r); return m ? `${m} · ` : ""; })()}
                 {typeof r.governed_priority_score === "number" ? `Score ${r.governed_priority_score}` : ""}
               </div>
               <div className="mt-1 text-[11.5px] text-amber-200/85 leading-snug">

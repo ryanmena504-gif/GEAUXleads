@@ -27,7 +27,7 @@ const AppLayout = () => {
         <Sidebar />
         <main
           data-testid="app-main"
-          className="lg:pl-60 min-h-screen pb-24 lg:pb-0"
+          className="lg:pl-64 min-h-screen pb-24 lg:pb-0"
         >
           <Outlet />
         </main>

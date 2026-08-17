@@ -45,13 +45,13 @@ const Mark = ({ size = 32 }) => (
 export const BloodhoundLogo = ({ compact = false }) => {
   if (compact) {
     return (
-      <Link to="/" className="inline-flex items-center gap-2">
+      <Link to="/" data-testid="bloodhound-logo-compact" className="inline-flex items-center gap-2">
         <Mark size={28} />
       </Link>
     );
   }
   return (
-    <Link to="/" className="inline-flex items-center gap-3 group">
+    <Link to="/" data-testid="bloodhound-logo" className="inline-flex items-center gap-3 group">
       <Mark size={34} />
       <div className="leading-tight">
         <div className="font-display text-[19px] text-[var(--bh-ink)] tracking-tight">

@@ -52,6 +52,9 @@ class AirtableWebhookManager:
         r.raise_for_status()
         return r.json().get("webhooks", []) or []
 
+    class MissingWebhookScope(Exception):
+        """Raised when the Airtable PAT lacks the webhook:manage scope."""
+
     async def _delete(self, client: httpx.AsyncClient, webhook_id: str) -> None:
         r = await client.delete(
             f"{AIRTABLE_API}/bases/{self.base_id}/webhooks/{webhook_id}",
@@ -85,7 +88,19 @@ class AirtableWebhookManager:
     # ---------- registration ----------
     async def ensure_registered(self) -> None:
         async with httpx.AsyncClient(timeout=30) as client:
-            existing = await self._list(client)
+            try:
+                existing = await self._list(client)
+            except httpx.HTTPStatusError as e:
+                # 403 → PAT is missing the webhook:manage scope. That's an
+                # operator config issue, not a code bug. Surface a friendly
+                # one-line warning so preview logs stay readable.
+                if e.response.status_code == 403:
+                    raise AirtableWebhookManager.MissingWebhookScope(
+                        "Airtable PAT is missing the 'webhook:manage' scope — "
+                        "live push updates are disabled. Add the scope in Airtable → "
+                        "Developer Hub → Personal access tokens to enable SSE."
+                    ) from e
+                raise
             # Clean up ANY webhook already pointing at our URL so we get a fresh secret.
             for w in existing:
                 if w.get("notificationUrl") == self.notification_url:
@@ -195,6 +210,11 @@ async def init_webhook_manager() -> Optional[AirtableWebhookManager]:
     )
     try:
         await mgr.ensure_registered()
+    except AirtableWebhookManager.MissingWebhookScope as e:
+        # Clean, single-line warning. The rest of the app runs perfectly
+        # without live push — the frontend falls back to polling.
+        log.warning("Live push disabled: %s", e)
+        return None
     except Exception:
         log.exception("Webhook registration failed at startup")
         return None

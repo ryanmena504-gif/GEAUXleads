@@ -41,8 +41,24 @@ export const useLiveUpdates = (onUpdate) => {
       };
     };
 
-    connect();
+    // Probe the backend once — if the Airtable webhook wasn't registered
+    // (missing scope on the PAT, webhooks disabled, etc.) the SSE endpoint
+    // will only ever return 503. Skip the reconnect loop entirely so we
+    // don't hammer the server with retries.
+    let cancelled = false;
+    fetch(`${BASE}/api/live/status`)
+      .then((r) => (r.ok ? r.json() : { registered: false }))
+      .then((s) => {
+        if (cancelled) return;
+        if (s && s.registered) connect();
+      })
+      .catch(() => {
+        // Network hiccup — try connecting anyway; onerror will back off.
+        if (!cancelled) connect();
+      });
+
     return () => {
+      cancelled = true;
       closed = true;
       if (es) es.close();
     };

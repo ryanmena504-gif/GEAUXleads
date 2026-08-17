@@ -21,7 +21,7 @@ import {
   Phone,
   FileText,
 } from "lucide-react";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 
 const PAGES = [
   { to: "/", label: "Today's Work", icon: LayoutDashboard, hint: "Dashboard" },
@@ -122,7 +122,7 @@ export const CommandPalette = ({ open, onOpenChange }) => {
                     {sourceLabel(o.source)}
                   </div>
                   <div className="font-display text-[14px] text-[var(--bh-ink)] whitespace-nowrap tabular-nums">
-                    {fmtMoney(o.estimated_value)}
+                    {moneyDisplay(o) || "—"}
                   </div>
                 </div>
               </CommandItem>

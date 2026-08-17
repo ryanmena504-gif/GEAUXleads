@@ -7,7 +7,7 @@ import MissionBadge from "@/components/MissionBadge";
 import StatusBadge from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import { MISSIONS } from "@/lib/constants";
-import { fmtMoney } from "@/lib/formatters";
+import { moneyDisplay } from "@/lib/formatters";
 import { CheckCircle2, Clock } from "lucide-react";
 
 const missionCopy = {
@@ -134,7 +134,7 @@ const Missions = () => {
                       </div>
                       <div className="mt-3 flex items-center justify-between">
                         <span className="font-display font-semibold text-neutral-200">
-                          {fmtMoney(o.estimated_value)}
+                          {moneyDisplay(o) || "—"}
                         </span>
                         <span className="mono text-[10px] text-[var(--bh-ink-mute)] uppercase tracking-widest truncate max-w-[140px]">
                           {o.decision_maker || "Contact TBD"}

@@ -7,7 +7,7 @@ import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import { api } from "@/lib/api";
 import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { LayoutGrid, Rows3, X } from "lucide-react";
 
 const FilterChip = ({ label, active, onClick, testId }) => (
@@ -77,9 +77,11 @@ const Opportunities = () => {
   };
 
   useEffect(() => {
+    // filters is derived from these three inputs; listing them directly is
+    // equivalent to depending on `filters` itself without recreating the
+    // object every render.
     api.listOpportunities(filters).then(setItems);
-    // filters is derived from searchParams/minScore/q; sort is inside searchParams
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, minScore, q]);
 
   const activeFilterCount = useMemo(
@@ -319,7 +321,7 @@ const Opportunities = () => {
                     Found on {sourceLabel(o.source)}
                   </span>
                   <span className="font-display font-semibold text-neutral-200">
-                    {fmtMoney(o.estimated_value)}
+                    {moneyDisplay(o) || "—"}
                   </span>
                 </div>
               </Link>
