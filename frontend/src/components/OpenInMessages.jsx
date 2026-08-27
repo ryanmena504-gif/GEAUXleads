@@ -46,7 +46,9 @@ const buildFirstDraft = (opp, sender) => {
     (opp?.decision_maker && opp.decision_maker.split(" ")[0]) ||
     (opp?.name && opp.name.split(" ")[0]) ||
     "there";
-  const isPartner = (opp?.lane || "").toLowerCase() === "partner";
+  const lane = (opp?.lane || "").toLowerCase();
+  const isPartner = lane === "partner";
+  const isLandlord = lane === "landlord";
   const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
   const partnerFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across ${opp?.name || "your team"} while looking at the kind of work being done around the area.`,
@@ -55,17 +57,24 @@ const buildFirstDraft = (opp, sender) => {
     "",
     "Would love to trade referrals or meet up for a quick coffee if you're open to it.",
   ].join("\n");
+  const landlordFallback = [
+    `I'm ${senderName} with The Shirtless Handyman. I saw you own ${opp?.project_address || "properties around the area"} and wanted to reach out.`,
+    "",
+    "I'm a one-call fix. No coordinating three trades, no waiting on estimates. Text me a photo of what needs attention and I'll tell you what it'll cost and when I can be there.",
+  ].join("\n");
   const projectFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across your ${opp?.project_type || "project"} and wanted to reach out.`,
     "",
     "We handle seamless finish work when a project calls for something beyond tile or paint: microcement, lime plaster, waterproof grout-free showers, feature walls, and similar details. Happy to answer any questions or share references whenever you're ready.",
   ].join("\n");
-  const fallbackBody = isPartner ? partnerFallback : projectFallback;
+  const fallbackBody = isLandlord ? landlordFallback : (isPartner ? partnerFallback : projectFallback);
   const subject =
     opp?.first_message_subject ||
-    (isPartner
-      ? `${senderName} at The Shirtless Handyman — quick intro`
-      : `Quick note about your ${opp?.project_type || "project"}`);
+    (isLandlord
+      ? `Turnovers, punch-list, and everything between tenants`
+      : isPartner
+        ? `${senderName} at The Shirtless Handyman — quick intro`
+        : `Quick note about your ${opp?.project_type || "project"}`);
   const body = [
     `Hi ${opp?.decision_maker || first},`,
     "",
@@ -81,12 +90,18 @@ const buildFirstDraft = (opp, sender) => {
 
 const buildFollowUpDraft = (opp, sender) => {
   const first = (opp?.decision_maker || opp?.name || "there").split(" ")[0];
-  const subject = `Following up · ${opp?.project_type || opp?.name || "your project"}`;
+  const isLandlord = (opp?.lane || "").toLowerCase() === "landlord";
+  const subject = isLandlord
+    ? `Turnover check-in · ${opp?.project_address || opp?.name || "your properties"}`
+    : `Following up · ${opp?.project_type || opp?.name || "your project"}`;
+  const landlordDefault =
+    "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
+  const projectDefault =
+    "Just checking in to see if now is a better time to chat.";
   const body = [
     `Hi ${first},`,
     "",
-    opp?.current_recommendation ||
-      "Just checking in to see if now is a better time to chat.",
+    opp?.current_recommendation || (isLandlord ? landlordDefault : projectDefault),
   ]
     .filter(Boolean)
     .join("\n");

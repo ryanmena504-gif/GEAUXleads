@@ -8,6 +8,7 @@ import { LANE_LABEL } from "@/lib/constants";
 const LANE_STYLES = {
   market_capture: { fg: "var(--bh-brass)", bg: "var(--bh-brass-mute)", border: "var(--bh-hair-warm)" },
   partner:        { fg: "var(--bh-olive)", bg: "var(--bh-olive-mute)", border: "rgba(107,122,85,0.32)" },
+  landlord:       { fg: "#3f6b6b",         bg: "rgba(63,107,107,0.10)", border: "rgba(63,107,107,0.30)" },
   non_permit:     { fg: "#4b6b6f",         bg: "rgba(75,107,111,0.10)", border: "rgba(75,107,111,0.30)" },
 };
 
@@ -15,6 +16,7 @@ const LANE_STYLES = {
 const DISPLAY_LABEL = {
   market_capture: "Project",
   partner: "Person to know",
+  landlord: "Landlord",
   non_permit: "Watching",
 };
 

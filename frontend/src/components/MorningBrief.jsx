@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sun, Coffee, Flag, Clock, ChevronRight, ArrowRight } from "lucide-react";
+import { Sun, Coffee, Flag, Clock, ChevronRight, ArrowRight, Home } from "lucide-react";
 import { api } from "@/lib/api";
 import { moneyDisplay } from "@/lib/formatters";
 
@@ -143,6 +143,16 @@ const MorningBrief = () => {
           icon={ArrowRight}
           items={brief.follow_ups || []}
           renderNote={(r) => `${r.bucket_label} · ${r.days_since_touch} days since last ${r.last_channel}`}
+        />
+        <Section
+          eyebrow={`Turnover check-ins (${brief.counts?.turnover_checkins || 0})`}
+          icon={Home}
+          items={brief.turnover_checkins || []}
+          renderNote={(r) => {
+            const cadence = r.cadence && r.cadence !== "Unknown" ? `${r.cadence} cadence` : "Cadence unknown";
+            const since = r.days_since_touch == null ? "never nudged" : `${r.days_since_touch} days since last touch`;
+            return `${cadence} · ${since}`;
+          }}
         />
         <Section
           eyebrow={`Estimate deadlines (${brief.counts?.estimate_nudges || 0})`}

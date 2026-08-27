@@ -137,6 +137,14 @@ LIVE_FIELDS: Dict[str, str] = {
     "Premium property or client ": "flag_premium",
     "Recent activity ": "flag_recent_activity",
     "Partnership potential ": "flag_partnership",
+    "Landlord signal": "flag_landlord",
+
+    # Landlord-specific fields — Make classifies portfolio size and turnover
+    # cadence when a lead is flagged as a landlord. Absent on non-landlord
+    # records and rendered as blank — never invented.
+    "Turnover Cadence": "turnover_cadence",
+    "Portfolio Size": "portfolio_size",
+    "Last Turnover Check": "last_turnover_check",
 
     # Funnel checkboxes (drive derived Status)
     "Verified opportunity": "flag_verified",
@@ -417,16 +425,18 @@ def _derive_priority_score(opp: Dict[str, Any]) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
-# Lane classification — three parallel funnels the dashboard ranks across.
+# Lane classification — four parallel funnels the dashboard ranks across.
 #   market_capture   — permit-driven qualified project leads (the default)
 #   partner          — contractors/designers/architects/suppliers/referrers
+#   landlord         — rental-portfolio owners (recurring turnover work)
 #   non_permit       — public non-permit signals (website, social, referral…)
 # ---------------------------------------------------------------------------
-LANES = ("market_capture", "partner", "non_permit")
+LANES = ("market_capture", "partner", "landlord", "non_permit")
 
 LANE_LABELS = {
     "market_capture": "Market Capture",
     "partner": "Partner Pipeline",
+    "landlord": "Landlord Pipeline",
     "non_permit": "Non-Permit Signals",
 }
 
@@ -435,13 +445,24 @@ _PARTNER_TYPE_TOKENS = (
     "supplier", "vendor", "referral", "partner",
 )
 _PARTNER_SOURCE_TOKENS = ("partner", "referral", "network", "trade")
+_LANDLORD_TYPE_TOKENS = (
+    "landlord", "rental", "property owner", "portfolio",
+    "multi-family", "multifamily", "duplex", "triplex", "fourplex",
+)
 
 
 def _derive_lane(opp: Dict[str, Any]) -> str:
-    if opp.get("flag_partnership") is True:
-        return "partner"
+    # Landlord takes precedence — it's the most specific classification.
+    # Two ways to be tagged: the governed `Landlord signal` checkbox (set by
+    # Make) OR `Opportunity type` contains a landlord token.
+    if opp.get("flag_landlord") is True:
+        return "landlord"
     otype = (opp.get("project_type") or "")
     otype_l = otype.lower() if isinstance(otype, str) else ""
+    if any(tok in otype_l for tok in _LANDLORD_TYPE_TOKENS):
+        return "landlord"
+    if opp.get("flag_partnership") is True:
+        return "partner"
     if any(tok in otype_l for tok in _PARTNER_TYPE_TOKENS):
         return "partner"
     src_cat = (opp.get("source_category") or "")

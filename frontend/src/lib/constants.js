@@ -34,6 +34,7 @@ export const LANES = [
 export const LANE_LABEL = {
   market_capture: "Projects",
   partner: "People to Know",
+  landlord: "Landlords",
   non_permit: "Projects to Watch",
 };
 

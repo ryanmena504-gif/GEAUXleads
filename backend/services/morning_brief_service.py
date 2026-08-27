@@ -35,6 +35,17 @@ FOLLOWUP_LABEL = {
 NEW_READY_WINDOW_HOURS = 24
 ESTIMATE_STALE_DAYS = 7
 
+# Turnover check-in cadences (in days) — how often we nudge landlords per
+# their governed `Turnover Cadence` value. Landlords with no cadence set
+# default to Quarterly so they still surface eventually.
+TURNOVER_CADENCE_DAYS = {
+    "Monthly": 30,
+    "Quarterly": 60,
+    "Annual": 180,
+    "Unknown": 90,
+}
+DEFAULT_TURNOVER_DAYS = 60
+
 
 def _parse_iso(value: Optional[str]) -> Optional[datetime]:
     if not value or not isinstance(value, str):
@@ -77,8 +88,14 @@ async def compose_brief(
     ready_new = _pick_new_ready(all_ops, now)
     estimate_nudges = _pick_estimate_deadlines(all_ops, now)
     follow_ups = await _pick_follow_ups(all_ops, handoff_service, now)
+    turnover_checkins = _pick_turnover_checkins(all_ops, now)
 
-    total = len(ready_new) + len(estimate_nudges) + len(follow_ups)
+    total = (
+        len(ready_new)
+        + len(estimate_nudges)
+        + len(follow_ups)
+        + len(turnover_checkins)
+    )
     return {
         "generated_at": now.isoformat(),
         "operator_name": "Ryan",
@@ -86,11 +103,13 @@ async def compose_brief(
             "new_ready": len(ready_new),
             "follow_ups": len(follow_ups),
             "estimate_nudges": len(estimate_nudges),
+            "turnover_checkins": len(turnover_checkins),
             "total": total,
         },
         "new_ready": ready_new,
         "follow_ups": follow_ups,
         "estimate_nudges": estimate_nudges,
+        "turnover_checkins": turnover_checkins,
     }
 
 
@@ -123,6 +142,51 @@ def _pick_estimate_deadlines(all_ops: List[Dict[str, Any]], now: datetime) -> Li
             continue
         out.append(_row(o, {"days_since_reply": round(days, 1)}))
     out.sort(key=lambda r: -(r.get("days_since_reply") or 0))
+    return out[:5]
+
+
+def _pick_turnover_checkins(all_ops: List[Dict[str, Any]], now: datetime) -> List[Dict[str, Any]]:
+    """Landlords whose next turnover-check date has passed.
+
+    A landlord shows up here when:
+      • lane == "landlord"
+      • current_queue is "Contacted" or "Ready to Contact" (not All Projects)
+      • the days since their last touch exceeds their governed Turnover
+        Cadence window (Monthly=30, Quarterly=60, Annual=180, else 60).
+
+    Read-only. Never invents a cadence — falls back to 60 days if unset so
+    landlords still surface eventually.
+    """
+    out: List[Dict[str, Any]] = []
+    for o in all_ops:
+        if (o.get("lane") or "").lower() != "landlord":
+            continue
+        queue = (o.get("current_queue") or "").strip()
+        if queue not in {"Contacted", "Ready to Contact"}:
+            continue
+        cadence = (o.get("turnover_cadence") or "").strip()
+        window_days = TURNOVER_CADENCE_DAYS.get(cadence, DEFAULT_TURNOVER_DAYS)
+        last_touch = _first(
+            o.get("last_turnover_check"),
+            o.get("date_contacted"),
+            o.get("message_sent_date"),
+        )
+        hours = _hours_since(last_touch, now)
+        # If we've never touched them and they're already Ready, surface now.
+        days = (hours / 24.0) if hours is not None else float("inf")
+        if days < window_days:
+            continue
+        out.append(_row(o, {
+            "cadence": cadence or "Unknown",
+            "cadence_days": window_days,
+            "days_since_touch": None if hours is None else round(days, 1),
+            "portfolio_size": o.get("portfolio_size"),
+        }))
+    # Longest-overdue first, then highest score.
+    out.sort(key=lambda r: (
+        -(r.get("days_since_touch") or 9999),
+        -(r.get("governed_priority_score") or 0),
+    ))
     return out[:5]
 
 
@@ -292,6 +356,16 @@ def render_brief_html(brief: Dict[str, Any], app_base_url: str) -> str:
         _row_html(r, app_base_url, f'Estimate sent {r.get("days_since_reply", "?")} days ago')
         for r in brief.get("estimate_nudges", [])
     )
+    def _fmt_turnover_note(r: Dict[str, Any]) -> str:
+        cadence = r.get("cadence") or "cadence unknown"
+        d = r.get("days_since_touch")
+        since = "never nudged" if d is None else f"{d} days since last touch"
+        return f"Turnover check-in · {cadence} cadence · {since}"
+
+    turnover_rows = "".join(
+        _row_html(r, app_base_url, _fmt_turnover_note(r))
+        for r in brief.get("turnover_checkins", [])
+    )
 
     ready_section = _section_html(
         f'New Ready to Contact ({counts.get("new_ready", 0)})',
@@ -308,6 +382,11 @@ def render_brief_html(brief: Dict[str, Any], app_base_url: str) -> str:
         estimate_rows,
         "No estimates have gone quiet.",
     )
+    turnover_section = _section_html(
+        f'Turnover check-ins ({counts.get("turnover_checkins", 0)})',
+        turnover_rows,
+        "No landlord check-ins are due.",
+    ) if counts.get("turnover_checkins", 0) > 0 else ""
 
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -328,6 +407,7 @@ def render_brief_html(brief: Dict[str, Any], app_base_url: str) -> str:
         f'        </div>'
         f'        {ready_section}'
         f'        {followup_section}'
+        f'        {turnover_section}'
         f'        {estimate_section}'
         f'        <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e5e2d8;'
         f'font-size:11px;color:#8a8578;line-height:1.6">'
