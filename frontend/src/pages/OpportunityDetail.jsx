@@ -9,6 +9,7 @@ import EditableDecisionPanel from "@/components/EditableDecisionPanel";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
+import LandlordPortfolio from "@/components/LandlordPortfolio";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -380,6 +381,9 @@ const OpportunityDetail = () => {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left col: Intelligence + Contact + Property */}
           <div className="lg:col-span-2 space-y-6">
+            {opp.lane === "landlord" && (
+              <LandlordPortfolio opportunityId={opp.id} />
+            )}
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading

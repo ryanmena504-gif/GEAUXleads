@@ -991,6 +991,101 @@ async def find_by_phone(number: str):
 
 
 # ============================================================================
+# Landlord Portfolio Roll-Up — GET /api/opportunities/{opp_id}/portfolio
+# When viewing a landlord record, return every other landlord record that
+# shares the same contact identity (email > phone tail > decision_maker name).
+# Two records "belong to the same landlord" if any of these match:
+#   • normalized email (case-insensitive, trimmed)
+#   • last 10 digits of phone/phone_alt
+#   • decision_maker string equality (case-insensitive, whitespace-trimmed)
+# The current record is INCLUDED in the response with `is_current=true` so
+# the UI can highlight it in the property list.
+# Read-only. Zero writes.
+# ============================================================================
+@api_router.get("/opportunities/{opp_id}/portfolio")
+async def landlord_portfolio(opp_id: str):
+    from services.opportunity_service import get_opportunity_service
+
+    def _digits_tail(v: Any) -> Optional[str]:
+        d = "".join(ch for ch in str(v or "") if ch.isdigit())
+        return d[-10:] if len(d) >= 7 else None
+
+    def _norm_email(v: Any) -> Optional[str]:
+        e = str(v or "").strip().lower()
+        return e if "@" in e else None
+
+    def _norm_name(v: Any) -> Optional[str]:
+        n = " ".join(str(v or "").strip().lower().split())
+        return n or None
+
+    osvc = get_opportunity_service()
+    current = osvc.get(opp_id) if hasattr(osvc, "get") else None
+    if not current:
+        raise HTTPException(status_code=404, detail=f"No opportunity {opp_id}")
+
+    # Roll-up is landlord-only. Non-landlord records return an empty portfolio
+    # so the frontend can call this endpoint unconditionally.
+    if (current.get("lane") or "").lower() != "landlord":
+        return {"portfolio": [], "match_key": None, "count": 0}
+
+    current_email = _norm_email(current.get("email") or current.get("email_alt"))
+    current_phone_tail = (
+        _digits_tail(current.get("phone"))
+        or _digits_tail(current.get("phone_alt"))
+    )
+    current_name = _norm_name(current.get("decision_maker"))
+
+    def _is_sibling(o: Dict[str, Any]) -> Optional[str]:
+        """Returns the match-key type ("email", "phone", "name") or None."""
+        if (o.get("lane") or "").lower() != "landlord":
+            return None
+        if current_email:
+            for key in ("email", "email_alt"):
+                if _norm_email(o.get(key)) == current_email:
+                    return "email"
+        if current_phone_tail:
+            for key in ("phone", "phone_alt"):
+                if _digits_tail(o.get(key)) == current_phone_tail:
+                    return "phone"
+        if current_name and _norm_name(o.get("decision_maker")) == current_name:
+            return "name"
+        return None
+
+    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    siblings: List[Dict[str, Any]] = []
+    match_key: Optional[str] = None
+    for o in all_ops:
+        m = _is_sibling(o)
+        if not m:
+            continue
+        match_key = match_key or m
+        siblings.append({
+            "id": o.get("id"),
+            "name": o.get("name"),
+            "project_address": o.get("project_address"),
+            "current_queue": o.get("current_queue"),
+            "governed_priority_score": o.get("governed_priority_score"),
+            "portfolio_size": o.get("portfolio_size"),
+            "turnover_cadence": o.get("turnover_cadence"),
+            "last_turnover_check": o.get("last_turnover_check"),
+            "date_contacted": o.get("date_contacted"),
+            "estimated_value": o.get("estimated_value"),
+            "is_current": o.get("id") == opp_id,
+        })
+
+    # Highest-score first, current record floats to top for anchor context.
+    siblings.sort(key=lambda r: (
+        not r["is_current"],
+        -(r.get("governed_priority_score") or 0),
+    ))
+    return {
+        "portfolio": siblings,
+        "match_key": match_key,
+        "count": len(siblings),
+    }
+
+
+# ============================================================================
 # Learning loop — reads through the opportunity list to compute reply-rate and
 # win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).
 # Zero writes. Zero LLM calls. Ryan sees the top ranked pattern on Home.

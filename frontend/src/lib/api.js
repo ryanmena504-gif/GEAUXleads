@@ -88,6 +88,13 @@ export const api = {
   lookupByPhone: (number) =>
     client.get(`/opportunities/by-phone/${encodeURIComponent(number)}`).then((r) => r.data),
 
+  // Landlord Portfolio Roll-Up — sibling properties owned by the same
+  // landlord (matched by shared email > phone tail > name). Returns
+  // { portfolio: [], match_key, count } — safe to call on non-landlord
+  // records (returns empty).
+  landlordPortfolio: (opp_id) =>
+    client.get(`/opportunities/${opp_id}/portfolio`).then((r) => r.data),
+
   // Morning brief — same content that ships in the 7am email. Used by the
   // in-app MorningBrief panel and by Settings' "test send" button.
   morningBrief: () =>
