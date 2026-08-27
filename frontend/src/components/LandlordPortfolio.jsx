@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Home, MapPin, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { moneyDisplay, fmtDate } from "@/lib/formatters";
+import { moneyDisplay, fmtDate, fmtMoney } from "@/lib/formatters";
 
 /**
  * LandlordPortfolio — property roll-up shown on OpportunityDetail for
@@ -101,7 +101,14 @@ const Row = ({ property }) => {
 };
 
 export const LandlordPortfolio = ({ opportunityId }) => {
-  const [state, setState] = useState({ loading: true, portfolio: [], matchKey: null });
+  const [state, setState] = useState({
+    loading: true,
+    portfolio: [],
+    matchKey: null,
+    totalValue: 0,
+    pricedCount: 0,
+    unpricedCount: 0,
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -110,8 +117,14 @@ export const LandlordPortfolio = ({ opportunityId }) => {
         loading: false,
         portfolio: r?.portfolio || [],
         matchKey: r?.match_key || null,
+        totalValue: Number(r?.total_value_numeric) || 0,
+        pricedCount: Number(r?.priced_count) || 0,
+        unpricedCount: Number(r?.unpriced_count) || 0,
       }))
-      .catch(() => mounted && setState({ loading: false, portfolio: [], matchKey: null }));
+      .catch(() => mounted && setState({
+        loading: false, portfolio: [], matchKey: null,
+        totalValue: 0, pricedCount: 0, unpricedCount: 0,
+      }));
     return () => { mounted = false; };
   }, [opportunityId]);
 
@@ -121,6 +134,7 @@ export const LandlordPortfolio = ({ opportunityId }) => {
   if (state.loading || state.portfolio.length < 2) return null;
 
   const otherCount = state.portfolio.length - 1;
+  const hasValue = state.totalValue > 0;
   return (
     <section
       data-testid="landlord-portfolio"
@@ -147,6 +161,21 @@ export const LandlordPortfolio = ({ opportunityId }) => {
             </div>
           )}
         </div>
+
+        {hasValue && (
+          <div className="text-right shrink-0" data-testid="portfolio-value-sum">
+            <div className="mono text-[9.5px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
+              Combined value
+            </div>
+            <div className="font-display text-[22px] font-bold text-[var(--bh-ink)] tabular-nums mt-0.5">
+              {fmtMoney(state.totalValue)}
+            </div>
+            <div className="text-[11px] text-[var(--bh-ink-3)] tabular-nums">
+              {state.pricedCount} of {state.portfolio.length} priced
+              {state.unpricedCount > 0 ? ` · ${state.unpricedCount} unpriced` : ""}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1 pt-1">

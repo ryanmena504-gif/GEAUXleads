@@ -1026,7 +1026,14 @@ async def landlord_portfolio(opp_id: str):
     # Roll-up is landlord-only. Non-landlord records return an empty portfolio
     # so the frontend can call this endpoint unconditionally.
     if (current.get("lane") or "").lower() != "landlord":
-        return {"portfolio": [], "match_key": None, "count": 0}
+        return {
+            "portfolio": [],
+            "match_key": None,
+            "count": 0,
+            "total_value_numeric": 0.0,
+            "priced_count": 0,
+            "unpriced_count": 0,
+        }
 
     current_email = _norm_email(current.get("email") or current.get("email_alt"))
     current_phone_tail = (
@@ -1078,10 +1085,29 @@ async def landlord_portfolio(opp_id: str):
         not r["is_current"],
         -(r.get("governed_priority_score") or 0),
     ))
+
+    # Combined "Possible work value" — sums only numeric `estimated_value`
+    # across the portfolio. Records with string fallbacks ("Not estimated
+    # yet") are counted as unpriced. Never invents a number.
+    total_numeric = 0.0
+    priced_count = 0
+    for r in siblings:
+        raw = r.get("estimated_value")
+        try:
+            n = float(raw) if raw is not None else 0.0
+        except (TypeError, ValueError):
+            n = 0.0
+        if n > 0:
+            total_numeric += n
+            priced_count += 1
+
     return {
         "portfolio": siblings,
         "match_key": match_key,
         "count": len(siblings),
+        "total_value_numeric": total_numeric,
+        "priced_count": priced_count,
+        "unpriced_count": len(siblings) - priced_count,
     }
 
 
