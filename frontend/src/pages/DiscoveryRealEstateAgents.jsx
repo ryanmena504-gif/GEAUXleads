@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
+import FreshContactBadge from "@/components/FreshContactBadge";
 
 /**
  * DiscoveryRealEstateAgents — pre-listing pitch queue for real estate
@@ -128,8 +129,12 @@ const Row = ({ agent, senderName }) => {
   return (
     <div
       data-testid={`agent-row-${agent.id}`}
+      data-fresh={agent.is_freshly_actionable ? "true" : "false"}
       className="bh-surface rounded-md p-4"
-      style={{ border: "1px solid var(--bh-hair)" }}
+      style={{
+        border: agent.is_freshly_actionable ? "1px solid var(--bh-brass)" : "1px solid var(--bh-hair)",
+        background: agent.is_freshly_actionable ? "var(--bh-brass-mute)" : "var(--bh-surface)",
+      }}
     >
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
@@ -141,6 +146,7 @@ const Row = ({ agent, senderName }) => {
             >
               {agent.name || "Unnamed agent"}
             </div>
+            {agent.is_freshly_actionable && <FreshContactBadge testId={`agent-fresh-${agent.id}`} />}
           </div>
           {agent.brokerage && (
             <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] truncate">

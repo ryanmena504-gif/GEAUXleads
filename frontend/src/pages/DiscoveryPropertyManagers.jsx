@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
+import FreshContactBadge from "@/components/FreshContactBadge";
 
 /**
  * DiscoveryPropertyManagers — triage view for the Property Manager
@@ -81,8 +82,12 @@ const Row = ({ item }) => {
   return (
     <div
       data-testid={`pm-row-${item.id}`}
+      data-fresh={item.is_freshly_actionable ? "true" : "false"}
       className="bh-surface rounded-md p-4 hover:shadow-sm transition-shadow"
-      style={{ border: "1px solid var(--bh-hair)" }}
+      style={{
+        border: item.is_freshly_actionable ? "1px solid var(--bh-brass)" : "1px solid var(--bh-hair)",
+        background: item.is_freshly_actionable ? "var(--bh-brass-mute)" : "var(--bh-surface)",
+      }}
     >
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
@@ -94,6 +99,7 @@ const Row = ({ item }) => {
             >
               {item.name || "Unnamed property manager"}
             </div>
+            {item.is_freshly_actionable && <FreshContactBadge testId={`pm-fresh-${item.id}`} />}
           </div>
           {item.portfolio_size && (
             <div className="mt-1 text-[11.5px] text-[var(--bh-ink-3)] inline-flex items-center gap-1">

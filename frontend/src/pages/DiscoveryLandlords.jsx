@@ -8,6 +8,8 @@ import {
   CheckSquare,
   Square,
   FileText,
+  Search,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
@@ -78,6 +80,7 @@ const DiscoveryLandlords = () => {
   const [status, setStatus] = useState("not_contacted");
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
   const [selected, setSelected] = useState(new Set());
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -92,10 +95,58 @@ const DiscoveryLandlords = () => {
         });
         // Clear selection when filter changes to avoid confusion.
         setSelected(new Set());
+        setQuery("");
       })
       .catch(() => mounted && setState({ loading: false, items: [], counts: {} }));
     return () => { mounted = false; };
   }, [status]);
+
+  // ZIP extractor pulled from the free-text property_address (regex-only —
+  // Airtable has no ZIP field on this table). Falls back to null so
+  // landlords without a ZIP still show up under "unspecified".
+  const zipFromAddress = (addr) => {
+    if (!addr) return null;
+    const m = addr.match(/\b(\d{5})(?:-\d{4})?\b/);
+    return m ? m[1] : null;
+  };
+
+  // Distinct ZIPs across the current status set (with counts) for the
+  // pill-style batch filter.
+  const zipBuckets = useMemo(() => {
+    const buckets = new Map();
+    for (const item of state.items) {
+      const zip = zipFromAddress(item.property_address);
+      const key = zip || "no_zip";
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    }
+    return Array.from(buckets.entries())
+      .sort((a, b) => {
+        // Real ZIPs first, "no_zip" last.
+        if (a[0] === "no_zip") return 1;
+        if (b[0] === "no_zip") return -1;
+        return a[0].localeCompare(b[0]);
+      });
+  }, [state.items]);
+
+  // Filter chain: apply free-text query first (matches owner name, address,
+  // license number, ZIP), then narrow further via nothing else — one field
+  // is enough because the query is already treated as a substring match.
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return state.items;
+    return state.items.filter((item) => {
+      const haystack = [
+        item.owner_name,
+        item.property_address,
+        item.mailing_address,
+        item.license_number,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [state.items, query]);
 
   const toggle = (id) => {
     setSelected((prev) => {
@@ -106,10 +157,26 @@ const DiscoveryLandlords = () => {
     });
   };
 
-  const allSelected = state.items.length > 0 && selected.size === state.items.length;
+  // Select-all applies to the CURRENT filtered set so Ryan can search for
+  // "70115" then hit Select all → print only that ZIP.
+  const filteredIds = useMemo(() => filteredItems.map((i) => i.id), [filteredItems]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
   const toggleAll = () => {
-    if (allSelected) setSelected(new Set());
-    else setSelected(new Set(state.items.map((i) => i.id)));
+    if (allFilteredSelected) {
+      // Clear only the filtered subset — keep any out-of-filter selections.
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of filteredIds) next.delete(id);
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of filteredIds) next.add(id);
+        return next;
+      });
+    }
   };
 
   const printHref = useMemo(() => {
@@ -119,10 +186,10 @@ const DiscoveryLandlords = () => {
   }, [selected]);
 
   const printAllHref = useMemo(() => {
-    if (state.items.length === 0) return null;
-    const ids = state.items.map((i) => i.id).join(",");
+    if (filteredItems.length === 0) return null;
+    const ids = filteredItems.map((i) => i.id).join(",");
     return `/discovery/landlords/print?ids=${encodeURIComponent(ids)}`;
-  }, [state.items]);
+  }, [filteredItems]);
 
   return (
     <div className="px-4 lg:px-8 py-6" data-testid="discovery-landlords-page">
@@ -151,6 +218,83 @@ const DiscoveryLandlords = () => {
         Every letter is a page break, so Cmd+P produces one letter per page.
       </p>
 
+      {/* Search + ZIP quick-filter row */}
+      <div
+        className="mt-5 bh-surface rounded-md p-3 border bh-hairline space-y-2.5"
+        data-testid="landlords-filter-bar"
+      >
+        <div className="relative">
+          <Search
+            size={13}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--bh-ink-mute)] pointer-events-none"
+          />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search ZIP, address, owner, or license #"
+            data-testid="landlords-search-input"
+            className="w-full h-9 pl-9 pr-9 rounded-md text-[12.5px] bg-transparent border bh-hairline focus:border-[var(--bh-brass)]/60 outline-none text-[var(--bh-ink)]"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              data-testid="landlords-search-clear"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)]"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {zipBuckets.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="landlords-zip-buckets">
+            <span className="mono text-[9.5px] uppercase tracking-widest text-[var(--bh-ink-mute)] mr-1">
+              ZIP:
+            </span>
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              data-testid="landlords-zip-all"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded text-[10.5px] font-medium border"
+              style={{
+                background: !query ? "var(--bh-brass)" : "var(--bh-surface)",
+                color: !query ? "var(--bh-surface)" : "var(--bh-ink-2)",
+                borderColor: !query ? "var(--bh-brass)" : "var(--bh-hair-strong)",
+              }}
+            >
+              All <span className="opacity-70 tabular-nums">{state.items.length}</span>
+            </button>
+            {zipBuckets.map(([zip, count]) => {
+              const label = zip === "no_zip" ? "No ZIP" : zip;
+              const active = query.trim() === (zip === "no_zip" ? "" : zip);
+              return (
+                <button
+                  key={zip}
+                  type="button"
+                  onClick={() => setQuery(zip === "no_zip" ? "" : zip)}
+                  data-testid={`landlords-zip-${zip}`}
+                  disabled={zip === "no_zip"}
+                  className="inline-flex items-center gap-1 h-6 px-2 rounded text-[10.5px] font-medium border tabular-nums"
+                  style={{
+                    background: active ? "var(--bh-brass)" : "var(--bh-surface)",
+                    color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
+                    borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
+                    opacity: zip === "no_zip" ? 0.5 : 1,
+                    cursor: zip === "no_zip" ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {label} <span className="opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="text-[11px] text-[var(--bh-ink-mute)] tabular-nums">
+          Showing <strong className="text-[var(--bh-ink-2)]">{filteredItems.length}</strong> of {state.items.length} {status.replace(/_/g, " ")} · {selected.size} selected
+        </div>
+      </div>
+
       {/* Status tabs + action bar */}
       <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 flex-wrap" data-testid="discovery-landlords-tabs">
@@ -177,7 +321,7 @@ const DiscoveryLandlords = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {state.items.length > 0 && (
+          {filteredItems.length > 0 && (
             <button
               type="button"
               onClick={toggleAll}
@@ -189,7 +333,7 @@ const DiscoveryLandlords = () => {
                 borderColor: "var(--bh-hair-strong)",
               }}
             >
-              {allSelected ? "Clear selection" : "Select all"}
+              {allFilteredSelected ? "Clear selection" : `Select all ${filteredItems.length}`}
             </button>
           )}
           {printHref && (
@@ -223,7 +367,7 @@ const DiscoveryLandlords = () => {
               }}
             >
               <FileText size={12} strokeWidth={2} />
-              Preview all letters
+              Preview {filteredItems.length} letters
             </a>
           )}
         </div>
@@ -232,16 +376,18 @@ const DiscoveryLandlords = () => {
       {/* List */}
       {state.loading ? (
         <div className="mt-6 text-[13px] text-[var(--bh-ink-3)]">Loading landlord queue…</div>
-      ) : state.items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div
           className="mt-6 bh-surface rounded-md p-6 text-[13px] text-[var(--bh-ink-3)] text-center"
           data-testid="discovery-landlords-empty"
         >
-          No landlords match this filter.
+          {query
+            ? `No landlords match "${query}". Try a different ZIP or keyword.`
+            : "No landlords match this filter."}
         </div>
       ) : (
         <div className="mt-5 space-y-2">
-          {state.items.map((item) => (
+          {filteredItems.map((item) => (
             <CheckboxRow
               key={item.id}
               item={item}

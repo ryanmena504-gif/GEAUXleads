@@ -1122,46 +1122,68 @@ async def landlord_portfolio(opp_id: str):
 # ============================================================================
 @api_router.get("/discovery/property-managers")
 async def discovery_property_managers(status: str = "worth_a_look"):
-    """List property management companies from the discovery queue.
-
-    status:
-      • "worth_a_look" (default) — only records Claude marked as candidates
-      • "all" — every record regardless of Review Status
-      • any exact review-status string ("new", "promoted to leads", etc.)
-    """
+    """List property management companies from the discovery queue."""
     from services.discovery_service import list_property_managers, property_manager_status_counts
+    from services.discovery_handoff_service import (
+        get_discovery_handoff_service,
+        FEED_PROPERTY_MANAGERS,
+        is_actionable_property_manager,
+    )
 
     items = list_property_managers(status=status)
     counts = property_manager_status_counts()
+
+    handoff = get_discovery_handoff_service()
+    fresh_ids: set = set()
+    if handoff:
+        actionable_ids = [i["id"] for i in items if is_actionable_property_manager(i)]
+        fresh_ids = await handoff.mark_fresh(FEED_PROPERTY_MANAGERS, actionable_ids)
+    for item in items:
+        item["is_freshly_actionable"] = item["id"] in fresh_ids
+    # Float freshly-actionable rows to the top so operator sees the newest
+    # contacts at first glance.
+    items.sort(key=lambda i: (not i.get("is_freshly_actionable"),))
+
     return {
         "items": items,
         "count": len(items),
         "status_filter": status,
         "status_counts": counts,
+        "freshly_actionable_count": len(fresh_ids),
     }
 
 
 @api_router.get("/discovery/real-estate-agents")
 async def discovery_real_estate_agents(status: str = "all"):
-    """List real-estate agents from the outreach queue.
-
-    status:
-      • "all" (default) — every agent
-      • "ready" — only agents whose Outreach Gate is unlocked
-      • "locked" — only gated agents
-    """
+    """List real-estate agents from the outreach queue."""
     from services.discovery_service import (
         list_real_estate_agents,
         real_estate_agent_status_counts,
     )
+    from services.discovery_handoff_service import (
+        get_discovery_handoff_service,
+        FEED_REAL_ESTATE_AGENTS,
+        is_actionable_agent,
+    )
 
     items = list_real_estate_agents(status=status)
     counts = real_estate_agent_status_counts()
+
+    handoff = get_discovery_handoff_service()
+    fresh_ids: set = set()
+    if handoff:
+        actionable_ids = [i["id"] for i in items if is_actionable_agent(i)]
+        fresh_ids = await handoff.mark_fresh(FEED_REAL_ESTATE_AGENTS, actionable_ids)
+    for item in items:
+        item["is_freshly_actionable"] = item["id"] in fresh_ids
+    items.sort(key=lambda i: (not i.get("is_freshly_actionable"),))
+
     return {
         "items": items,
         "count": len(items),
         "status_filter": status,
         "status_counts": counts,
+        "freshly_actionable_count": len(fresh_ids),
     }
 
 
@@ -1185,14 +1207,30 @@ async def discovery_landlords(status: str = "not_contacted", ids: Optional[str] 
 async def discovery_investors(status: str = "all"):
     """List real estate investors / LLC entities."""
     from services.discovery_service import list_investors, investor_status_counts
+    from services.discovery_handoff_service import (
+        get_discovery_handoff_service,
+        FEED_INVESTORS,
+        is_actionable_investor,
+    )
 
     items = list_investors(status=status)
     counts = investor_status_counts()
+
+    handoff = get_discovery_handoff_service()
+    fresh_ids: set = set()
+    if handoff:
+        actionable_ids = [i["id"] for i in items if is_actionable_investor(i)]
+        fresh_ids = await handoff.mark_fresh(FEED_INVESTORS, actionable_ids)
+    for item in items:
+        item["is_freshly_actionable"] = item["id"] in fresh_ids
+    items.sort(key=lambda i: (not i.get("is_freshly_actionable"),))
+
     return {
         "items": items,
         "count": len(items),
         "status_filter": status,
         "status_counts": counts,
+        "freshly_actionable_count": len(fresh_ids),
     }
 
 

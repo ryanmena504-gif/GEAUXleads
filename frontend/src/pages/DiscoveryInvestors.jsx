@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
+import FreshContactBadge from "@/components/FreshContactBadge";
 
 /**
  * DiscoveryInvestors — real estate investors / LLC entities tracking
@@ -67,8 +68,12 @@ const Row = ({ investor }) => {
   return (
     <div
       data-testid={`investor-row-${investor.id}`}
+      data-fresh={investor.is_freshly_actionable ? "true" : "false"}
       className="bh-surface rounded-md p-4"
-      style={{ border: "1px solid var(--bh-hair)" }}
+      style={{
+        border: investor.is_freshly_actionable ? "1px solid var(--bh-brass)" : "1px solid var(--bh-hair)",
+        background: investor.is_freshly_actionable ? "var(--bh-brass-mute)" : "var(--bh-surface)",
+      }}
     >
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
@@ -80,8 +85,8 @@ const Row = ({ investor }) => {
             >
               {investor.name || "Unnamed entity"}
             </div>
-          </div>
-          <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] flex items-center gap-2 flex-wrap">
+            {investor.is_freshly_actionable && <FreshContactBadge testId={`investor-fresh-${investor.id}`} />}
+          </div>          <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] flex items-center gap-2 flex-wrap">
             {investor.entity_type && <span>{investor.entity_type}</span>}
             {investor.principal && (
               <span className="inline-flex items-center gap-1">
