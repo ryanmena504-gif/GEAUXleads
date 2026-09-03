@@ -17,6 +17,7 @@ const SenderIdentitySection = () => {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [mailingAddress, setMailingAddress] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -26,6 +27,7 @@ const SenderIdentitySection = () => {
       setEmail(s.sender_email || "");
       setName(s.sender_name || "");
       setPhone(s.sender_phone || "");
+      setMailingAddress(s.sender_mailing_address || "");
       setLoaded(true);
     });
   }, []);
@@ -42,6 +44,7 @@ const SenderIdentitySection = () => {
         sender_email: trimmed,
         sender_name: name.trim(),
         sender_phone: phone.trim(),
+        sender_mailing_address: mailingAddress.trim(),
       });
       toast.success("Sender identity saved");
     } catch (err) {
@@ -112,6 +115,25 @@ const SenderIdentitySection = () => {
               className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
             />
           </div>
+        </div>
+        <div>
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+            Return mailing address
+          </div>
+          <textarea
+            value={mailingAddress}
+            onChange={(e) => setMailingAddress(e.target.value)}
+            data-testid="settings-sender-mailing-address"
+            placeholder={"The Shirtless Handyman\n1234 Magazine St\nNew Orleans, LA 70115"}
+            disabled={!loaded}
+            rows={3}
+            className="w-full bg-transparent border bh-hairline rounded p-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50 font-body leading-snug resize-none"
+          />
+          <p className="text-[11px] text-neutral-500 mt-1.5 leading-snug">
+            Printed on landlord letters as the return address block. One line
+            per address line. Leave blank to fall back to &ldquo;The Shirtless
+            Handyman · New Orleans, LA&rdquo;.
+          </p>
         </div>
         <div className="flex items-center justify-end">
           <button

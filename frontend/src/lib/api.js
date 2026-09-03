@@ -128,4 +128,9 @@ export const api = {
     client.get("/discovery/landlords", {
       params: { status, ids: ids ? ids.join(",") : undefined },
     }).then((r) => r.data),
+
+  // Investor Intelligence — real estate investors / LLC entities tracking
+  // multi-property portfolios. Bloodhound is a read-only viewer.
+  discoveryInvestors: (status = "all") =>
+    client.get("/discovery/investors", { params: { status } }).then((r) => r.data),
 };

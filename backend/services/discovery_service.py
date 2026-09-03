@@ -362,3 +362,106 @@ def landlord_status_counts() -> Dict[str, int]:
         "not_contacted": not_contacted,
         "contacted": total - not_contacted,
     }
+
+
+# ---------------------------------------------------------------------------
+# Investor Intelligence
+# ---------------------------------------------------------------------------
+# Real estate investors / LLC entities tracking multi-property portfolios.
+# Mirrors the Partner Intelligence structure conceptually. Bloodhound is
+# strictly a read-only viewer — Claude + Make own record creation and
+# classification on the Airtable side.
+# ---------------------------------------------------------------------------
+INVESTORS_TABLE = "Investor Intelligence"
+
+_investor_reader: Optional[DiscoveryReader] = None
+
+
+def get_investor_reader() -> Optional[DiscoveryReader]:
+    global _investor_reader
+    if _investor_reader is not None:
+        return _investor_reader
+    api_key = os.environ.get("AIRTABLE_API_KEY")
+    base_id = os.environ.get("AIRTABLE_BASE_ID")
+    enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
+    if not (enabled and api_key and base_id):
+        return None
+    _investor_reader = DiscoveryReader(api_key, base_id, INVESTORS_TABLE)
+    return _investor_reader
+
+
+def list_investors(status: str = "all") -> List[Dict[str, Any]]:
+    """Return investor intelligence records.
+
+    status:
+      • "all" (default) — every record
+      • "ready" — Outreach Gate unlocked
+      • "locked" — Outreach Gate held
+    """
+    reader = get_investor_reader()
+    if reader is None:
+        return []
+    rows = reader.all()
+
+    if status == "ready":
+        rows = [r for r in rows if _is_outreach_ready(r.get("outreach_gate"))]
+    elif status == "locked":
+        rows = [r for r in rows if not _is_outreach_ready(r.get("outreach_gate"))]
+
+    rows.sort(key=lambda r: (r.get("created_time") or "", r.get("id") or ""), reverse=True)
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        gate = r.get("outreach_gate")
+        out.append({
+            "id": r.get("id"),
+            "name": _pick_first(r, [
+                "investorllc_name",         # "Investor/LLC Name" after _snake
+                "investor_name",
+                "name",
+                "entity_name",
+                "llc_name",
+                "company_name",
+            ]),
+            "entity_type": _pick_first(r, ["investor_type", "entity_type", "type", "llc_type"]),
+            "portfolio_size": _pick_first(r, [
+                "observed_property_count", "portfolio_size", "units",
+                "property_count", "portfolio",
+            ]),
+            "portfolio_value": _pick_first(r, ["portfolio_value", "total_value", "estimated_value"]),
+            "score": _pick_first(r, ["investor_score", "score", "priority_score"]),
+            "confidence": r.get("confidence"),
+            "relationship_status": r.get("relationship_status"),
+            "why_target": _pick_first(r, [
+                "evidence_summary", "why_theyre_a_target", "why", "why_target",
+                "target_reason", "target_notes", "notes",
+            ]),
+            "recommended_next_move": _pick_first(r, ["recommended_next_move", "next_move", "recommendation"]),
+            "principal": _pick_first(r, ["principal", "principal_name", "primary_contact", "contact_name"]),
+            "phone": _pick_first(r, [
+                "public_business_phone", "phone", "phone_number", "contact_phone",
+            ]),
+            "email": _pick_first(r, ["public_business_email", "email", "contact_email"]),
+            "website": _pick_first(r, ["public_contact_source", "website", "url"]),
+            "address": _pick_first(r, ["address", "office_address", "location", "mailing_address"]),
+            "service_area": r.get("service_area"),
+            "outreach_gate": gate,
+            "outreach_status": r.get("outreach_status"),
+            "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
+            "outreach_ready": _is_outreach_ready(gate),
+            "created_time": r.get("created_time"),
+        })
+    return out
+
+
+def investor_status_counts() -> Dict[str, int]:
+    reader = get_investor_reader()
+    if reader is None:
+        return {}
+    total = 0
+    ready = 0
+    for r in reader.all():
+        total += 1
+        if _is_outreach_ready(r.get("outreach_gate")):
+            ready += 1
+    return {"all": total, "ready": ready, "locked": total - ready}

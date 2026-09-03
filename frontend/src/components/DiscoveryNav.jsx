@@ -1,12 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
-import { Building2, Users, Mail } from "lucide-react";
+import { Building2, Users, Mail, TrendingUp } from "lucide-react";
 
 /**
  * DiscoveryNav — top-level tabs on every Discovery page. Keeps the sidebar
  * clean (single "Discovery" entry) while letting operator flip between
- * discovery feeds (Property Managers, Real Estate Agents, Landlords, …).
+ * discovery feeds (Property Managers, Real Estate Agents, Landlords,
+ * Investors, …).
  */
 const FEEDS = [
   {
@@ -26,6 +27,12 @@ const FEEDS = [
     label: "Landlords",
     icon: Mail,
     testId: "discovery-nav-landlords",
+  },
+  {
+    to: "/discovery/investors",
+    label: "Investors",
+    icon: TrendingUp,
+    testId: "discovery-nav-investors",
   },
 ];
 

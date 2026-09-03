@@ -20,7 +20,13 @@ SINGLETON_KEY = "singleton"
 
 # Whitelist of keys Ryan can update. Anything else is silently dropped so
 # the endpoint can never be used as a general document editor.
-EDITABLE_KEYS = {"sender_email", "sender_name", "sender_phone", "email_provider"}
+EDITABLE_KEYS = {
+    "sender_email",
+    "sender_name",
+    "sender_phone",
+    "sender_mailing_address",
+    "email_provider",
+}
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
 # URL supports `authuser` which pins the sending account. Outlook Web has
@@ -34,6 +40,7 @@ DEFAULTS: Dict[str, Any] = {
     "sender_email": "ryanmena@theshirtlesshandyman.com",
     "sender_name": "Ryan Mena",
     "sender_phone": "(504) 264-4919",
+    "sender_mailing_address": "",
     "email_provider": "apple",
 }
 

@@ -1167,20 +1167,27 @@ async def discovery_real_estate_agents(status: str = "all"):
 
 @api_router.get("/discovery/landlords")
 async def discovery_landlords(status: str = "not_contacted", ids: Optional[str] = None):
-    """List STR-license landlord property owners (mail-only outreach).
-
-    status:
-      • "not_contacted" (default) — Outreach Status empty or "Not Contacted"
-      • "contacted" — anything else
-      • "all" — every record
-    ids: comma-separated Airtable record ids to fetch a specific batch
-         (used by the letter-print view). Overrides `status`.
-    """
+    """List STR-license landlord property owners (mail-only outreach)."""
     from services.discovery_service import list_landlords, landlord_status_counts
 
     id_list = [i.strip() for i in ids.split(",")] if ids else None
     items = list_landlords(status=status, ids=id_list)
     counts = landlord_status_counts()
+    return {
+        "items": items,
+        "count": len(items),
+        "status_filter": status,
+        "status_counts": counts,
+    }
+
+
+@api_router.get("/discovery/investors")
+async def discovery_investors(status: str = "all"):
+    """List real estate investors / LLC entities."""
+    from services.discovery_service import list_investors, investor_status_counts
+
+    items = list_investors(status=status)
+    counts = investor_status_counts()
     return {
         "items": items,
         "count": len(items),
@@ -1353,6 +1360,7 @@ class UserSettingsPatch(BaseModel):
     sender_email: Optional[str] = None
     sender_name: Optional[str] = None
     sender_phone: Optional[str] = None
+    sender_mailing_address: Optional[str] = None
     email_provider: Optional[str] = None
 
 
