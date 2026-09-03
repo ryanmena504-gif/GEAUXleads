@@ -13,6 +13,7 @@ import ReviewQueue from "@/pages/ReviewQueue";
 import Settings from "@/pages/Settings";
 import Lookup from "@/pages/Lookup";
 import DebugPanel from "@/pages/DebugPanel";
+import DiscoveryPropertyManagers from "@/pages/DiscoveryPropertyManagers";
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/lookup" element={<Lookup />} />
             <Route path="/debug" element={<DebugPanel />} />
+            <Route path="/discovery/property-managers" element={<DiscoveryPropertyManagers />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

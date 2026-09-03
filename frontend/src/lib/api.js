@@ -107,4 +107,10 @@ export const api = {
     client.get("/settings/user").then((r) => r.data),
   updateUserSettings: (patch) =>
     client.patch("/settings/user", patch).then((r) => r.data),
+
+  // Property Manager Discovery Queue — Claude owns Review Status on the
+  // Airtable side. Bloodhound is a strictly-read viewer. Default filter
+  // is "worth_a_look"; pass status: "all" to see every record.
+  discoveryPropertyManagers: (status = "worth_a_look") =>
+    client.get("/discovery/property-managers", { params: { status } }).then((r) => r.data),
 };

@@ -1112,6 +1112,36 @@ async def landlord_portfolio(opp_id: str):
 
 
 # ============================================================================
+# Discovery — Property Manager Discovery Queue
+# ----------------------------------------------------------------------------
+# The Airtable base has a separate "Property Manager Discovery Queue" table
+# (owned by Claude + Make). Bloodhound is a strictly-read viewer of this
+# table. Ryan uses the Discovery UI to triage "Worth a look" candidates and
+# do native call/website handoff — any promote-to-Leads write happens on the
+# Airtable side (Claude owns that flow).
+# ============================================================================
+@api_router.get("/discovery/property-managers")
+async def discovery_property_managers(status: str = "worth_a_look"):
+    """List property management companies from the discovery queue.
+
+    status:
+      • "worth_a_look" (default) — only records Claude marked as candidates
+      • "all" — every record regardless of Review Status
+      • any exact review-status string ("new", "promoted to leads", etc.)
+    """
+    from services.discovery_service import list_property_managers, property_manager_status_counts
+
+    items = list_property_managers(status=status)
+    counts = property_manager_status_counts()
+    return {
+        "items": items,
+        "count": len(items),
+        "status_filter": status,
+        "status_counts": counts,
+    }
+
+
+# ============================================================================
 # Learning loop — reads through the opportunity list to compute reply-rate and
 # win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).
 # Zero writes. Zero LLM calls. Ryan sees the top ranked pattern on Home.

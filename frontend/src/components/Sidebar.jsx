@@ -6,18 +6,19 @@ import {
   FileText,
   Sliders,
   Bug,
+  Building2,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 
 // Sidebar shows ONLY the governed operating structure: Home (the 3-queue
-// dashboard), All Projects (governed list), Debug (governance sanity
-// check — one row per record showing every governed field), Settings.
-// Partner and non-permit information stays as detail/context on
-// individual records.
+// dashboard), All Projects (governed list), Discovery (property manager
+// triage), Debug (governance sanity check — one row per record showing
+// every governed field), Settings.
 const nav = [
   { to: "/", label: "Home", icon: Home },
   { to: "/opportunities", label: "All Projects", icon: FileText },
+  { to: "/discovery/property-managers", label: "Discovery", icon: Building2 },
   { to: "/debug", label: "Debug", icon: Bug },
   { to: "/settings", label: "Settings", icon: Sliders },
 ];
