@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import DiscoveryNav from "@/components/DiscoveryNav";
 
 /**
  * DiscoveryPropertyManagers — triage view for the Property Manager
@@ -195,6 +196,8 @@ const DiscoveryPropertyManagers = () => {
       >
         <ArrowLeft size={13} /> Home
       </Link>
+
+      <DiscoveryNav />
 
       <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-brass)]">
         Discovery · Property managers

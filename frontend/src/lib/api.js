@@ -113,4 +113,11 @@ export const api = {
   // is "worth_a_look"; pass status: "all" to see every record.
   discoveryPropertyManagers: (status = "worth_a_look") =>
     client.get("/discovery/property-managers", { params: { status } }).then((r) => r.data),
+
+  // Real Estate Agent Outreach — 10 curated agents for the pre-listing
+  // "photo-ready bathroom" pitch. Outreach Gate on the Airtable side
+  // controls whether a mailto/sms can render — if Locked, the app shows
+  // the pitch as read-only preview.
+  discoveryRealEstateAgents: (status = "all") =>
+    client.get("/discovery/real-estate-agents", { params: { status } }).then((r) => r.data),
 };

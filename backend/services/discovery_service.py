@@ -181,3 +181,95 @@ def property_manager_status_counts() -> Dict[str, int]:
         label = raw_status if isinstance(raw_status, str) else str(raw_status)
         counts[label] = counts.get(label, 0) + 1
     return counts
+
+
+# ---------------------------------------------------------------------------
+# Real Estate Agent Outreach
+# ---------------------------------------------------------------------------
+# 10 curated real-estate agents for a pre-listing "photo-ready bathroom"
+# pitch. None have verified contact info yet — Contact Enrichment Status
+# is uniformly "Needs Public Contact" and Outreach Gate is uniformly
+# "Locked — no outreach". Bloodhound respects the gate: no mailto/sms
+# button renders while an agent is locked. When Make flips the gate to
+# an unlocked value, the pitch buttons light up automatically.
+# ---------------------------------------------------------------------------
+REAL_ESTATE_AGENT_TABLE = "Real Estate Agent Outreach"
+
+_agent_reader: Optional[DiscoveryReader] = None
+
+
+def get_real_estate_agent_reader() -> Optional[DiscoveryReader]:
+    global _agent_reader
+    if _agent_reader is not None:
+        return _agent_reader
+    api_key = os.environ.get("AIRTABLE_API_KEY")
+    base_id = os.environ.get("AIRTABLE_BASE_ID")
+    enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
+    if not (enabled and api_key and base_id):
+        return None
+    _agent_reader = DiscoveryReader(api_key, base_id, REAL_ESTATE_AGENT_TABLE)
+    return _agent_reader
+
+
+# An agent is "outreach ready" when the gate is anything OTHER than a
+# locked/blocked value. Case-insensitive contains check.
+_LOCK_TOKENS = ("locked", "blocked", "hold", "pending")
+
+
+def _is_outreach_ready(gate: Any) -> bool:
+    if not gate:
+        return False
+    g = str(gate).strip().lower()
+    return not any(tok in g for tok in _LOCK_TOKENS)
+
+
+def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:
+    """Return the real estate agent outreach queue.
+
+    status:
+      • "all" (default) — every agent
+      • "ready" — only agents with Outreach Gate unlocked
+      • "locked" — only gated agents
+    """
+    reader = get_real_estate_agent_reader()
+    if reader is None:
+        return []
+    rows = reader.all()
+
+    if status == "ready":
+        rows = [r for r in rows if _is_outreach_ready(r.get("outreach_gate"))]
+    elif status == "locked":
+        rows = [r for r in rows if not _is_outreach_ready(r.get("outreach_gate"))]
+
+    rows.sort(key=lambda r: (r.get("created_time") or "", r.get("id") or ""), reverse=True)
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        gate = r.get("outreach_gate")
+        out.append({
+            "id": r.get("id"),
+            "name": _pick_first(r, ["agent_name", "name", "full_name"]),
+            "brokerage": _pick_first(r, ["brokerage", "firm", "agency", "company"]),
+            "why_target": _pick_first(r, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
+            "phone": _pick_first(r, ["phone", "phone_number", "contact_phone"]),
+            "email": _pick_first(r, ["email", "contact_email"]),
+            "website": _pick_first(r, ["website", "url", "profile_url"]),
+            "outreach_gate": gate,
+            "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
+            "outreach_ready": _is_outreach_ready(gate),
+            "created_time": r.get("created_time"),
+        })
+    return out
+
+
+def real_estate_agent_status_counts() -> Dict[str, int]:
+    reader = get_real_estate_agent_reader()
+    if reader is None:
+        return {}
+    total = 0
+    ready = 0
+    for r in reader.all():
+        total += 1
+        if _is_outreach_ready(r.get("outreach_gate")):
+            ready += 1
+    return {"all": total, "ready": ready, "locked": total - ready}

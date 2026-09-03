@@ -1141,6 +1141,30 @@ async def discovery_property_managers(status: str = "worth_a_look"):
     }
 
 
+@api_router.get("/discovery/real-estate-agents")
+async def discovery_real_estate_agents(status: str = "all"):
+    """List real-estate agents from the outreach queue.
+
+    status:
+      • "all" (default) — every agent
+      • "ready" — only agents whose Outreach Gate is unlocked
+      • "locked" — only gated agents
+    """
+    from services.discovery_service import (
+        list_real_estate_agents,
+        real_estate_agent_status_counts,
+    )
+
+    items = list_real_estate_agents(status=status)
+    counts = real_estate_agent_status_counts()
+    return {
+        "items": items,
+        "count": len(items),
+        "status_filter": status,
+        "status_counts": counts,
+    }
+
+
 # ============================================================================
 # Learning loop — reads through the opportunity list to compute reply-rate and
 # win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).
