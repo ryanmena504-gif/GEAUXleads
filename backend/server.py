@@ -1165,6 +1165,30 @@ async def discovery_real_estate_agents(status: str = "all"):
     }
 
 
+@api_router.get("/discovery/landlords")
+async def discovery_landlords(status: str = "not_contacted", ids: Optional[str] = None):
+    """List STR-license landlord property owners (mail-only outreach).
+
+    status:
+      • "not_contacted" (default) — Outreach Status empty or "Not Contacted"
+      • "contacted" — anything else
+      • "all" — every record
+    ids: comma-separated Airtable record ids to fetch a specific batch
+         (used by the letter-print view). Overrides `status`.
+    """
+    from services.discovery_service import list_landlords, landlord_status_counts
+
+    id_list = [i.strip() for i in ids.split(",")] if ids else None
+    items = list_landlords(status=status, ids=id_list)
+    counts = landlord_status_counts()
+    return {
+        "items": items,
+        "count": len(items),
+        "status_filter": status,
+        "status_counts": counts,
+    }
+
+
 # ============================================================================
 # Learning loop — reads through the opportunity list to compute reply-rate and
 # win-rate patterns per governed dimension (Money Signal, Premium Fit, etc.).

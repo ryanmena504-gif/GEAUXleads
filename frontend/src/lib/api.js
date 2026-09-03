@@ -120,4 +120,12 @@ export const api = {
   // the pitch as read-only preview.
   discoveryRealEstateAgents: (status = "all") =>
     client.get("/discovery/real-estate-agents", { params: { status } }).then((r) => r.data),
+
+  // Landlords — 63 STR-license property owners, no phone/email yet.
+  // Bloodhound generates printable letters for USPS drop; ids param
+  // (comma-separated) pulls an exact batch for the print view.
+  discoveryLandlords: ({ status = "not_contacted", ids = null } = {}) =>
+    client.get("/discovery/landlords", {
+      params: { status, ids: ids ? ids.join(",") : undefined },
+    }).then((r) => r.data),
 };

@@ -273,3 +273,92 @@ def real_estate_agent_status_counts() -> Dict[str, int]:
         if _is_outreach_ready(r.get("outreach_gate")):
             ready += 1
     return {"all": total, "ready": ready, "locked": total - ready}
+
+
+# ---------------------------------------------------------------------------
+# Landlords — STR license commercial owners
+# ---------------------------------------------------------------------------
+# 63 property owners sourced from the New Orleans Commercial Short-Term
+# Rental license registry. Contact enrichment is a known gap (no phone,
+# no email yet) — Ryan's play here is mail-only. The Discovery UI groups
+# them, lets him pick a batch, and renders a printable multi-page letter
+# spread that opens the browser's native print dialog.
+# ---------------------------------------------------------------------------
+LANDLORDS_TABLE = "Landlords"
+
+_landlord_reader: Optional[DiscoveryReader] = None
+
+
+def get_landlord_reader() -> Optional[DiscoveryReader]:
+    global _landlord_reader
+    if _landlord_reader is not None:
+        return _landlord_reader
+    api_key = os.environ.get("AIRTABLE_API_KEY")
+    base_id = os.environ.get("AIRTABLE_BASE_ID")
+    enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
+    if not (enabled and api_key and base_id):
+        return None
+    _landlord_reader = DiscoveryReader(api_key, base_id, LANDLORDS_TABLE)
+    return _landlord_reader
+
+
+def list_landlords(status: str = "not_contacted", ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Return STR-license landlords.
+
+    status:
+      • "not_contacted" (default) — Outreach Status is empty or "Not Contacted"
+      • "contacted" — anything else
+      • "all" — every record
+    ids: if provided, return only records with these Airtable ids (for the
+         print-letter route, which needs to pull an exact selection).
+    """
+    reader = get_landlord_reader()
+    if reader is None:
+        return []
+    rows = reader.all()
+
+    if ids:
+        wanted = set(ids)
+        rows = [r for r in rows if r.get("id") in wanted]
+    elif status == "not_contacted":
+        rows = [r for r in rows if _normalize_status(r.get("outreach_status")) in ("", "not contacted")]
+    elif status == "contacted":
+        rows = [r for r in rows if _normalize_status(r.get("outreach_status")) not in ("", "not contacted")]
+
+    rows.sort(key=lambda r: (
+        _normalize_status(r.get("owner_name")),
+        r.get("id") or "",
+    ))
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        out.append({
+            "id": r.get("id"),
+            "owner_name": _pick_first(r, ["owner_name", "owner", "name", "landlord_name"]),
+            "property_address": _pick_first(r, ["property_address", "address", "street_address"]),
+            "mailing_address": _pick_first(r, ["mailing_address", "owner_mailing_address", "correspondence_address"]),
+            "license_number": _pick_first(r, ["license_number", "license", "str_license"]),
+            "license_expiration": _pick_first(r, ["license_expiration", "expiration", "expires"]),
+            "outreach_gate": r.get("outreach_gate"),
+            "outreach_status": r.get("outreach_status"),
+            "source": r.get("source"),
+            "created_time": r.get("created_time"),
+        })
+    return out
+
+
+def landlord_status_counts() -> Dict[str, int]:
+    reader = get_landlord_reader()
+    if reader is None:
+        return {}
+    total = 0
+    not_contacted = 0
+    for r in reader.all():
+        total += 1
+        if _normalize_status(r.get("outreach_status")) in ("", "not contacted"):
+            not_contacted += 1
+    return {
+        "all": total,
+        "not_contacted": not_contacted,
+        "contacted": total - not_contacted,
+    }

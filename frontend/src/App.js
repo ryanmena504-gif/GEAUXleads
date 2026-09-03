@@ -15,6 +15,8 @@ import Lookup from "@/pages/Lookup";
 import DebugPanel from "@/pages/DebugPanel";
 import DiscoveryPropertyManagers from "@/pages/DiscoveryPropertyManagers";
 import DiscoveryRealEstateAgents from "@/pages/DiscoveryRealEstateAgents";
+import DiscoveryLandlords from "@/pages/DiscoveryLandlords";
+import LandlordLetterPrint from "@/pages/LandlordLetterPrint";
 
 function App() {
   return (
@@ -34,6 +36,8 @@ function App() {
             <Route path="/debug" element={<DebugPanel />} />
             <Route path="/discovery/property-managers" element={<DiscoveryPropertyManagers />} />
             <Route path="/discovery/real-estate-agents" element={<DiscoveryRealEstateAgents />} />
+            <Route path="/discovery/landlords" element={<DiscoveryLandlords />} />
+            <Route path="/discovery/landlords/print" element={<LandlordLetterPrint />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
