@@ -12,6 +12,7 @@ import {
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
+import DaysOnTable from "@/components/DaysOnTable";
 
 /**
  * DiscoveryPropertyManagers — triage view for the Property Manager
@@ -100,6 +101,7 @@ const Row = ({ item }) => {
               {item.name || "Unnamed property manager"}
             </div>
             {item.is_freshly_actionable && <FreshContactBadge testId={`pm-fresh-${item.id}`} />}
+            <DaysOnTable days={item.days_on_table} testId={`pm-days-${item.id}`} />
           </div>
           {item.portfolio_size && (
             <div className="mt-1 text-[11.5px] text-[var(--bh-ink-3)] inline-flex items-center gap-1">

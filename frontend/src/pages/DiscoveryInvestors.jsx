@@ -13,6 +13,7 @@ import {
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
+import DaysOnTable from "@/components/DaysOnTable";
 
 /**
  * DiscoveryInvestors — real estate investors / LLC entities tracking
@@ -86,6 +87,7 @@ const Row = ({ investor }) => {
               {investor.name || "Unnamed entity"}
             </div>
             {investor.is_freshly_actionable && <FreshContactBadge testId={`investor-fresh-${investor.id}`} />}
+            <DaysOnTable days={investor.days_on_table} testId={`investor-days-${investor.id}`} />
           </div>          <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] flex items-center gap-2 flex-wrap">
             {investor.entity_type && <span>{investor.entity_type}</span>}
             {investor.principal && (

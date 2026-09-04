@@ -20,11 +20,90 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pyairtable import Api
 
 log = logging.getLogger("bloodhound.discovery")
+
+
+# ---------------------------------------------------------------------------
+# ZIP → New Orleans neighborhood map. Rough grouping — a single ZIP often
+# covers multiple neighborhoods, so we pick the most recognized label per
+# code. Out-of-parish ZIPs get their municipality name so nothing renders
+# blank on Ryan's Louisiana list.
+# ---------------------------------------------------------------------------
+_ZIP_TO_NEIGHBORHOOD: Dict[str, str] = {
+    # Orleans Parish
+    "70112": "French Quarter / CBD",
+    "70113": "Central City",
+    "70114": "Algiers Point",
+    "70115": "Uptown / Garden District",
+    "70116": "Marigny / Tremé",
+    "70117": "Bywater / 9th Ward",
+    "70118": "Carrollton / Uptown",
+    "70119": "Mid-City / Bayou St. John",
+    "70122": "Gentilly",
+    "70124": "Lakeview / Lakefront",
+    "70125": "Broadmoor / Zion City",
+    "70126": "New Orleans East",
+    "70127": "New Orleans East",
+    "70128": "New Orleans East",
+    "70129": "New Orleans East",
+    "70130": "Warehouse District / Lower Garden",
+    "70131": "Algiers / English Turn",
+    # Nearby Jefferson / Plaquemines / St. Bernard
+    "70001": "Metairie",
+    "70002": "Metairie",
+    "70003": "Metairie",
+    "70005": "Old Metairie",
+    "70006": "Metairie",
+    "70037": "Belle Chasse",
+    "70043": "Chalmette",
+    "70058": "Gretna",
+    "70062": "Kenner",
+    "70065": "Kenner",
+    "70072": "Marrero",
+    "70094": "Westwego",
+    "70121": "Jefferson / Riverbend",
+    "70122-9998": "Gentilly",
+    "70123": "Elmwood / Harahan",
+}
+
+
+def zip_to_neighborhood(zipcode: Optional[str]) -> Optional[str]:
+    if not zipcode:
+        return None
+    z = str(zipcode).strip()
+    m = re.match(r"^(\d{5})", z)
+    if not m:
+        return None
+    return _ZIP_TO_NEIGHBORHOOD.get(m.group(1))
+
+
+def extract_zip(address: Any) -> Optional[str]:
+    if not address:
+        return None
+    m = re.search(r"\b(\d{5})(?:-\d{4})?\b", str(address))
+    return m.group(1) if m else None
+
+
+def days_on_table(created_time: Optional[str]) -> Optional[int]:
+    """Whole days between record creation and now. Uses Airtable's
+    `createdTime` metadata. Returns None if unparseable."""
+    if not created_time:
+        return None
+    try:
+        # Airtable returns ISO-8601 with a trailing Z; normalize to +00:00.
+        s = str(created_time).replace("Z", "+00:00")
+        created = datetime.fromisoformat(s)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - created
+        return max(0, delta.days)
+    except (ValueError, TypeError):
+        return None
 
 
 def _snake(name: str) -> str:
@@ -166,6 +245,8 @@ def list_property_managers(status: str = "worth_a_look") -> List[Dict[str, Any]]
             "review_status": r.get("review_status"),
             "date_discovered": r.get("date_discovered"),
             "created_time": r.get("created_time"),
+            "days_on_table": days_on_table(r.get("created_time")),
+            "neighborhood": zip_to_neighborhood(extract_zip(_pick_first(r, ["address", "office_address", "location"]))),
         })
     return out
 
@@ -258,6 +339,7 @@ def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:
             "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
             "outreach_ready": _is_outreach_ready(gate),
             "created_time": r.get("created_time"),
+            "days_on_table": days_on_table(r.get("created_time")),
         })
     return out
 
@@ -343,6 +425,11 @@ def list_landlords(status: str = "not_contacted", ids: Optional[List[str]] = Non
             "outreach_status": r.get("outreach_status"),
             "source": r.get("source"),
             "created_time": r.get("created_time"),
+            "days_on_table": days_on_table(r.get("created_time")),
+            "zip": extract_zip(_pick_first(r, ["property_address", "mailing_address", "address"])),
+            "neighborhood": zip_to_neighborhood(
+                extract_zip(_pick_first(r, ["property_address", "mailing_address", "address"]))
+            ),
         })
     return out
 
@@ -450,6 +537,10 @@ def list_investors(status: str = "all") -> List[Dict[str, Any]]:
             "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
             "outreach_ready": _is_outreach_ready(gate),
             "created_time": r.get("created_time"),
+            "days_on_table": days_on_table(r.get("created_time")),
+            "neighborhood": zip_to_neighborhood(
+                extract_zip(_pick_first(r, ["address", "office_address", "location", "mailing_address"]))
+            ),
         })
     return out
 

@@ -13,6 +13,7 @@ import {
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
+import DaysOnTable from "@/components/DaysOnTable";
 
 /**
  * DiscoveryRealEstateAgents — pre-listing pitch queue for real estate
@@ -147,6 +148,7 @@ const Row = ({ agent, senderName }) => {
               {agent.name || "Unnamed agent"}
             </div>
             {agent.is_freshly_actionable && <FreshContactBadge testId={`agent-fresh-${agent.id}`} />}
+            <DaysOnTable days={agent.days_on_table} testId={`agent-days-${agent.id}`} />
           </div>
           {agent.brokerage && (
             <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] truncate">

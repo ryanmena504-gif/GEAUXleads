@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
+import DaysOnTable from "@/components/DaysOnTable";
 
 /**
  * DiscoveryLandlords — 63 STR-license owners with no phone/email yet.
@@ -59,6 +60,7 @@ const CheckboxRow = ({ item, checked, onToggle }) => (
         >
           {item.owner_name || "Unknown owner"}
         </div>
+        <DaysOnTable days={item.days_on_table} testId={`landlord-days-${item.id}`} />
       </div>
       {item.property_address && (
         <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] inline-flex items-center gap-1 truncate">
@@ -66,6 +68,15 @@ const CheckboxRow = ({ item, checked, onToggle }) => (
         </div>
       )}
       <div className="mt-1 flex items-center gap-2 flex-wrap text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
+        {item.neighborhood && (
+          <span
+            className="mono uppercase tracking-widest text-[9.5px]"
+            style={{ color: "#3f6b6b" }}
+            data-testid={`landlord-neighborhood-${item.id}`}
+          >
+            {item.neighborhood}
+          </span>
+        )}
         {item.license_number && <span>{item.license_number}</span>}
         {item.license_expiration && <span>· expires {item.license_expiration}</span>}
         {item.outreach_status && normalize(item.outreach_status) !== "not contacted" && (
@@ -110,6 +121,24 @@ const DiscoveryLandlords = () => {
     return m ? m[1] : null;
   };
 
+  // Distinct NEIGHBORHOODS across the current status set (with counts) for
+  // the quick-filter pill row. Neighborhoods come pre-derived from the
+  // backend's ZIP → neighborhood map; unknown ZIPs land under "Other".
+  const neighborhoodBuckets = useMemo(() => {
+    const buckets = new Map();
+    for (const item of state.items) {
+      const label = item.neighborhood || "Other";
+      buckets.set(label, (buckets.get(label) || 0) + 1);
+    }
+    return Array.from(buckets.entries())
+      .sort((a, b) => {
+        // Named neighborhoods first (highest count), "Other" last.
+        if (a[0] === "Other") return 1;
+        if (b[0] === "Other") return -1;
+        return b[1] - a[1];
+      });
+  }, [state.items]);
+
   // Distinct ZIPs across the current status set (with counts) for the
   // pill-style batch filter.
   const zipBuckets = useMemo(() => {
@@ -129,8 +158,8 @@ const DiscoveryLandlords = () => {
   }, [state.items]);
 
   // Filter chain: apply free-text query first (matches owner name, address,
-  // license number, ZIP), then narrow further via nothing else — one field
-  // is enough because the query is already treated as a substring match.
+  // license number, ZIP, neighborhood), then narrow further via nothing else —
+  // one field is enough because the query is already treated as a substring match.
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return state.items;
@@ -140,6 +169,7 @@ const DiscoveryLandlords = () => {
         item.property_address,
         item.mailing_address,
         item.license_number,
+        item.neighborhood,
       ]
         .filter(Boolean)
         .join(" ")
@@ -247,6 +277,32 @@ const DiscoveryLandlords = () => {
             </button>
           )}
         </div>
+        {neighborhoodBuckets.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="landlords-neighborhood-buckets">
+            <span className="mono text-[9.5px] uppercase tracking-widest text-[var(--bh-ink-mute)] mr-1">
+              Neighborhood:
+            </span>
+            {neighborhoodBuckets.map(([label, count]) => {
+              const active = query.trim().toLowerCase() === label.toLowerCase();
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setQuery(active ? "" : label)}
+                  data-testid={`landlords-nh-${label.replace(/\s+/g, "_").toLowerCase()}`}
+                  className="inline-flex items-center gap-1 h-6 px-2 rounded text-[10.5px] font-medium border tabular-nums"
+                  style={{
+                    background: active ? "var(--bh-brass)" : "var(--bh-surface)",
+                    color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
+                    borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
+                  }}
+                >
+                  {label} <span className="opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {zipBuckets.length > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap" data-testid="landlords-zip-buckets">
             <span className="mono text-[9.5px] uppercase tracking-widest text-[var(--bh-ink-mute)] mr-1">
