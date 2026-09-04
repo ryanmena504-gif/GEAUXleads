@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
+import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
 
 /**
  * DiscoveryRealEstateAgents — pre-listing pitch queue for real estate
@@ -229,6 +230,7 @@ const DiscoveryRealEstateAgents = () => {
   const [status, setStatus] = useState("all");
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
   const [senderName, setSenderName] = useState("Ryan");
+  const [sortDir, setSortDir] = useState("fresh");
 
   useEffect(() => {
     // Sender name comes from the user settings so the pitch signs off correctly.
@@ -253,6 +255,7 @@ const DiscoveryRealEstateAgents = () => {
   }, [status]);
 
   const tabCount = (key) => state.counts?.[key] ?? 0;
+  const sortedItems = useMemo(() => sortByDays(state.items, sortDir), [state.items, sortDir]);
 
   return (
     <div className="px-4 lg:px-8 py-6" data-testid="discovery-agents-page">
@@ -281,28 +284,31 @@ const DiscoveryRealEstateAgents = () => {
         No message opens without the gate.
       </p>
 
-      {/* Status tabs */}
-      <div className="mt-5 flex items-center gap-1.5 flex-wrap" data-testid="discovery-agents-tabs">
-        {STATUS_TABS.map((tab) => {
-          const n = tabCount(tab.key);
-          const active = status === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setStatus(tab.key)}
-              data-testid={`discovery-agents-tab-${tab.key}`}
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] font-medium border transition-colors"
-              style={{
-                background: active ? "var(--bh-brass)" : "var(--bh-surface)",
-                color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
-                borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
-              }}
-            >
-              {tab.label} <span className="tabular-nums opacity-70">{n}</span>
-            </button>
-          );
-        })}
+      {/* Status tabs + sort */}
+      <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap" data-testid="discovery-agents-tabs">
+          {STATUS_TABS.map((tab) => {
+            const n = tabCount(tab.key);
+            const active = status === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setStatus(tab.key)}
+                data-testid={`discovery-agents-tab-${tab.key}`}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] font-medium border transition-colors"
+                style={{
+                  background: active ? "var(--bh-brass)" : "var(--bh-surface)",
+                  color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
+                  borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
+                }}
+              >
+                {tab.label} <span className="tabular-nums opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+        <DiscoverySortToggle value={sortDir} onChange={setSortDir} testId="discovery-agents-sort" />
       </div>
 
       {/* List */}
@@ -319,7 +325,7 @@ const DiscoveryRealEstateAgents = () => {
         </div>
       ) : (
         <div className="mt-5 space-y-3">
-          {state.items.map((agent) => (
+          {sortedItems.map((agent) => (
             <Row key={agent.id} agent={agent} senderName={senderName} />
           ))}
         </div>

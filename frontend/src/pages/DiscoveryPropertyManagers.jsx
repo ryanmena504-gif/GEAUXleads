@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
+import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
 
 /**
  * DiscoveryPropertyManagers — triage view for the Property Manager
@@ -167,6 +168,7 @@ const Row = ({ item }) => {
 const DiscoveryPropertyManagers = () => {
   const [status, setStatus] = useState("worth_a_look");
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
+  const [sortDir, setSortDir] = useState("fresh");
 
   useEffect(() => {
     let mounted = true;
@@ -185,6 +187,8 @@ const DiscoveryPropertyManagers = () => {
     () => Object.values(state.counts).reduce((a, b) => a + (b || 0), 0),
     [state.counts],
   );
+
+  const sortedItems = useMemo(() => sortByDays(state.items, sortDir), [state.items, sortDir]);
 
   const tabCount = (tab) => {
     if (tab.key === "all") return totalKnown;
@@ -223,28 +227,31 @@ const DiscoveryPropertyManagers = () => {
         Airtable side.
       </p>
 
-      {/* Status tabs */}
-      <div className="mt-5 flex items-center gap-1.5 flex-wrap" data-testid="discovery-pm-tabs">
-        {STATUS_TABS.map((tab) => {
-          const n = tabCount(tab);
-          const active = status === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setStatus(tab.key)}
-              data-testid={`discovery-pm-tab-${tab.key}`}
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] font-medium border transition-colors"
-              style={{
-                background: active ? "var(--bh-brass)" : "var(--bh-surface)",
-                color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
-                borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
-              }}
-            >
-              {tab.label} <span className="tabular-nums opacity-70">{n}</span>
-            </button>
-          );
-        })}
+      {/* Status tabs + sort */}
+      <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap" data-testid="discovery-pm-tabs">
+          {STATUS_TABS.map((tab) => {
+            const n = tabCount(tab);
+            const active = status === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setStatus(tab.key)}
+                data-testid={`discovery-pm-tab-${tab.key}`}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] font-medium border transition-colors"
+                style={{
+                  background: active ? "var(--bh-brass)" : "var(--bh-surface)",
+                  color: active ? "var(--bh-surface)" : "var(--bh-ink-2)",
+                  borderColor: active ? "var(--bh-brass)" : "var(--bh-hair-strong)",
+                }}
+              >
+                {tab.label} <span className="tabular-nums opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+        <DiscoverySortToggle value={sortDir} onChange={setSortDir} testId="discovery-pm-sort" />
       </div>
 
       {/* List */}
@@ -261,7 +268,7 @@ const DiscoveryPropertyManagers = () => {
         </div>
       ) : (
         <div className="mt-5 space-y-3">
-          {state.items.map((item) => (
+          {sortedItems.map((item) => (
             <Row key={item.id} item={item} />
           ))}
         </div>

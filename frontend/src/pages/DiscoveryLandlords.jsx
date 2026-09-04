@@ -14,6 +14,7 @@ import {
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import DaysOnTable from "@/components/DaysOnTable";
+import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
 
 /**
  * DiscoveryLandlords — 63 STR-license owners with no phone/email yet.
@@ -92,6 +93,7 @@ const DiscoveryLandlords = () => {
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
   const [selected, setSelected] = useState(new Set());
   const [query, setQuery] = useState("");
+  const [sortDir, setSortDir] = useState("fresh");
 
   useEffect(() => {
     let mounted = true;
@@ -377,6 +379,7 @@ const DiscoveryLandlords = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <DiscoverySortToggle value={sortDir} onChange={setSortDir} testId="landlords-sort" />
           {filteredItems.length > 0 && (
             <button
               type="button"
