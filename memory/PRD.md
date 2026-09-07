@@ -347,6 +347,26 @@ Two fixes shipped together:
    EnrichmentRow, and the generic `OpportunityRow` on `/opportunities`.
    Verified: 20 pills on Command Center, 59 on Opportunities.
 
+**Enrichment Nudge — "Nudge Claude" one-tap (2026-02-17)** — every
+Needs Enrichment row that has been on the table ≥ 30 days now shows a
+"Stale" badge and a **Nudge Claude to enrich** button. Tapping the
+button builds a compact governed-only prompt (name, address, type,
+source URL, days on table, Airtable ID, and an explicit ask) and hands
+it off natively:
+
+- iOS PWA: `navigator.share({ title, text })` opens the native share
+  sheet — Ryan picks Claude, Messages, Notes, whatever. AbortError
+  from user-cancel is silent.
+- Everywhere else: `navigator.clipboard.writeText()` copies the prompt
+  and fires a sonner toast: *"Prompt copied — paste into your Claude
+  thread."*
+
+Preserves the strict outreach constraint (no backend automated sending)
+and preserves the hard data boundary with Claude (never mutates the
+Airtable schema; Ryan hands off the raw prompt himself). Verified live:
+33 stale rows correctly picked up on mobile, prompt payload is well
+formed, toast fires.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped

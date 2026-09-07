@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import TopHeader from "@/components/TopHeader";
 import LearningStrip from "@/components/LearningStrip";
 import MorningBrief from "@/components/MorningBrief";
@@ -27,6 +28,7 @@ import {
   Sparkles,
   Clock,
   Snowflake,
+  Zap,
   ExternalLink,
 } from "lucide-react";
 
@@ -441,43 +443,136 @@ const AllProjectsRow = ({ opp }) => {
 };
 
 /**
- * EnrichmentRow — Needs Enrichment section. No score AND no reachable
- * channel yet. Read-only, links to the record so Ryan can eyeball the
- * source, but never surfaces messaging controls.
+ * ENRICHMENT_STALE_DAYS — a Needs Enrichment record older than this
+ * gets a "Nudge Claude" one-tap button so it doesn't rot on the table
+ * forever. Ryan pastes the resulting prompt into his ongoing Claude
+ * conversation (Airtable/Make automation build) or shares it via the
+ * iOS share sheet.
  */
-const EnrichmentRow = ({ opp }) => (
-  <Link
-    to={`/opportunities/${opp.id}`}
-    data-testid={`enrichment-row-${opp.id}`}
-    className="block bh-surface rounded-md p-3 transition-colors duration-150 hover:bg-white/[0.03]"
-  >
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex-1 min-w-0">
-        <div className="font-display text-[15px] text-[var(--bh-ink)] tracking-tight truncate">
-          {opp.name || "Unnamed record"}
+const ENRICHMENT_STALE_DAYS = 30;
+
+/**
+ * buildClaudeNudgePrompt — compact, ready-to-paste message for Ryan's
+ * Claude thread. Includes only governed fields already read by the app —
+ * never invents data. Trimmed for iOS share sheet friendliness.
+ */
+const buildClaudeNudgePrompt = (opp) => {
+  const lines = [
+    "Please enrich this Bloodhound lead — it has been on the table with no score and no reachable channel:",
+    "",
+    `• Name: ${opp.name || "Unnamed record"}`,
+  ];
+  if (opp.project_address) lines.push(`• Address: ${opp.project_address}`);
+  if (opp.project_type) lines.push(`• Type: ${opp.project_type}`);
+  if (opp.source) lines.push(`• Source: ${opp.source}`);
+  if (opp.source_url) lines.push(`• Source URL: ${opp.source_url}`);
+  if (typeof opp.days_on_table === "number")
+    lines.push(`• On table for: ${opp.days_on_table} days`);
+  if (opp.opportunity_id) lines.push(`• Airtable ID: ${opp.opportunity_id}`);
+  lines.push("");
+  lines.push(
+    "Please pull decision maker + verified public business contact (email or phone) and set the governed score, or tag Contact Readiness as Not Reachable so it can be archived.",
+  );
+  return lines.join("\n");
+};
+
+/**
+ * EnrichmentRow — Needs Enrichment section. No score AND no reachable
+ * channel yet, OR classifier explicitly tagged for enrichment. Read-only
+ * (never surfaces messaging controls). Records ≥ ENRICHMENT_STALE_DAYS
+ * days old get a "Nudge Claude" button — one tap builds a compact
+ * prompt and hands it to the iOS share sheet (native PWA) or clipboard
+ * (desktop). Ryan pastes into his Claude thread.
+ */
+const EnrichmentRow = ({ opp }) => {
+  const navigate = useNavigate();
+  const stale =
+    typeof opp.days_on_table === "number" && opp.days_on_table >= ENRICHMENT_STALE_DAYS;
+
+  const onNudge = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const prompt = buildClaudeNudgePrompt(opp);
+    const title = `Nudge Claude · ${opp.name || "Bloodhound lead"}`;
+    // Prefer the native share sheet on iOS PWA — Ryan can pick Claude,
+    // Messages, Notes, etc. Fall back to clipboard everywhere else.
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, text: prompt });
+        return;
+      } catch (err) {
+        // User cancelled the share sheet — silent no-op.
+        if (err && err.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("Prompt copied — paste into your Claude thread.");
+    } catch {
+      toast.error("Couldn't copy. Open the record and copy manually.");
+    }
+  };
+
+  const onOpen = () => navigate(`/opportunities/${opp.id}`);
+
+  return (
+    <div
+      data-testid={`enrichment-row-${opp.id}`}
+      onClick={onOpen}
+      className="bh-surface rounded-md p-3 transition-colors duration-150 hover:bg-white/[0.03] cursor-pointer"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-[15px] text-[var(--bh-ink)] tracking-tight truncate">
+            {opp.name || "Unnamed record"}
+          </div>
+          <div className="mt-1 flex items-center gap-3 text-[12px] text-[var(--bh-ink-mute)] flex-wrap">
+            <DaysOnTable
+              days={opp.days_on_table}
+              testId={`enrichment-days-${opp.id}`}
+            />
+            {stale && (
+              <span
+                data-testid={`enrichment-stale-${opp.id}`}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-[1px] text-[10px] font-medium tabular-nums whitespace-nowrap"
+                style={{ color: "#8a5a45", background: "rgba(138,90,69,0.10)" }}
+              >
+                Stale
+              </span>
+            )}
+            {opp.project_address && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin size={11} strokeWidth={1.75} />
+                {opp.project_address}
+              </span>
+            )}
+            {opp.source && <span>· {sourceLabel(opp.source)}</span>}
+          </div>
         </div>
-        <div className="mt-1 flex items-center gap-3 text-[12px] text-[var(--bh-ink-mute)] flex-wrap">
-          <DaysOnTable
-            days={opp.days_on_table}
-            testId={`enrichment-days-${opp.id}`}
-          />
-          {opp.project_address && (
-            <span className="inline-flex items-center gap-1.5">
-              <MapPin size={11} strokeWidth={1.75} />
-              {opp.project_address}
-            </span>
-          )}
-          {opp.source && <span>· {sourceLabel(opp.source)}</span>}
-        </div>
+        <ChevronRight
+          size={14}
+          className="mt-1 shrink-0 text-[var(--bh-ink-3)]"
+          strokeWidth={1.75}
+        />
       </div>
-      <ChevronRight
-        size={14}
-        className="mt-1 shrink-0 text-[var(--bh-ink-3)]"
-        strokeWidth={1.75}
-      />
+      {stale && (
+        <div className="mt-3 pt-3 border-t bh-hairline flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onNudge}
+            data-testid={`nudge-claude-${opp.id}`}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] font-semibold border bh-hairline text-amber-300 hover:text-amber-200 hover:bg-white/[0.04]"
+          >
+            <Zap size={12} strokeWidth={2} /> Nudge Claude to enrich
+          </button>
+          <span className="text-[11px] text-[var(--bh-ink-3)]">
+            {opp.days_on_table} days on the table
+          </span>
+        </div>
+      )}
     </div>
-  </Link>
-);
+  );
+};
 
 // ─── Section shell ────────────────────────────────────────────────────────
 
