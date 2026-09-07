@@ -12,17 +12,21 @@ import {
   allowedAction,
   whyReady,
   notReadyReason,
+  needsEnrichment,
 } from "@/lib/queue";
 import useUserSettings from "@/hooks/useUserSettings";
+import DaysOnTable from "@/components/DaysOnTable";
 import {
   Mail,
   Reply,
   Info,
   ChevronRight,
+  ChevronDown,
   MapPin,
   Phone,
   Sparkles,
   Clock,
+  Snowflake,
   ExternalLink,
 } from "lucide-react";
 
@@ -176,6 +180,10 @@ const EmptyCard = ({ children, testId }) => (
 
 const HeaderMeta = ({ opp }) => (
   <div className="mt-1 flex items-center gap-3 text-[12.5px] text-[var(--bh-ink-mute)] flex-wrap">
+    <DaysOnTable
+      days={opp.days_on_table}
+      testId={`days-on-table-${opp.id}`}
+    />
     {opp.project_address && (
       <span className="inline-flex items-center gap-1.5">
         <MapPin size={11} strokeWidth={1.75} />
@@ -432,6 +440,45 @@ const AllProjectsRow = ({ opp }) => {
   );
 };
 
+/**
+ * EnrichmentRow — Needs Enrichment section. No score AND no reachable
+ * channel yet. Read-only, links to the record so Ryan can eyeball the
+ * source, but never surfaces messaging controls.
+ */
+const EnrichmentRow = ({ opp }) => (
+  <Link
+    to={`/opportunities/${opp.id}`}
+    data-testid={`enrichment-row-${opp.id}`}
+    className="block bh-surface rounded-md p-3 transition-colors duration-150 hover:bg-white/[0.03]"
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="font-display text-[15px] text-[var(--bh-ink)] tracking-tight truncate">
+          {opp.name || "Unnamed record"}
+        </div>
+        <div className="mt-1 flex items-center gap-3 text-[12px] text-[var(--bh-ink-mute)] flex-wrap">
+          <DaysOnTable
+            days={opp.days_on_table}
+            testId={`enrichment-days-${opp.id}`}
+          />
+          {opp.project_address && (
+            <span className="inline-flex items-center gap-1.5">
+              <MapPin size={11} strokeWidth={1.75} />
+              {opp.project_address}
+            </span>
+          )}
+          {opp.source && <span>· {sourceLabel(opp.source)}</span>}
+        </div>
+      </div>
+      <ChevronRight
+        size={14}
+        className="mt-1 shrink-0 text-[var(--bh-ink-3)]"
+        strokeWidth={1.75}
+      />
+    </div>
+  </Link>
+);
+
 // ─── Section shell ────────────────────────────────────────────────────────
 
 const SectionShell = ({ eyebrow, title, hint, icon: Icon, count, testId, children }) => (
@@ -474,23 +521,34 @@ const CommandCenter = () => {
   }, [load]);
   useLiveUpdates(load);
 
-  const { ready, contacted, all } = useMemo(() => {
-    if (!Array.isArray(items)) return { ready: null, contacted: null, all: null };
+  const { ready, contacted, all, enrichment } = useMemo(() => {
+    if (!Array.isArray(items))
+      return { ready: null, contacted: null, all: null, enrichment: null };
     const readyList = [];
     const contactedList = [];
     const allList = [];
+    const enrichmentList = [];
     for (const opp of items) {
       const bucket = queueBucket(opp);
       if (bucket === "ready") readyList.push(opp);
       else if (bucket === "contacted") contactedList.push(opp);
+      else if (needsEnrichment(opp)) enrichmentList.push(opp);
       else allList.push(opp);
     }
     return {
       ready: sortForQueue(readyList),
       contacted: sortForQueue(contactedList),
       all: sortForQueue(allList),
+      // Enrichment records have no governed score by definition — sort by
+      // days-on-table so the oldest (most in need of a nudge to the
+      // enrichment pipeline) surface first.
+      enrichment: [...enrichmentList].sort(
+        (a, b) => (b.days_on_table ?? 0) - (a.days_on_table ?? 0),
+      ),
     };
   }, [items]);
+
+  const [enrichmentOpen, setEnrichmentOpen] = useState(false);
 
   return (
     <>
@@ -552,7 +610,7 @@ const CommandCenter = () => {
           testId="section-all-projects"
           eyebrow="3 · All Projects"
           title="All Projects"
-          hint="Everything else — paused, needs proof, needs public contact, needs history check, or not appropriate. Read-only view. No outreach actions."
+          hint="Everything else — paused, needs proof, needs history check, or not appropriate. These records have been enriched but aren't ready yet. Read-only view. No outreach actions."
           icon={Clock}
           count={all?.length}
         >
@@ -573,6 +631,71 @@ const CommandCenter = () => {
             </div>
           )}
         </SectionShell>
+
+        <section data-testid="section-needs-enrichment" className="space-y-3">
+          <button
+            type="button"
+            data-testid="needs-enrichment-toggle"
+            onClick={() => setEnrichmentOpen((v) => !v)}
+            className="w-full text-left flex items-start gap-3 py-1 hover:opacity-90 transition-opacity"
+          >
+            <div className="flex-1">
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 flex items-center gap-1.5">
+                <Snowflake size={11} strokeWidth={1.75} />
+                4 · Cold — Needs Enrichment
+              </div>
+              <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+                Needs Enrichment
+                {enrichment?.length ? (
+                  <span
+                    className="ml-2 text-[13px] text-[var(--bh-ink-mute)] tabular-nums"
+                    data-testid="needs-enrichment-count"
+                  >
+                    ({enrichment.length})
+                  </span>
+                ) : null}
+              </h2>
+              <p className="text-[12.5px] text-[var(--bh-ink-mute)] mt-0.5 max-w-2xl leading-relaxed">
+                Records the classifier tagged as needing enrichment, or that
+                still have no score and no reachable channel. Kept on
+                production so the enrichment pipeline keeps working on them —
+                never surfaced in the day's work list. Tap to {enrichmentOpen ? "collapse" : "expand"}.
+              </p>
+            </div>
+            <ChevronDown
+              size={16}
+              strokeWidth={1.75}
+              className={
+                "mt-2 shrink-0 text-[var(--bh-ink-3)] transition-transform duration-150 " +
+                (enrichmentOpen ? "rotate-180" : "")
+              }
+            />
+          </button>
+
+          {enrichmentOpen && (
+            <div data-testid="needs-enrichment-list">
+              {enrichment === null ? (
+                <EmptyCard testId="enrichment-loading">Loading…</EmptyCard>
+              ) : enrichment.length === 0 ? (
+                <EmptyCard testId="enrichment-empty">
+                  Nothing needs enrichment right now — every unclassified
+                  record either has a governed score or a reachable channel.
+                </EmptyCard>
+              ) : (
+                <div className="space-y-1.5">
+                  {enrichment.slice(0, 60).map((opp) => (
+                    <EnrichmentRow key={opp.id} opp={opp} />
+                  ))}
+                  {enrichment.length > 60 && (
+                    <div className="pt-2 text-[12px] text-[var(--bh-ink-3)]">
+                      Showing 60 of {enrichment.length}.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       </main>
     </>
   );

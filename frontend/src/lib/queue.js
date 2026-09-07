@@ -122,6 +122,66 @@ export const whyReady = (opp) => {
 };
 
 /**
+ * hasChannel — the record carries at least one reachable channel (email or
+ * phone in either the primary or alternate slot). Whitespace-only values do
+ * not count. This is the "outreach is even possible" signal — it never
+ * decides queue bucketing on its own (governed Current Queue does that),
+ * but combined with the score presence it separates enriched records from
+ * ones the enrichment pipeline hasn't touched yet.
+ */
+export const hasChannel = (opp) => {
+  const trim = (v) => (typeof v === "string" ? v.trim() : v ? String(v).trim() : "");
+  return Boolean(
+    trim(opp?.email) || trim(opp?.email_alt) || trim(opp?.phone) || trim(opp?.phone_alt),
+  );
+};
+
+/**
+ * hasGovernedScore — the classifier has emitted a numeric Governed Priority
+ * Score. Null / undefined / empty-string all count as "not scored yet".
+ */
+export const hasGovernedScore = (opp) =>
+  typeof opp?.governed_priority_score === "number";
+
+/**
+ * needsEnrichment — record belongs in the Needs Enrichment section. Two
+ * ways to qualify (either is sufficient), never applied to records already
+ * in Ready to Contact / Contacted:
+ *
+ *   1. The classifier has explicitly tagged the record for enrichment —
+ *      Contact Readiness / Enrichment Status / AI Status mention
+ *      "enrichment" or "needs research". Verbatim governed signal.
+ *   2. Fallback: NO governed score AND NO reachable channel. The record
+ *      has nothing the operator can act on and nothing the classifier has
+ *      scored yet, so it must still be waiting on enrichment.
+ */
+const _saysNeedsEnrichment = (v) => {
+  if (typeof v !== "string") return false;
+  const s = v.toLowerCase();
+  if (!s.trim()) return false;
+  return (
+    s.includes("needs enrichment") ||
+    s.includes("enrichment needed") ||
+    s.includes("needs research") ||
+    s.includes("awaiting enrichment") ||
+    s === "needs enrichment" ||
+    s === "needs research"
+  );
+};
+
+export const needsEnrichment = (opp) => {
+  if (queueBucket(opp) !== "all") return false;
+  if (
+    _saysNeedsEnrichment(opp?.contact_readiness) ||
+    _saysNeedsEnrichment(opp?.enrichment_status) ||
+    _saysNeedsEnrichment(opp?.ai_status)
+  ) {
+    return true;
+  }
+  return !hasGovernedScore(opp) && !hasChannel(opp);
+};
+
+/**
  * notReadyReason — plain-English explanation of why a record is in
  * All Projects instead of Ready. Reads Contact Readiness verbatim.
  * NEVER falls back to operator_activity, contact_state, or any legacy field.

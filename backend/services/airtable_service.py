@@ -303,6 +303,23 @@ READONLY_FIELD_TYPES = {
 CLOSED_STATUSES = {"Won", "Lost", "Disqualified"}
 
 
+def _days_on_table(created_time: Optional[str]) -> Optional[int]:
+    """Whole days between record creation and now. Uses Airtable's
+    `createdTime` metadata (already mapped to `created_time` on the DTO).
+    Returns None if unparseable."""
+    if not created_time:
+        return None
+    try:
+        s = str(created_time).replace("Z", "+00:00")
+        created = datetime.fromisoformat(s)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - created
+        return max(0, delta.days)
+    except (ValueError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Canonical sort — `Lead score` (Airtable) is the primary priority everywhere.
 # Unscored records rank BELOW scored ones. Ties: freshness DESC, id ASC.
@@ -821,6 +838,8 @@ class AirtableOpportunityService:
 
         # Synthetic activity timeline (real timestamps only, no invented events)
         opp["activity_timeline"] = self._synthesize_activity(opp)
+        # Days on table — how long the record has lived in the queue.
+        opp["days_on_table"] = _days_on_table(opp.get("created_time"))
         return opp
 
     def _synthesize_activity(self, opp: Dict[str, Any]) -> List[Dict[str, Any]]:

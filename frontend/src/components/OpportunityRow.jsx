@@ -5,6 +5,7 @@ import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import LaneBadge from "@/components/LaneBadge";
 import ContactBadge from "@/components/ContactBadge";
+import DaysOnTable from "@/components/DaysOnTable";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
 
@@ -32,6 +33,10 @@ export const OpportunityRow = ({ opp }) => (
         </div>
 
         <div className="mt-1 flex items-center gap-4 text-[12.5px] text-[var(--bh-ink-mute)] flex-wrap">
+          <DaysOnTable
+            days={opp.days_on_table}
+            testId={`opp-days-${opp.id}`}
+          />
           {opp.project_address && (
             <span className="inline-flex items-center gap-1.5">
               <MapPin size={12} strokeWidth={1.75} />

@@ -303,6 +303,50 @@ from the 1024x1024 source at proper sizes (180/192/512/32) with Lanczos
 resampling. Manifest `purpose` set to `any` (no maskable crop) so the
 character composition is preserved edge-to-edge on iOS Home Screen.
 
+**Mobile BottomNav parity (2026-02-17)** — desktop Sidebar had grown to
+include Discovery, Debug, and 4 sub-feed routes, but mobile BottomNav
+still showed only Home / Projects / Settings. Rebuilt `BottomNav.jsx`
+with 4 primary tabs (Home, Projects, Discovery, More) plus a bottom
+Sheet drawer under "More" containing all secondary routes grouped by
+section: Discovery Feeds (Property Managers, Real Estate Agents,
+Landlords, Investors), Tools (Phone Lookup, Debug Panel), Preferences
+(Settings). The Discovery tab now highlights amber for any `/discovery/*`
+sub-route via `matchPrefix`. Every drawer row carries a
+`more-link-{slug}` data-testid. Verified via mobile-viewport screenshots
+(390x844): drawer opens, all 7 links present, Investors nav works, active
+state persists. Fixes Ryan's complaint that "the phone site is severely
+limited" — 50% of the app was unreachable on his primary device.
+
+**Needs Enrichment section + Days-on-Table pill (2026-02-17)** — Ryan
+complained the main lead list was polluted with dead-weight records that
+had no score and no way to reach anyone, mixed in with workable leads.
+Two fixes shipped together:
+
+1. **Backend** — added `_days_on_table()` helper in
+   `airtable_service.py` and injected `days_on_table` (integer or null)
+   onto every Opportunity DTO from Airtable's `createdTime` metadata.
+   Same code path already powered Discovery feeds; now the main leads
+   table has it too.
+2. **`queue.js`** — added three helpers: `hasChannel(opp)`,
+   `hasGovernedScore(opp)`, `needsEnrichment(opp)`. A record qualifies as
+   Needs Enrichment when it is NOT in Ready/Contacted AND either
+   (a) the classifier explicitly tagged Contact Readiness / Enrichment
+   Status / AI Status with "needs enrichment" / "needs research", OR
+   (b) it has no governed score AND no reachable channel
+   (email / email_alt / phone / phone_alt all empty).
+3. **CommandCenter.jsx** — split the third bucket. "All Projects" now
+   contains only records that have been enriched but aren't ready yet.
+   A new **4 · Cold — Needs Enrichment** section appears below it,
+   collapsed by default with a count. Verified live: 39 records
+   correctly moved out of All Projects into the collapsed section on
+   mobile, list is sorted oldest-first so stale ones surface for the
+   enrichment pipeline. Rows use a compact `EnrichmentRow` (no
+   messaging controls — read-only).
+4. **Days-on-Table pill** — reused `DaysOnTable.jsx` (from Discovery
+   feeds) on every row: ReadyRow, ContactedRow, AllProjectsRow,
+   EnrichmentRow, and the generic `OpportunityRow` on `/opportunities`.
+   Verified: 20 pills on Command Center, 59 on Opportunities.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped
