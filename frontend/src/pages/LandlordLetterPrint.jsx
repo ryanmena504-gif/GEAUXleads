@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { fetchUserSettings } from "@/hooks/useUserSettings";
+import { buildSalutation } from "@/lib/greeting";
 
 /**
  * LandlordLetterPrint — print-optimized letter spread.
@@ -36,9 +37,14 @@ const splitAddress = (v) =>
     .filter(Boolean);
 
 const buildLetterBody = ({ owner_name, sender_name }) => {
-  const first = (owner_name || "there").split(" ")[0];
+  // Business-shaped owner_name (e.g. "MRB Investments LLC") is skipped by
+  // the shared salutation builder → falls back to "Dear Property Owner,".
+  const salutation = buildSalutation([owner_name], {
+    verb: "Dear",
+    generic: "Property Owner",
+  });
   return [
-    `Dear ${first},`,
+    salutation,
     "",
     `I'm ${sender_name || "Ryan Mena"} with The Shirtless Handyman. I saw your name on the New Orleans Commercial STR license registry and wanted to reach out.`,
     "",

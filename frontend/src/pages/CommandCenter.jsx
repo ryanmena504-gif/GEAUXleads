@@ -17,6 +17,7 @@ import {
 } from "@/lib/queue";
 import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
+import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import {
   Mail,
   Reply,
@@ -78,15 +79,17 @@ const SourceChip = ({ opp }) => {
 const enc = encodeURIComponent;
 
 const buildFirstDraft = (opp, sender) => {
-  const first =
-    (opp.decision_maker && opp.decision_maker.split(" ")[0]) ||
-    (opp.name && opp.name.split(" ")[0]) ||
-    "there";
   const lane = (opp.lane || "").toLowerCase();
   const isPartner = lane === "partner";
   const isLandlord = lane === "landlord";
   const senderName = sender?.sender_name || "Ryan";
   const senderPhone = sender?.sender_phone || "";
+  const generic = isPartner ? "team" : "there";
+  // Pass ONLY person-name fields — never opp.name (record/project name).
+  const salutation = buildSalutation(
+    [opp.decision_maker, opp.contact_name],
+    { verb: "Hi", generic },
+  );
   const partnerFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across ${opp.name || "your team"} while looking at the kind of work being done around the area.`,
     "",
@@ -112,10 +115,16 @@ const buildFirstDraft = (opp, sender) => {
       : isPartner
         ? `${senderName} at The Shirtless Handyman — quick intro`
         : `Quick note about your ${opp.project_type || "project"}`);
+  // Strip any greeting the classifier already put on `first_message` so
+  // we never render "Hi Tristan,\n\nHi Tristan,\nI'm Ryan..." style
+  // duplicates. Fallback bodies never carry a greeting themselves.
+  const rawBody =
+    opp.first_message || opp.first_contact_message || fallbackBody;
+  const cleanBody = stripLeadingGreeting(rawBody);
   const bodyLines = [
-    `Hi ${opp.decision_maker || first},`,
+    salutation,
     "",
-    opp.first_message || opp.first_contact_message || fallbackBody,
+    cleanBody,
     "",
     `— ${senderName}`,
     senderPhone,
@@ -126,8 +135,11 @@ const buildFirstDraft = (opp, sender) => {
 };
 
 const buildFollowUpDraft = (opp, sender) => {
-  const first = (opp.opportunity_name || opp.name || "there").split(" ")[0];
   const isLandlord = (opp.lane || "").toLowerCase() === "landlord";
+  const salutation = buildSalutation(
+    [opp.decision_maker, opp.contact_name],
+    { verb: "Hi", generic: "there" },
+  );
   const subject = isLandlord
     ? `Turnover check-in · ${opp.project_address || opp.name || "your properties"}`
     : `Following up · ${opp.project_type || opp.name || "your project"}`;
@@ -136,10 +148,11 @@ const buildFollowUpDraft = (opp, sender) => {
   const projectDefault =
     "Just checking in to see if now is a better time to chat.";
   const rec = opp.current_recommendation || (isLandlord ? landlordDefault : projectDefault);
+  const cleanRec = stripLeadingGreeting(rec);
   const bodyLines = [
-    `Hi ${opp.decision_maker || first},`,
+    salutation,
     "",
-    rec,
+    cleanRec,
     "",
     sender?.sender_name ? `— ${sender.sender_name}` : "— Ryan",
     sender?.sender_phone ? sender.sender_phone : "",

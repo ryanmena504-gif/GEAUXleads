@@ -2,6 +2,7 @@ import React from "react";
 import { Mail, Reply, ShieldCheck } from "lucide-react";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
+import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 
 /**
  * OpenInMessages — the single Email Now / Follow Up Email button.
@@ -42,14 +43,16 @@ const withSignature = (body, senderName, senderPhone) => {
 };
 
 const buildFirstDraft = (opp, sender) => {
-  const first =
-    (opp?.decision_maker && opp.decision_maker.split(" ")[0]) ||
-    (opp?.name && opp.name.split(" ")[0]) ||
-    "there";
   const lane = (opp?.lane || "").toLowerCase();
   const isPartner = lane === "partner";
   const isLandlord = lane === "landlord";
   const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
+  const generic = isPartner ? "team" : "there";
+  // Pass ONLY person-name fields — never opp.name (record/project name).
+  const salutation = buildSalutation(
+    [opp?.decision_maker, opp?.contact_name],
+    { verb: "Hi", generic },
+  );
   const partnerFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across ${opp?.name || "your team"} while looking at the kind of work being done around the area.`,
     "",
@@ -75,13 +78,11 @@ const buildFirstDraft = (opp, sender) => {
       : isPartner
         ? `${senderName} at The Shirtless Handyman — quick intro`
         : `Quick note about your ${opp?.project_type || "project"}`);
-  const body = [
-    `Hi ${opp?.decision_maker || first},`,
-    "",
-    opp?.first_message || opp?.first_contact_message || fallbackBody,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // Strip any greeting Airtable's classifier already prefixed on
+  // `first_message` so the final draft never contains "Hi X, / Hi X,".
+  const rawBody = opp?.first_message || opp?.first_contact_message || fallbackBody;
+  const cleanBody = stripLeadingGreeting(rawBody);
+  const body = [salutation, "", cleanBody].filter(Boolean).join("\n");
   return {
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),
@@ -89,8 +90,11 @@ const buildFirstDraft = (opp, sender) => {
 };
 
 const buildFollowUpDraft = (opp, sender) => {
-  const first = (opp?.decision_maker || opp?.name || "there").split(" ")[0];
   const isLandlord = (opp?.lane || "").toLowerCase() === "landlord";
+  const salutation = buildSalutation(
+    [opp?.decision_maker, opp?.contact_name],
+    { verb: "Hi", generic: "there" },
+  );
   const subject = isLandlord
     ? `Turnover check-in · ${opp?.project_address || opp?.name || "your properties"}`
     : `Following up · ${opp?.project_type || opp?.name || "your project"}`;
@@ -98,13 +102,9 @@ const buildFollowUpDraft = (opp, sender) => {
     "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
   const projectDefault =
     "Just checking in to see if now is a better time to chat.";
-  const body = [
-    `Hi ${first},`,
-    "",
-    opp?.current_recommendation || (isLandlord ? landlordDefault : projectDefault),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const rec = opp?.current_recommendation || (isLandlord ? landlordDefault : projectDefault);
+  const cleanRec = stripLeadingGreeting(rec);
+  const body = [salutation, "", cleanRec].filter(Boolean).join("\n");
   return {
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),

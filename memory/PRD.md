@@ -367,6 +367,62 @@ Airtable schema; Ryan hands off the raw prompt himself). Verified live:
 33 stale rows correctly picked up on mobile, prompt payload is well
 formed, toast fires.
 
+**Salutation bug fix — no business-name-as-first-name + no duplicate
+greetings (2026-02-17)** — Ryan reported that opening a draft on a
+business-only lead ("Tristan Construction LLC", "Backyard Living",
+"Louisiana Land Art, LLC") was greeting "Hi Tristan," / "Hi Backyard,"
+and, when the classifier had already put its own greeting on the
+`first_message` field, the draft ended up with two stacked greetings.
+
+Root cause was three unrelated builders (CommandCenter first + follow-up,
+OpenInMessages first + follow-up, LandlordLetterPrint, Discovery real
+estate agent pitch) all doing the same two things wrong:
+
+  1. Fallback chain reached into `opp.name` — which in this app's
+     schema is the record/project name, never a person.
+  2. No stripping of an existing greeting on the classifier-provided
+     body before prefixing a new one.
+
+Extracted a shared helper `/app/frontend/src/lib/greeting.js`:
+
+  - `looksLikeBusiness(name)` — regex-based detector for LLC / Inc /
+    Corp / LLP / PC / Group / Holdings / Properties / Realty / Homes /
+    Construction / Contracting / Design / Interiors / Studio / plus
+    contractor-service tokens (Living / Pros / Kitchens / Baths /
+    Roofing / Plumbing / Electric / HVAC / Landscaping / Painting /
+    Cleaning / Handyman / Pool / Fencing / Flooring / Tile / Cabinetry
+    / Countertops / Millwork / Art / Masonry / Concrete / Drywall /
+    Framing / Windows / Doors / Gutters / Decks / Patios) and the
+    conjunction pattern "X & Y" / "X and Y".
+  - `personalFirstName(name)` — returns the safe first name or null
+    when the string looks like a business.
+  - `buildSalutation(candidates[], {verb, generic})` — accepts an
+    ordered list of candidate name fields; callers only pass fields
+    that are supposed to hold PERSON names (`decision_maker`,
+    `contact_name`, `owner_name`, `agent_name`). `opp.name` is never
+    passed. Falls back to a neutral generic ("Hi there," /
+    "Dear Property Owner,") when no candidate is a real person.
+  - `stripLeadingGreeting(body)` — removes a single leading
+    "Hi/Hey/Hello/Dear X," or "Good morning/afternoon/evening X,"
+    (plus trailing blank line) from a body so the builder can prefix a
+    single well-formed greeting of its own. Idempotent; safe on empty.
+
+Wired into every builder that touches a draft:
+
+  - `pages/CommandCenter.jsx` — `buildFirstDraft`, `buildFollowUpDraft`
+    (Ryan's Home Screen Email Now / Follow Up Email buttons)
+  - `components/OpenInMessages.jsx` — same two, powering the panel on
+    Opportunity Detail + the pill inside DraftNoteDrawer
+  - `pages/LandlordLetterPrint.jsx` — landlord mailer letter body
+    (verb "Dear", generic "Property Owner")
+  - `pages/DiscoveryRealEstateAgents.jsx` — pre-listing pitch email
+
+Regression fixtures under `src/lib/__tests__/greeting.test.js` (13
+cases) exercise every real-world name shape from Ryan's data — all
+pass. Live-verified via the OpenInMessages `<a href="mailto:…">` on
+several records: business-only records now open with "Hi there," and
+never stack a second greeting under a classifier-provided one.
+
 ## Ryan's ship order (confirmed 2026-02-16)
 1. ✅ Learning loop shipped
 2. ✅ Morning brief shipped

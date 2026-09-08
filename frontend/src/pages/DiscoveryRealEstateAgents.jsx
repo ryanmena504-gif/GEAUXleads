@@ -15,6 +15,7 @@ import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
 import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
+import { buildSalutation } from "@/lib/greeting";
 
 /**
  * DiscoveryRealEstateAgents — pre-listing pitch queue for real estate
@@ -36,12 +37,18 @@ import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggl
 const PITCH_SUBJECT = "Photo-ready bathroom before the listing hits MLS";
 
 const buildPitchBody = ({ agent_name, brokerage, sender_name = "Ryan" }) => {
-  const first = (agent_name || "there").split(" ")[0];
+  // Agents are almost always people; route through the shared builder
+  // so a brokerage-shaped name like "The Smith Group" falls back to a
+  // neutral "Hi there,".
+  const salutation = buildSalutation([agent_name], {
+    verb: "Hi",
+    generic: "there",
+  });
   const brokerageLine = brokerage
     ? `I saw you're with ${brokerage} and wanted to reach out about something the top NOLA agents keep asking me for.`
     : `Wanted to reach out about something the top NOLA agents keep asking me for.`;
   return [
-    `Hi ${first},`,
+    salutation,
     "",
     `I'm ${sender_name} with The Shirtless Handyman. ${brokerageLine}`,
     "",
