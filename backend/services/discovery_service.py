@@ -292,16 +292,31 @@ def get_real_estate_agent_reader() -> Optional[DiscoveryReader]:
     return _agent_reader
 
 
-# An agent is "outreach ready" when the gate is anything OTHER than a
-# locked/blocked value. Case-insensitive contains check.
-_LOCK_TOKENS = ("locked", "blocked", "hold", "pending")
+# An agent is "outreach ready" ONLY when the governed Outreach Gate is
+# set to one of an explicit allowlist of "cleared" values. Anything else
+# — empty, unknown, "Needs approval", "Review pending", etc. — is
+# treated as LOCKED. This preserves the hard contract that Bloodhound
+# never surfaces a live outreach button unless Claude/Make cleared the
+# lead by name.
+_UNLOCKED_GATE_VALUES = frozenset({
+    "ready",
+    "cleared",
+    "unlocked",
+    "outreach ready",
+    "ready to pitch",
+    "approved",
+    "ready to contact",
+    "outreach cleared",
+    "gate cleared",
+    "open",
+})
 
 
 def _is_outreach_ready(gate: Any) -> bool:
     if not gate:
         return False
     g = str(gate).strip().lower()
-    return not any(tok in g for tok in _LOCK_TOKENS)
+    return g in _UNLOCKED_GATE_VALUES
 
 
 def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:

@@ -1297,9 +1297,13 @@ async def _deliver_morning_brief() -> Dict[str, Any]:
 
 
 @api_router.post("/morning-brief/send-now")
-async def morning_brief_send_now():
-    """Trigger a live send immediately — used from Settings for a manual
-    'test the delivery' flow. Same auth model as the rest of the app."""
+async def morning_brief_send_now(authorization: Optional[str] = Header(None)):
+    """Trigger a live send immediately. Bearer-gated so a stranger who
+    knows the backend URL cannot fire real Resend emails against Ryan's
+    inbox or burn his Resend quota. Same secret as `/api/cron/morning-brief`.
+    """
+    if not _bearer_matches(authorization):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return await _deliver_morning_brief()
 
 

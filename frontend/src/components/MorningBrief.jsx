@@ -115,7 +115,7 @@ const MorningBrief = () => {
             {total} {total === 1 ? "thing" : "things"} want your attention this morning.
           </div>
           <div className="mt-1 text-[12.5px] text-[var(--bh-ink-3)]">
-            Every row opens a native draft — nothing sends until you press Send yourself.
+            Every row opens the record so you can review before texting or emailing — nothing sends until you press Send yourself.
           </div>
         </div>
         <button

@@ -182,28 +182,28 @@ const Row = ({ agent, senderName }) => {
             <a
               href={mailto}
               data-testid={`agent-mailto-${agent.id}`}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] font-medium border"
+              className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold border"
               style={{
                 background: "var(--bh-brass)",
                 color: "var(--bh-surface)",
                 borderColor: "var(--bh-brass)",
               }}
             >
-              <Mail size={11} strokeWidth={2} /> Send pitch email
+              <Mail size={13} strokeWidth={2} /> Send pitch email
             </a>
           )}
           {tel && (
             <a
               href={tel}
               data-testid={`agent-call-${agent.id}`}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] font-medium border"
+              className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold border"
               style={{
                 background: "var(--bh-surface)",
                 color: "var(--bh-ink-2)",
                 borderColor: "var(--bh-hair-strong)",
               }}
             >
-              <Phone size={11} strokeWidth={2} /> Call {agent.phone}
+              <Phone size={13} strokeWidth={2} /> Call {agent.phone}
             </a>
           )}
           {!mailto && !tel && (

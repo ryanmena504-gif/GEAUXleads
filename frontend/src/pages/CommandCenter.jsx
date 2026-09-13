@@ -316,7 +316,7 @@ const ReadyRow = ({ opp, sender }) => {
             type="button"
             data-testid={`email-now-${opp.id}`}
             onClick={onEmailDraft}
-            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md text-[13px] font-semibold"
+            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold"
             style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
           >
             <Mail size={13} /> Email Now
@@ -392,7 +392,7 @@ const ContactedRow = ({ opp, sender }) => {
             type="button"
             data-testid={`follow-up-email-${opp.id}`}
             onClick={onFollowUp}
-            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md text-[13px] font-semibold border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
+            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
           >
             <Reply size={13} /> Follow Up Email
           </button>
