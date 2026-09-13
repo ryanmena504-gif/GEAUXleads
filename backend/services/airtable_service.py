@@ -796,6 +796,29 @@ class AirtableOpportunityService:
             opp["status_raw_display"] = _strip_emoji_prefix(opp["status"])
             opp["status"] = _strip_emoji_prefix(opp["status"])
 
+        # Referral prompt window — after a lead hits Won we wait 5 days
+        # before nudging the operator to ask for a referral (long enough
+        # for the customer to see the work; short enough that the memory
+        # is fresh). "Won at" is inferred from the most recent timestamp
+        # Claude / Make could plausibly have touched when flipping the
+        # won flag: last_classified_at → date_replied → message_sent_date
+        # → created_time. All are already governed fields on the DTO.
+        if opp.get("status") == "Won":
+            won_at = (
+                opp.get("last_classified_at")
+                or opp.get("date_replied")
+                or opp.get("message_sent_date")
+                or opp.get("created_time")
+            )
+            days = _days_on_table(won_at)  # reuses the whole-days helper
+            opp["days_since_won"] = days
+            opp["referral_prompt_ready"] = bool(days is not None and days >= 5)
+            opp["referral_won_at"] = won_at
+        else:
+            opp["days_since_won"] = None
+            opp["referral_prompt_ready"] = False
+            opp["referral_won_at"] = None
+
         # Legacy "Ryans decision" field maps to Hunt status.
         opp["ryans_decision"] = opp.get("hunt_status")
 

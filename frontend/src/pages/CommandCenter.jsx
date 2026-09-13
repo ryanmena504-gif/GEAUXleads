@@ -30,6 +30,7 @@ import {
   Clock,
   Snowflake,
   Zap,
+  Gift,
   ExternalLink,
 } from "lucide-react";
 
@@ -414,6 +415,112 @@ const ContactedRow = ({ opp, sender }) => {
 };
 
 /**
+ * buildReferralDraft — 5-days-after-Won referral ask. Native mailto only,
+ * uses the shared salutation helper (never fakes a first name from a
+ * business record), never invents details about the finished job — the
+ * body is deliberately generic so it works whether the "Won" record has
+ * project_type or not.
+ */
+const buildReferralDraft = (opp, sender) => {
+  const senderName = sender?.sender_name || "Ryan";
+  const senderPhone = sender?.sender_phone || "";
+  const salutation = buildSalutation(
+    [opp.decision_maker, opp.contact_name],
+    { verb: "Hi", generic: "there" },
+  );
+  const projectRef = opp.project_type ? ` ${opp.project_type.toLowerCase()}` : "";
+  const body = [
+    salutation,
+    "",
+    `Thanks again for having me out for the${projectRef} work — really appreciate the trust you put in me.`,
+    "",
+    "Quick ask: if there's anyone in your circle who might need similar work, would you mind passing along my info? I'll take good care of them the same way I took care of you.",
+    "",
+    "Either way, glad I got to work on this one.",
+    "",
+    `— ${senderName}`,
+    senderPhone,
+  ]
+    .filter((line) => line !== undefined && line !== null)
+    .join("\n");
+  return {
+    subject: `Thanks again — and a quick favor`,
+    body,
+  };
+};
+
+/**
+ * ReferralRow — surfaces a Won lead once ≥ 5 days have passed since it
+ * closed. One-tap opens the native referral mailto. Never writes back
+ * to Airtable — this is a private nudge to Ryan only.
+ */
+const ReferralRow = ({ opp, sender }) => {
+  const email = opp.email || opp.email_alt || "";
+  const onAsk = () => {
+    if (!email) return;
+    const { subject, body } = buildReferralDraft(opp, sender);
+    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(
+      subject,
+    )}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+  return (
+    <div
+      data-testid={`referral-row-${opp.id}`}
+      className="bh-surface rounded-md p-4"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="flex-1 min-w-0 hover:opacity-90"
+        >
+          <div className="font-display text-[16px] text-[var(--bh-ink)] tracking-tight truncate">
+            {opp.name || "Unnamed record"}
+          </div>
+          <div className="mt-1 flex items-center gap-3 text-[12px] text-[var(--bh-ink-mute)] flex-wrap">
+            <span
+              data-testid={`referral-days-${opp.id}`}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-[1px] text-[10px] font-medium tabular-nums whitespace-nowrap"
+              style={{ color: "#8a6a3f", background: "rgba(191,150,90,0.14)" }}
+              title="Days since this deal closed as Won"
+            >
+              {opp.days_since_won}d since Won
+            </span>
+            {opp.decision_maker && (
+              <span className="truncate">· {opp.decision_maker}</span>
+            )}
+            {opp.project_type && <span>· {opp.project_type}</span>}
+          </div>
+        </Link>
+      </div>
+      <div className="mt-3 pt-3 border-t bh-hairline flex items-center gap-2">
+        {email ? (
+          <button
+            type="button"
+            onClick={onAsk}
+            data-testid={`ask-referral-${opp.id}`}
+            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold"
+            style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
+          >
+            <Gift size={13} strokeWidth={2} /> Ask for a referral
+          </button>
+        ) : (
+          <span className="text-[11.5px] text-[var(--bh-ink-3)]">
+            No email on file — open the record and send by text.
+          </span>
+        )}
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
+        >
+          Open <ChevronRight size={12} />
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+/**
  * AllProjectsRow — no messaging controls of any kind. Shows why the
  * record is NOT ready (from Contact Readiness governed field).
  */
@@ -629,14 +736,21 @@ const CommandCenter = () => {
   }, [load]);
   useLiveUpdates(load);
 
-  const { ready, contacted, all, enrichment } = useMemo(() => {
+  const { ready, contacted, referrals, all, enrichment } = useMemo(() => {
     if (!Array.isArray(items))
-      return { ready: null, contacted: null, all: null, enrichment: null };
+      return { ready: null, contacted: null, referrals: null, all: null, enrichment: null };
     const readyList = [];
     const contactedList = [];
+    const referralList = [];
     const allList = [];
     const enrichmentList = [];
     for (const opp of items) {
+      // Won leads with the 5-day referral window elapsed get their own
+      // top-of-mind lane — never mixed into Ready/Contacted/All.
+      if (opp.status === "Won" && opp.referral_prompt_ready) {
+        referralList.push(opp);
+        continue;
+      }
       const bucket = queueBucket(opp);
       if (bucket === "ready") readyList.push(opp);
       else if (bucket === "contacted") contactedList.push(opp);
@@ -646,6 +760,11 @@ const CommandCenter = () => {
     return {
       ready: sortForQueue(readyList),
       contacted: sortForQueue(contactedList),
+      // Freshest referrals first (recently-Won leads are easier for the
+      // customer to remember). Ties broken by longer wait.
+      referrals: [...referralList].sort(
+        (a, b) => (a.days_since_won ?? 0) - (b.days_since_won ?? 0),
+      ),
       all: sortForQueue(allList),
       // Enrichment records have no governed score by definition — sort by
       // days-on-table so the oldest (most in need of a nudge to the
@@ -714,9 +833,26 @@ const CommandCenter = () => {
           )}
         </SectionShell>
 
+        {referrals && referrals.length > 0 && (
+          <SectionShell
+            testId="section-referrals-due"
+            eyebrow="3 · Referrals due"
+            title="Ask for a referral"
+            hint="Leads that closed as Won at least 5 days ago. Customer memory is still fresh — one tap opens a native referral ask. Nothing writes back to Airtable."
+            icon={Gift}
+            count={referrals.length}
+          >
+            <div className="space-y-2">
+              {referrals.map((opp) => (
+                <ReferralRow key={opp.id} opp={opp} sender={senderSettings} />
+              ))}
+            </div>
+          </SectionShell>
+        )}
+
         <SectionShell
           testId="section-all-projects"
-          eyebrow="3 · All Projects"
+          eyebrow={referrals && referrals.length > 0 ? "4 · All Projects" : "3 · All Projects"}
           title="All Projects"
           hint="Everything else — paused, needs proof, needs history check, or not appropriate. These records have been enriched but aren't ready yet. Read-only view. No outreach actions."
           icon={Clock}
