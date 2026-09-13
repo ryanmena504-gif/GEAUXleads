@@ -136,6 +136,14 @@ export const api = {
   discoveryRealEstateAgents: (status = "all") =>
     client.get("/discovery/real-estate-agents", { params: { status } }).then((r) => r.data),
 
+  // Auto-fill contact — the ONE Discovery-side write in the app.
+  // Writes verified email/phone to the Real Estate Agent Outreach table.
+  // Never touches governed fields (Outreach Gate is still Claude's).
+  enrichRealEstateAgentContact: (recordId, payload) =>
+    client
+      .post(`/discovery/real-estate-agents/${encodeURIComponent(recordId)}/enrich`, payload)
+      .then((r) => r.data),
+
   // Landlords — 63 STR-license property owners, no phone/email yet.
   // Bloodhound generates printable letters for USPS drop; ids param
   // (comma-separated) pulls an exact batch for the print view.

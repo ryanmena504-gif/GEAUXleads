@@ -1459,6 +1459,45 @@ async def twilio_lookup(number: str):
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
 
+# ─── Auto-fill Contact — write email/phone onto a Real Estate Agent row.
+# The ONLY write route Bloodhound has into any Discovery table. Never
+# touches governed fields (Outreach Gate, Contact Enrichment Status,
+# etc.) — Claude/Make still own those. Cache is invalidated on success
+# so the next agent-list fetch reflects the new contact immediately.
+class AgentEnrichRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@app.post("/api/discovery/real-estate-agents/{record_id}/enrich")
+async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
+    from services.discovery_service import enrich_real_estate_agent
+    try:
+        return await asyncio.to_thread(
+            enrich_real_estate_agent,
+            record_id,
+            req.email,
+            req.phone,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        msg = str(e)
+        # 422 from Airtable usually means the Email/Phone column doesn't
+        # exist on the table yet. Surface it as a friendly 400 so Ryan
+        # sees the exact next step instead of a stack trace.
+        if "UNKNOWN_FIELD_NAME" in msg or "422" in msg:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Airtable rejected the write — the 'Real Estate Agent "
+                    "Outreach' table needs 'Email' and 'Phone' columns. "
+                    "Add them as Single line text columns and retry."
+                ),
+            )
+        raise HTTPException(status_code=502, detail=msg[:280])
+
+
 # ─── Perplexity research routes ─────────────────────────────────────────
 # Feature-flagged: when PERPLEXITY_API_KEY is not set, /api/research
 # returns 503 cleanly and the frontend hides the research buttons.

@@ -29,6 +29,7 @@ export const ResearchPanel = ({
   label,
   hint,
   testId,
+  onResult,
 }) => {
   const [state, setState] = useState({ status: "idle", result: null, error: null });
 
@@ -43,6 +44,7 @@ export const ResearchPanel = ({
           force_refresh: force,
         });
         setState({ status: "ok", result, error: null });
+        if (onResult) onResult(result);
       } catch (err) {
         const status = err?.response?.status;
         const detail =

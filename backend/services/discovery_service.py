@@ -162,6 +162,39 @@ class DiscoveryReader:
                 self._last_error = str(e)[:220]
                 return list(self._cache)  # stale beats nothing
 
+    def patch_fields(
+        self, record_id: str, updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Patch a small allowlist of fields on a discovery record.
+
+        Callers pass Airtable-column-named keys (e.g. `"Email"`,
+        `"Phone"`) — NOT snake-cased keys. Only used by the Auto-fill
+        Contact flow on the RE agents page. All other Discovery surfaces
+        remain strictly read-only.
+
+        Invalidates this reader's cache on success so the next `all()`
+        call fetches fresh data.
+        """
+        if not record_id:
+            raise ValueError("record_id is required")
+        if not updates:
+            raise ValueError("updates must not be empty")
+        try:
+            updated = self._table.update(record_id, updates)
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)[:280]
+            log.warning(
+                "Discovery '%s' patch failed for %s: %s",
+                self._table_name,
+                record_id,
+                msg,
+            )
+            raise RuntimeError(f"Airtable patch failed: {msg}") from e
+        with self._lock:
+            # Force refresh next .all()
+            self._last_refresh = 0.0
+        return self._record_to_dict(updated)
+
 
 # ---------------------------------------------------------------------------
 # Property Manager Discovery Queue
@@ -370,6 +403,56 @@ def real_estate_agent_status_counts() -> Dict[str, int]:
         if _is_outreach_ready(r.get("outreach_gate")):
             ready += 1
     return {"all": total, "ready": ready, "locked": total - ready}
+
+
+# Column names on the Real Estate Agent Outreach table for the
+# Auto-fill Contact flow. Bloodhound writes ONLY to these two columns —
+# never to Outreach Gate, Contact Enrichment Status, or anything else
+# governed by Claude/Make. If a column doesn't exist on the table,
+# Airtable returns a 422 and the frontend surfaces it as "please add
+# Email/Phone columns to the table."
+_RE_AGENT_ENRICHABLE_COLUMNS = ("Email", "Phone")
+
+
+def enrich_real_estate_agent(
+    record_id: str, email: Optional[str] = None, phone: Optional[str] = None
+) -> Dict[str, Any]:
+    """Write a verified email and/or phone onto an agent row. Returns
+    the refreshed DTO (same shape as `list_real_estate_agents` items).
+    Raises RuntimeError with a human-readable message on failure."""
+    reader = get_real_estate_agent_reader()
+    if reader is None:
+        raise RuntimeError("Real Estate Agent Outreach table is not configured")
+    email = (email or "").strip() or None
+    phone = (phone or "").strip() or None
+    if not email and not phone:
+        raise ValueError("At least one of email or phone is required")
+
+    updates: Dict[str, Any] = {}
+    if email:
+        updates["Email"] = email
+    if phone:
+        updates["Phone"] = phone
+
+    patched = reader.patch_fields(record_id, updates)
+
+    # Return a DTO that matches list_real_estate_agents' shape so the
+    # frontend can drop it into the row without another round-trip.
+    gate = patched.get("outreach_gate")
+    return {
+        "id": patched.get("id"),
+        "name": _pick_first(patched, ["agent_name", "name", "full_name"]),
+        "brokerage": _pick_first(patched, ["brokerage", "firm", "agency", "company"]),
+        "why_target": _pick_first(patched, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
+        "phone": _pick_first(patched, ["phone", "phone_number", "contact_phone"]),
+        "email": _pick_first(patched, ["email", "contact_email"]),
+        "website": _pick_first(patched, ["website", "url", "profile_url"]),
+        "outreach_gate": gate,
+        "contact_enrichment_status": _pick_first(patched, ["contact_enrichment_status", "enrichment_status"]),
+        "outreach_ready": _is_outreach_ready(gate),
+        "created_time": patched.get("created_time"),
+        "days_on_table": days_on_table(patched.get("created_time")),
+    }
 
 
 # ---------------------------------------------------------------------------

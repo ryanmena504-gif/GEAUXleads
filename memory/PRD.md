@@ -498,3 +498,34 @@ address, and 10 cited sources. Run button 44px (mobile-safe).
 Ryan can now enrich locked agent rows without waiting on Claude,
 then hand the verified contact off for the classifier to promote
 the Outreach Gate on the Airtable side.
+
+**Auto-fill Contact — the app's first Discovery-side write (2026-02-18)**
+Ryan requested: when Perplexity returns a verified email/phone on an
+agent, one-tap writes it into Airtable so the row shows up enriched
+on production without waiting on Claude to paste it in.
+
+Backend:
+- `services/discovery_service.py` — added `DiscoveryReader.patch_fields`
+  (small allowlist write path, invalidates cache on success) +
+  `enrich_real_estate_agent(record_id, email, phone)` helper that only
+  writes to `Email` and `Phone` columns. Never touches governed fields.
+- `server.py` — new route `POST /api/discovery/real-estate-agents/{id}/enrich`.
+  Airtable UNKNOWN_FIELD_NAME / 422 errors surface as a friendly 400
+  telling Ryan the exact columns to add.
+
+Frontend:
+- `lib/contactExtract.js` — regex-based email + US phone extractor with
+  a denylist for placeholder/fictional numbers. 4/4 unit cases pass.
+- `components/ResearchPanel.jsx` — added `onResult` callback so parent
+  components can react when a lookup finishes.
+- `pages/DiscoveryRealEstateAgents.jsx` — the "Auto-fill contact" card
+  renders inline below the ResearchPanel after a lookup completes:
+  extracted email + phone in editable input fields (Ryan can correct
+  before writing), a 44pt "Send to Airtable" button, sonner toast on
+  success/error, row updates in place with the new contact.
+
+Live-verified: extractor pulled mary@salepending.com + (504) 517-6533
+from a real Perplexity answer; the write correctly failed with the
+friendly-400 telling Ryan to add Email + Phone columns to the
+"Real Estate Agent Outreach" table (they don't exist in his current
+schema).
