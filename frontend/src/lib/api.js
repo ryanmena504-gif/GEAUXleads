@@ -52,6 +52,15 @@ export const api = {
   researchStatus: () =>
     axios.get(`${BASE}/api/research/status`).then((r) => r.data),
 
+  // Twilio Number Lookup — read-only carrier / line type / caller name.
+  // Feature-flagged; returns 503 when TWILIO_ACCOUNT_SID / TOKEN missing.
+  twilioLookup: (number) =>
+    axios
+      .get(`${BASE}/api/lookup/twilio/${encodeURIComponent(number)}`)
+      .then((r) => r.data),
+  twilioLookupStatus: () =>
+    axios.get(`${BASE}/api/lookup/twilio/status`).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

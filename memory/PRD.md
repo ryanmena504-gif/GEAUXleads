@@ -455,3 +455,28 @@ never stack a second greeting under a classifier-provided one.
 - **Weekly recap email** — "you contacted X, Y replied, Z estimates out"
 - **Webhook persistence** to Mongo so preview reloads don't hijack production
 - **iPad hint** — small nudge saying "open on iPhone to text"
+
+**Twilio Lookup v2 integration (2026-02-18)** — read-only phone-number
+intelligence. First and only Twilio surface Bloodhound uses; the app's
+"no automated outbound" rule stays intact.
+- `services/twilio_lookup_service.py` wraps `client.lookups.v2` and
+  requests `line_type_intelligence,caller_name` (~$0.015 per call).
+  Returns normalized DTO: line_type, carrier_name, mobile country/
+  network codes, caller_name, caller_type.
+- Routes: `GET /api/lookup/twilio/{number}` + `GET /api/lookup/twilio/status`.
+  Feature-flagged on TWILIO_ACCOUNT_SID (must start with `AC`) +
+  TWILIO_AUTH_TOKEN. Missing → status returns `enabled:false`, GET
+  returns 503, and the frontend hides the card entirely — no error banner.
+- `components/TwilioIntel.jsx` auto-runs on mount for the number in the
+  URL of the Reverse Lookup page. Renders line-type + carrier pills,
+  CNAM name if available, and a "Likely burner / spam" chip when the
+  number is non-fixed VoIP with no CNAM. Retry button on 429/5xx.
+- Verified live with placeholders empty: status→`{enabled:false}`, lookup→503,
+  page renders without the card (0 "Twilio" mentions in DOM).
+
+**Credentials needed to turn it on (Ryan):**
+1. Log into https://console.twilio.com/ → Account Info
+2. Copy Account SID (starts with `AC…`) → paste as `TWILIO_ACCOUNT_SID`
+3. Reveal Auth Token → paste as `TWILIO_AUTH_TOKEN`
+4. Use the Emergent env-vars editor (secret-scoped), not chat.
+5. Redeploy — the card will start rendering on `/lookup?phone=…` automatically.

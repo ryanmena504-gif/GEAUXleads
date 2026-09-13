@@ -1429,6 +1429,36 @@ async def update_user_settings(patch: UserSettingsPatch):
 app.include_router(api_router)
 
 
+# ─── Twilio Lookup (Number Intelligence) ─────────────────────────────────
+# Read-only. Never sends messages. Feature-flagged: when
+# TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are absent, the routes return
+# 503 cleanly and the frontend hides the enrichment card.
+from services.twilio_lookup_service import (
+    lookup_async as _twilio_lookup_async,
+    TwilioLookupError as _TwilioLookupError,
+    get_twilio_lookup_service as _get_twilio_lookup_service,
+    twilio_lookup_config_error as _twilio_lookup_config_error,
+)
+
+
+@app.get("/api/lookup/twilio/status")
+async def twilio_lookup_status():
+    """Report whether Twilio Lookup is configured, without leaking creds."""
+    svc = _get_twilio_lookup_service()
+    return {
+        "enabled": svc is not None,
+        "error": _twilio_lookup_config_error() if svc is None else None,
+    }
+
+
+@app.get("/api/lookup/twilio/{number}")
+async def twilio_lookup(number: str):
+    try:
+        return await _twilio_lookup_async(number)
+    except _TwilioLookupError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
 # ─── Perplexity research routes ─────────────────────────────────────────
 # Feature-flagged: when PERPLEXITY_API_KEY is not set, /api/research
 # returns 503 cleanly and the frontend hides the research buttons.
