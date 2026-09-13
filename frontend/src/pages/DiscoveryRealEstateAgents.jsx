@@ -15,6 +15,7 @@ import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
 import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
+import ResearchPanel from "@/components/ResearchPanel";
 import { buildSalutation } from "@/lib/greeting";
 
 /**
@@ -122,7 +123,7 @@ const PitchPreview = ({ agent, senderName }) => {
   );
 };
 
-const Row = ({ agent, senderName }) => {
+const Row = ({ agent, senderName, researchOpen, onToggleResearch }) => {
   const pitchBody = useMemo(
     () => buildPitchBody({ agent_name: agent.name, brokerage: agent.brokerage, sender_name: senderName }),
     [agent.name, agent.brokerage, senderName],
@@ -223,6 +224,33 @@ const Row = ({ agent, senderName }) => {
       )}
 
       <PitchPreview agent={agent} senderName={senderName} />
+
+      {/* Research this agent — read-only Perplexity lookup. Works
+          regardless of outreach gate (no messages sent) so Ryan can
+          enrich even locked rows to unblock Claude's next classifier pass. */}
+      <div className="mt-3 pt-3 border-t bh-hairline flex items-center justify-end">
+        <button
+          type="button"
+          onClick={onToggleResearch}
+          data-testid={`agent-research-toggle-${agent.id}`}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--bh-ink-3)] hover:text-[var(--bh-brass)]"
+        >
+          <Sparkles size={11} strokeWidth={1.75} />
+          {researchOpen ? "Hide research" : "Research this agent"}
+        </button>
+      </div>
+      {researchOpen && (
+        <div className="mt-2" data-testid={`agent-research-panel-${agent.id}`}>
+          <ResearchPanel
+            researchType="re_agent_background"
+            recordId={agent.id}
+            query={`Real estate agent in New Orleans. Name: ${agent.name || "(unknown)"}. Brokerage: ${agent.brokerage || "(unknown)"}. Target notes: ${agent.why_target || "(none)"}. Find verified public business email + phone (brokerage site / their own site / Realtor.com / Zillow profile — no personal-looking numbers), recent NOLA listings, approximate 12-month sold volume, brokerage tenure, and whether they specialize in flips / historic renos / higher-end listings. Cite every source URL.`}
+            label="Look up this agent"
+            hint="Public listings + verified business contact + deal volume with citations."
+            testId={`research-agent-${agent.id}`}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -238,6 +266,7 @@ const DiscoveryRealEstateAgents = () => {
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
   const [senderName, setSenderName] = useState("Ryan");
   const [sortDir, setSortDir] = useState("fresh");
+  const [researchOpenId, setResearchOpenId] = useState(null);
 
   useEffect(() => {
     // Sender name comes from the user settings so the pitch signs off correctly.
@@ -333,7 +362,15 @@ const DiscoveryRealEstateAgents = () => {
       ) : (
         <div className="mt-5 space-y-3">
           {sortedItems.map((agent) => (
-            <Row key={agent.id} agent={agent} senderName={senderName} />
+            <Row
+              key={agent.id}
+              agent={agent}
+              senderName={senderName}
+              researchOpen={researchOpenId === agent.id}
+              onToggleResearch={() =>
+                setResearchOpenId((cur) => (cur === agent.id ? null : agent.id))
+              }
+            />
           ))}
         </div>
       )}

@@ -1490,7 +1490,12 @@ async def research_status():
 
 @app.post("/api/research")
 async def create_research(req: ResearchRequest):
-    if req.research_type not in ("decision_maker", "permit_explainer", "landlord_background"):
+    if req.research_type not in (
+        "decision_maker",
+        "permit_explainer",
+        "landlord_background",
+        "re_agent_background",
+    ):
         raise HTTPException(status_code=400, detail="unknown research_type")
 
     # Serve from Mongo cache unless the caller asked for a fresh call.

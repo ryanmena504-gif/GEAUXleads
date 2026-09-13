@@ -480,3 +480,21 @@ intelligence. First and only Twilio surface Bloodhound uses; the app's
 3. Reveal Auth Token → paste as `TWILIO_AUTH_TOKEN`
 4. Use the Emergent env-vars editor (secret-scoped), not chat.
 5. Redeploy — the card will start rendering on `/lookup?phone=…` automatically.
+
+**Perplexity research on Real Estate Agents (2026-02-18)** — mirror of
+the Landlord research pattern. Every agent row now has a "Research
+this agent" toggle that expands an inline `ResearchPanel` with a
+dedicated `re_agent_background` system prompt tuned for: verified
+public business email + phone (brokerage site / their own site /
+Realtor.com / Zillow — never personal-looking numbers), recent NOLA
+listings, 12-month sold volume, brokerage tenure, and specialty
+(flips / historic / higher-end). Works regardless of Outreach Gate
+state — research is read-only, no messages sent.
+
+Live-verified on Mary Danna (Keller Williams): returned a 3.3KB grounded
+answer with `mary@salepending.com`, `504-517-6533`, Metairie office
+address, and 10 cited sources. Run button 44px (mobile-safe).
+
+Ryan can now enrich locked agent rows without waiting on Claude,
+then hand the verified contact off for the classifier to promote
+the Outreach Gate on the Airtable side.
