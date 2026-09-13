@@ -430,7 +430,19 @@ never stack a second greeting under a classifier-provided one.
 4. ✅ Reverse Lookup shipped
 5. ✅ PWA Home Screen icon (custom cartoon character shipped 2026-02-17)
 6. ✅ iOS Shortcut recipe for Reverse Lookup delivered (instructions only)
-7. Referral prompt after Won — planned
+7. ✅ Perplexity Agent API integration (shipped 2026-02-18) — three
+   one-tap web-grounded research features share `/api/research`:
+   - **Who runs this?** on Opportunity Detail (research_type=`decision_maker`)
+   - **Explain this permit** on Opportunity Detail (research_type=`permit_explainer`)
+   - **Research this owner** on Discovery → Landlords (research_type=`landlord_background`)
+   Backend uses the official `perplexityai` SDK with `preset="medium"`
+   (bundles a web-grounded model + `web_search` + `fetch_url` tools).
+   Mongo cache in `research_cache_service.py` (7-day TTL, keyed by
+   `(research_type, record_id)`). API key from `PERPLEXITY_API_KEY`;
+   missing key → clean 503 and buttons hide. Live-verified: 3.9KB
+   grounded answers with 10 cited NOLA sources, cache round-trip
+   returns `_cached: true`.
+8. Referral prompt after Won — planned
 
 ## Backlog / Next
 - **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.

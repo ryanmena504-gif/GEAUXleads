@@ -10,6 +10,7 @@ import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
+import ResearchPanel from "@/components/ResearchPanel";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -479,6 +480,16 @@ const OpportunityDetail = () => {
                 <KV label="Contractor on record" value={opp.contractor} />
                 <KV label="Owner" value={opp.owner} />
               </div>
+              <div className="mt-4">
+                <ResearchPanel
+                  researchType="decision_maker"
+                  recordId={opp.id}
+                  query={`Who runs the business or owns the property at ${opp.project_address || opp.name}? Business/lead name: ${opp.name}. Company field: ${opp.company || "(none)"}. Any decision maker on file: ${opp.decision_maker || "(none)"}. Give verified name, role, and one-line context with citations.`}
+                  label={opp.decision_maker ? "Verify this decision maker" : "Who runs this?"}
+                  hint="Grounded web lookup with citations. Read-only — nothing writes back to Airtable."
+                  testId={`research-dm-${opp.id}`}
+                />
+              </div>
             </section>
 
             {/* Property / Project */}
@@ -500,6 +511,18 @@ const OpportunityDetail = () => {
                   value={opp.permit_description}
                 />
               </div>
+              {(opp.permit_description || opp.permit_number) && (
+                <div className="mt-4">
+                  <ResearchPanel
+                    researchType="permit_explainer"
+                    recordId={opp.id}
+                    query={`New Orleans permit. Number: ${opp.permit_number || "(unknown)"}. Description: ${opp.permit_description || "(none)"}. Project type: ${opp.project_type || "(unknown)"}. Address: ${opp.project_address || "(unknown)"}. Explain in plain English what work this permit covers, typical scope + duration, and any red flags (historic district, structural, etc.).`}
+                    label="Explain this permit"
+                    hint="Plain-English breakdown of the permit + typical scope."
+                    testId={`research-permit-${opp.id}`}
+                  />
+                </div>
+              )}
             </section>
 
             <EditableDecisionPanel opp={opp} onUpdated={setOpp} />

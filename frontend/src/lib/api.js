@@ -46,6 +46,12 @@ export const api = {
   leadsUpdateMessage: (id, message) =>
     client.patch(`/leads/${id}/message`, { message }).then((r) => r.data),
 
+  // Perplexity research (feature-flagged; returns 503 when key missing)
+  research: (payload) =>
+    client.post("/research", payload).then((r) => r.data),
+  researchStatus: () =>
+    axios.get(`${BASE}/api/research/status`).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

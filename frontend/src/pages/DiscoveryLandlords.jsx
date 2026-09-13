@@ -9,12 +9,14 @@ import {
   Square,
   FileText,
   Search,
+  Sparkles,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import DaysOnTable from "@/components/DaysOnTable";
 import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
+import ResearchPanel from "@/components/ResearchPanel";
 
 /**
  * DiscoveryLandlords — 63 STR-license owners with no phone/email yet.
@@ -32,60 +34,97 @@ const STATUS_TABS = [
 
 const normalize = (s) => (s || "").toString().trim().toLowerCase();
 
-const CheckboxRow = ({ item, checked, onToggle }) => (
-  <button
-    type="button"
-    onClick={onToggle}
+const CheckboxRow = ({ item, checked, onToggle, researchOpen, onToggleResearch }) => (
+  <div
     data-testid={`landlord-row-${item.id}`}
     data-checked={checked ? "true" : "false"}
-    className="w-full text-left bh-surface rounded-md p-4 flex items-start gap-3 hover:shadow-sm transition-shadow"
+    className="bh-surface rounded-md p-4 transition-shadow hover:shadow-sm"
     style={{
       border: "1px solid var(--bh-hair)",
       background: checked ? "var(--bh-brass-mute)" : "var(--bh-surface)",
       borderColor: checked ? "var(--bh-hair-warm)" : "var(--bh-hair)",
     }}
   >
-    <div className="pt-0.5 shrink-0">
-      {checked ? (
-        <CheckSquare size={16} className="text-[var(--bh-brass)]" strokeWidth={2} />
-      ) : (
-        <Square size={16} className="text-[var(--bh-ink-mute)]" strokeWidth={1.75} />
-      )}
-    </div>
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Home size={12} className="text-[var(--bh-brass)] shrink-0" />
-        <div
-          className="font-display text-[15px] font-semibold text-[var(--bh-ink)] truncate"
-          data-testid={`landlord-name-${item.id}`}
-        >
-          {item.owner_name || "Unknown owner"}
-        </div>
-        <DaysOnTable days={item.days_on_table} testId={`landlord-days-${item.id}`} />
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      className="w-full text-left flex items-start gap-3 cursor-pointer"
+    >
+      <div className="pt-0.5 shrink-0">
+        {checked ? (
+          <CheckSquare size={16} className="text-[var(--bh-brass)]" strokeWidth={2} />
+        ) : (
+          <Square size={16} className="text-[var(--bh-ink-mute)]" strokeWidth={1.75} />
+        )}
       </div>
-      {item.property_address && (
-        <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] inline-flex items-center gap-1 truncate">
-          <MapPin size={10} strokeWidth={1.75} /> {item.property_address}
-        </div>
-      )}
-      <div className="mt-1 flex items-center gap-2 flex-wrap text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
-        {item.neighborhood && (
-          <span
-            className="mono uppercase tracking-widest text-[9.5px]"
-            style={{ color: "#3f6b6b" }}
-            data-testid={`landlord-neighborhood-${item.id}`}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Home size={12} className="text-[var(--bh-brass)] shrink-0" />
+          <div
+            className="font-display text-[15px] font-semibold text-[var(--bh-ink)] truncate"
+            data-testid={`landlord-name-${item.id}`}
           >
-            {item.neighborhood}
-          </span>
+            {item.owner_name || "Unknown owner"}
+          </div>
+          <DaysOnTable days={item.days_on_table} testId={`landlord-days-${item.id}`} />
+        </div>
+        {item.property_address && (
+          <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] inline-flex items-center gap-1 truncate">
+            <MapPin size={10} strokeWidth={1.75} /> {item.property_address}
+          </div>
         )}
-        {item.license_number && <span>{item.license_number}</span>}
-        {item.license_expiration && <span>· expires {item.license_expiration}</span>}
-        {item.outreach_status && normalize(item.outreach_status) !== "not contacted" && (
-          <span className="text-[var(--bh-olive)]">· {item.outreach_status}</span>
-        )}
+        <div className="mt-1 flex items-center gap-2 flex-wrap text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
+          {item.neighborhood && (
+            <span
+              className="mono uppercase tracking-widest text-[9.5px]"
+              style={{ color: "#3f6b6b" }}
+              data-testid={`landlord-neighborhood-${item.id}`}
+            >
+              {item.neighborhood}
+            </span>
+          )}
+          {item.license_number && <span>{item.license_number}</span>}
+          {item.license_expiration && <span>· expires {item.license_expiration}</span>}
+          {item.outreach_status && normalize(item.outreach_status) !== "not contacted" && (
+            <span className="text-[var(--bh-olive)]">· {item.outreach_status}</span>
+          )}
+        </div>
       </div>
     </div>
-  </button>
+    <div className="mt-2 pt-2 border-t bh-hairline flex items-center justify-end">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleResearch();
+        }}
+        data-testid={`landlord-research-toggle-${item.id}`}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--bh-ink-3)] hover:text-[var(--bh-brass)]"
+      >
+        <Sparkles size={11} strokeWidth={1.75} />
+        {researchOpen ? "Hide research" : "Research this owner"}
+      </button>
+    </div>
+    {researchOpen && (
+      <div className="mt-2" data-testid={`landlord-research-panel-${item.id}`}>
+        <ResearchPanel
+          researchType="landlord_background"
+          recordId={item.id}
+          query={`Rental property owner in New Orleans. Owner name: ${item.owner_name || "(unknown)"}. Property address on STR license: ${item.property_address || "(unknown)"}. Mailing address: ${item.mailing_address || "(unknown)"}. Surface public records: LLC filings, additional NOLA properties they appear to own, portfolio size hint, and any news mentions. Cite sources.`}
+          label="Look up this owner"
+          hint="Public records + LLC filings + news mentions with citations."
+          testId={`research-landlord-${item.id}`}
+        />
+      </div>
+    )}
+  </div>
 );
 
 const DiscoveryLandlords = () => {
@@ -94,6 +133,7 @@ const DiscoveryLandlords = () => {
   const [selected, setSelected] = useState(new Set());
   const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState("fresh");
+  const [researchOpenId, setResearchOpenId] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -452,6 +492,10 @@ const DiscoveryLandlords = () => {
               item={item}
               checked={selected.has(item.id)}
               onToggle={() => toggle(item.id)}
+              researchOpen={researchOpenId === item.id}
+              onToggleResearch={() =>
+                setResearchOpenId((cur) => (cur === item.id ? null : item.id))
+              }
             />
           ))}
         </div>

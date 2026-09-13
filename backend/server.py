@@ -1424,6 +1424,64 @@ async def update_user_settings(patch: UserSettingsPatch):
 
 app.include_router(api_router)
 
+
+# ─── Perplexity research routes ─────────────────────────────────────────
+# Feature-flagged: when PERPLEXITY_API_KEY is not set, /api/research
+# returns 503 cleanly and the frontend hides the research buttons.
+from services.perplexity_service import (
+    research_async as _pplx_research_async,
+    PerplexityError as _PerplexityError,
+    get_perplexity_service as _get_pplx_service,
+    perplexity_config_error as _pplx_config_error,
+)
+from services import research_cache_service as _research_cache
+
+
+class ResearchRequest(BaseModel):
+    research_type: str  # decision_maker | permit_explainer | landlord_background
+    record_id: str
+    query: str
+    force_refresh: Optional[bool] = False
+
+
+@app.get("/api/research/status")
+async def research_status():
+    """Report whether Perplexity is configured, without leaking the key."""
+    svc = _get_pplx_service()
+    return {
+        "enabled": svc is not None,
+        "error": _pplx_config_error() if svc is None else None,
+    }
+
+
+@app.post("/api/research")
+async def create_research(req: ResearchRequest):
+    if req.research_type not in ("decision_maker", "permit_explainer", "landlord_background"):
+        raise HTTPException(status_code=400, detail="unknown research_type")
+
+    # Serve from Mongo cache unless the caller asked for a fresh call.
+    if not req.force_refresh:
+        try:
+            cached = await _research_cache.get_cached(req.research_type, req.record_id)
+            if cached:
+                return cached
+        except Exception:  # noqa: BLE001
+            logger.exception("research cache read failed — falling through to Perplexity")
+
+    try:
+        result = await _pplx_research_async(req.research_type, req.query)
+    except _PerplexityError as e:
+        headers = {"Retry-After": e.retry_after} if e.retry_after else None
+        raise HTTPException(status_code=e.status_code, detail=str(e), headers=headers)
+
+    try:
+        await _research_cache.set_cached(req.research_type, req.record_id, result)
+    except Exception:  # noqa: BLE001
+        logger.exception("research cache write failed — returning result anyway")
+
+    return result
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
