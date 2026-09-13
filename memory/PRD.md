@@ -529,3 +529,26 @@ from a real Perplexity answer; the write correctly failed with the
 friendly-400 telling Ryan to add Email + Phone columns to the
 "Real Estate Agent Outreach" table (they don't exist in his current
 schema).
+
+**Auto-fill self-heals — no dependence on Claude (2026-02-18)** — Ryan
+requested this be an Emergent-owned function, not a Claude handoff.
+Two upgrades to the Auto-fill Contact write path:
+
+1. **Actual Airtable column names** — the Real Estate Agent Outreach
+   table already had `Public Business Email` and `Public Business
+   Phone` columns; the write helper now targets those exact names
+   instead of the wrong-guess `Email` / `Phone`. DTO reader also
+   updated to pull `public_business_email` / `public_business_phone`
+   as the primary snake-keys.
+2. **Auto-heal safety net** — added `DiscoveryReader.ensure_columns`
+   using pyairtable's Metadata API (`Table.create_field`). If a write
+   fails with UNKNOWN_FIELD_NAME (e.g. columns get renamed on Claude's
+   side later), `patch_fields` auto-creates the missing columns as
+   `singleLineText` and retries the write once. If the PAT lacks
+   `schema.bases:write`, the route surfaces a clean 400 with the
+   exact next step (rotate the PAT, no Claude involvement needed).
+
+Live-verified: `POST /api/discovery/real-estate-agents/recwB56WOxRQwOijw/enrich`
+returned HTTP 200 in ~1s; the live Airtable row now carries Mary
+Danna's Perplexity-extracted email + phone; cache invalidated so the
+Discovery feed reflects it immediately.

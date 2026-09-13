@@ -1483,18 +1483,19 @@ async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         msg = str(e)
-        # 422 from Airtable usually means the Email/Phone column doesn't
-        # exist on the table yet. Surface it as a friendly 400 so Ryan
-        # sees the exact next step instead of a stack trace.
-        if "UNKNOWN_FIELD_NAME" in msg or "422" in msg:
+        # Missing schema.bases:write PAT scope — surface with exact next step.
+        if "schema.bases:write" in msg or "INVALID_PERMISSIONS" in msg:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Airtable rejected the write — the 'Real Estate Agent "
-                    "Outreach' table needs 'Email' and 'Phone' columns. "
-                    "Add them as Single line text columns and retry."
+                    "Airtable rejected the auto-column-create because your "
+                    "Personal Access Token is missing the "
+                    "'schema.bases:write' scope. Update the PAT at "
+                    "https://airtable.com/create/tokens and paste the new "
+                    "value into AIRTABLE_API_KEY. This is a one-time setup."
                 ),
             )
+        # Any other Airtable-side failure.
         raise HTTPException(status_code=502, detail=msg[:280])
 
 

@@ -380,8 +380,8 @@ def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:
             "name": _pick_first(r, ["agent_name", "name", "full_name"]),
             "brokerage": _pick_first(r, ["brokerage", "firm", "agency", "company"]),
             "why_target": _pick_first(r, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
-            "phone": _pick_first(r, ["phone", "phone_number", "contact_phone"]),
-            "email": _pick_first(r, ["email", "contact_email"]),
+            "phone": _pick_first(r, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
+            "email": _pick_first(r, ["public_business_email", "email", "contact_email"]),
             "website": _pick_first(r, ["website", "url", "profile_url"]),
             "outreach_gate": gate,
             "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
@@ -408,10 +408,14 @@ def real_estate_agent_status_counts() -> Dict[str, int]:
 # Column names on the Real Estate Agent Outreach table for the
 # Auto-fill Contact flow. Bloodhound writes ONLY to these two columns —
 # never to Outreach Gate, Contact Enrichment Status, or anything else
-# governed by Claude/Make. If a column doesn't exist on the table,
-# Airtable returns a 422 and the frontend surfaces it as "please add
-# Email/Phone columns to the table."
-_RE_AGENT_ENRICHABLE_COLUMNS = ("Email", "Phone")
+# governed by Claude/Make. The names below match the exact Airtable
+# columns already present on the table (verified 2026-02-18):
+#   'Public Business Email' and 'Public Business Phone'.
+# The `patch_fields` method has an auto-create safety net if those
+# columns get renamed or dropped — so this stays a one-tap flow no
+# matter what changes on the Airtable side.
+_RE_AGENT_EMAIL_COL = "Public Business Email"
+_RE_AGENT_PHONE_COL = "Public Business Phone"
 
 
 def enrich_real_estate_agent(
@@ -430,9 +434,9 @@ def enrich_real_estate_agent(
 
     updates: Dict[str, Any] = {}
     if email:
-        updates["Email"] = email
+        updates[_RE_AGENT_EMAIL_COL] = email
     if phone:
-        updates["Phone"] = phone
+        updates[_RE_AGENT_PHONE_COL] = phone
 
     patched = reader.patch_fields(record_id, updates)
 
@@ -444,8 +448,8 @@ def enrich_real_estate_agent(
         "name": _pick_first(patched, ["agent_name", "name", "full_name"]),
         "brokerage": _pick_first(patched, ["brokerage", "firm", "agency", "company"]),
         "why_target": _pick_first(patched, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
-        "phone": _pick_first(patched, ["phone", "phone_number", "contact_phone"]),
-        "email": _pick_first(patched, ["email", "contact_email"]),
+        "phone": _pick_first(patched, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
+        "email": _pick_first(patched, ["public_business_email", "email", "contact_email"]),
         "website": _pick_first(patched, ["website", "url", "profile_url"]),
         "outreach_gate": gate,
         "contact_enrichment_status": _pick_first(patched, ["contact_enrichment_status", "enrichment_status"]),
