@@ -112,6 +112,7 @@ async def list_opportunities(
     q: Optional[str] = None,
     lane: Optional[str] = None,
     sort: Optional[str] = "lead_score",
+    view: Optional[str] = None,
 ):
     svc = get_opportunity_service()
     return svc.list(
@@ -124,6 +125,7 @@ async def list_opportunities(
         q=q,
         lane=lane,
         sort=sort,
+        view=view,
     )
 
 
@@ -1571,9 +1573,27 @@ def _csv_response(feed: str, rows):
 
 
 @app.get("/api/exports/opportunities.csv")
-async def export_opportunities_csv():
+async def export_opportunities_csv(
+    source: Optional[str] = None,
+    status: Optional[str] = None,
+    priority_band: Optional[str] = None,
+    daily_mission: Optional[str] = None,
+    project_type: Optional[str] = None,
+    min_score: Optional[float] = None,
+    q: Optional[str] = None,
+    lane: Optional[str] = None,
+    sort: Optional[str] = "lead_score",
+    view: Optional[str] = None,
+):
+    """Export the CURRENTLY-FILTERED opportunities view. Accepts the same
+    query params as GET /api/opportunities so the CSV always matches what
+    the operator sees on-screen."""
     svc = get_opportunity_service()
-    rows = svc.list() if svc else []
+    rows = svc.list(
+        source=source, status=status, priority_band=priority_band,
+        daily_mission=daily_mission, project_type=project_type,
+        min_score=min_score, q=q, lane=lane, sort=sort, view=view,
+    ) if svc else []
     return _csv_response("leads", rows)
 
 

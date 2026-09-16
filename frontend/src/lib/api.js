@@ -153,7 +153,16 @@ export const api = {
     client.post(`/local-state/${feed}/unarchive`, { record_ids: recordIds }).then((r) => r.data),
 
   // CSV exports (server-generated; whitelist per feed; formula-injection safe)
-  csvOpportunitiesUrl: () => `${BASE}/api/exports/opportunities.csv`,
+  // Accepts an optional URLSearchParams / plain object so the export matches
+  // the filters currently applied on-screen.
+  csvOpportunitiesUrl: (params) => {
+    const base = `${BASE}/api/exports/opportunities.csv`;
+    if (!params) return base;
+    const qs = params instanceof URLSearchParams
+      ? params.toString()
+      : new URLSearchParams(params).toString();
+    return qs ? `${base}?${qs}` : base;
+  },
   csvDiscoveryUrl: (feed) => `${BASE}/api/exports/discovery/${feed}.csv`,
 
   // Landlords — 63 STR-license property owners, no phone/email yet.

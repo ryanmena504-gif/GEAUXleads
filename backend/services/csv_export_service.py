@@ -17,7 +17,7 @@ FEED_WHITELIST: Dict[str, List[str]] = {
         "money_signal", "governed_priority_score", "score_basis",
         "priority_explanation", "project_address", "project_type",
         "decision_maker", "email", "phone", "source", "source_url",
-        "permit_number", "permit_filing_date", "construction_value",
+        "permit_number", "permit_filing_date", "estimated_value",
         "created_time", "days_on_table", "next_follow_up",
     ],
     "property_managers": [

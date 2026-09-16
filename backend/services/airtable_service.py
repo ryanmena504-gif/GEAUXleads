@@ -369,6 +369,69 @@ def sort_opportunities(items: List[Dict[str, Any]], mode: str = "lead_score") ->
     return scored + unscored
 
 
+# ---------------------------------------------------------------------------
+# Saved-view chip filters — strict read of governed fields only. Each view
+# maps to an exact predicate on values Claude/Make already emitted. Nothing
+# is invented, no scoring is recomputed.
+#   hot              → priority_band == "A"
+#   fresh            → freshness == "Current"
+#   stale            → freshness == "Stale"
+#   needs-enrichment → not classified into Ready/Contacted, AND either the
+#                      classifier explicitly says so OR there's no score and
+#                      no reachable channel (mirrors frontend queue.js)
+#   recently-added   → no filter (caller sorts by created_time desc)
+# ---------------------------------------------------------------------------
+_ENRICHMENT_HINTS = (
+    "needs enrichment", "enrichment needed",
+    "needs research", "awaiting enrichment",
+)
+
+
+def _says_needs_enrichment(v: Any) -> bool:
+    if not isinstance(v, str):
+        return False
+    s = v.strip().lower()
+    if not s:
+        return False
+    return any(h in s for h in _ENRICHMENT_HINTS)
+
+
+def _has_channel(o: Dict[str, Any]) -> bool:
+    for k in ("email", "email_alt", "phone", "phone_alt"):
+        v = o.get(k)
+        if isinstance(v, str) and v.strip():
+            return True
+    return False
+
+
+def _apply_view(items: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    v = (view or "").strip().lower()
+    if v == "hot":
+        return [o for o in items if o.get("priority_band") == "A"]
+    if v == "fresh":
+        return [o for o in items if o.get("freshness") == "Current"]
+    if v == "stale":
+        return [o for o in items if o.get("freshness") == "Stale"]
+    if v == "needs-enrichment":
+        out = []
+        for o in items:
+            queue = o.get("current_queue")
+            if queue in ("Ready to Contact", "Contacted"):
+                continue
+            tagged = (
+                _says_needs_enrichment(o.get("contact_readiness"))
+                or _says_needs_enrichment(o.get("enrichment_status"))
+                or _says_needs_enrichment(o.get("ai_status"))
+            )
+            no_score = not isinstance(o.get("governed_priority_score"), (int, float))
+            if tagged or (no_score and not _has_channel(o)):
+                out.append(o)
+        return out
+    if v == "recently-added":
+        return list(items)
+    return items
+
+
 PIPELINE_STATUSES = [
     "New",
     "Needs research",
@@ -1026,7 +1089,7 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None, view=None) -> List[Dict[str, Any]]:
         results = self._all_cached()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -1059,6 +1122,17 @@ class AirtableOpportunityService:
                 ]).lower()
                 return ql in blob
             results = [o for o in results if match(o)]
+        # Saved-view chip filters — strict read of governed fields only.
+        # Each view maps to an exact governed-field predicate. Never invents
+        # data; unclassified records are excluded from every view.
+        if view:
+            results = _apply_view(results, view)
+        # `recently-added` implies a created-time sort regardless of `sort`.
+        if view == "recently-added":
+            results = sorted(results,
+                             key=lambda o: o.get("created_time") or "",
+                             reverse=True)
+            return results
         return sort_opportunities(results, mode=sort or "lead_score")
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:

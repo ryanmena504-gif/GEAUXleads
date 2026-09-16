@@ -444,8 +444,32 @@ never stack a second greeting under a classifier-provided one.
    returns `_cached: true`.
 8. Referral prompt after Won — planned
 
+## Code-review fixes (2026-02-19)
+Response to functional code review of the P1–P7 batch on production
+(https://hound-priorities.emergent.host). All three material findings
+resolved in preview; awaits redeploy to reach prod.
+- **HIGH — Saved View chips now filter for real.** Added a `view` query
+  param to `GET /api/opportunities` and the CSV export endpoint. Backend
+  helper `_apply_view` maps each chip to a strict governed-field predicate
+  (Hot → `priority_band == "A"`, Fresh/Stale → `freshness`, Needs
+  enrichment → mirror of `queue.js:needsEnrichment` in Python, Recently
+  added → `created_time` desc). Frontend forwards `view` on both the list
+  fetch and the export href. Verified: Hot returns 17 (all band A), Fresh
+  52, Needs enrichment 39, Recently added sorted desc, All 59.
+- **LOW — CSV `estimated_value` column.** `csv_export_service.py` had
+  whitelisted `construction_value`, which doesn't exist on the DTO —
+  column was always blank. Renamed to `estimated_value` to match
+  `airtable_service.py`.
+- **LOW — CSV now respects on-screen filters.** `csvOpportunitiesUrl`
+  accepts a `URLSearchParams`; `SavedViewsBar` in Opportunities passes
+  the current URL params so `?view=hot&status=Ready` etc. round-trip
+  into the CSV. Backend endpoint accepts the same params as
+  `/api/opportunities`.
+
 ## Backlog / Next
 - **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.
+- **Orphaned P1–P7 pieces** — `BulkActionBar.jsx`, `hooks/useLocalArchive.js`, `hooks/useTelemetry.js`, `csvDiscoveryUrl` are built but not wired in. Wire up or delete on next iteration.
+- **Bound `POST /api/telemetry/event` payload size** server-side (flag off by default; low risk).
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock
 - **Won streak widget** — small streak counter on the dashboard
