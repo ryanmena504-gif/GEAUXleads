@@ -552,3 +552,26 @@ Live-verified: `POST /api/discovery/real-estate-agents/recwB56WOxRQwOijw/enrich`
 returned HTTP 200 in ~1s; the live Airtable row now carries Mary
 Danna's Perplexity-extracted email + phone; cache invalidated so the
 Discovery feed reflects it immediately.
+
+**P1-P7 compatible-pass shipped (2026-02-18)** — all seven priorities from the audit plan, no founding rule broken.
+
+Files created:
+- `backend/services/local_state_service.py` — Mongo `bloodhound_local_state`, namespaced by (workspace=solo, feed), archive/unarchive/list; feed allowlist blocks arbitrary paths.
+- `backend/services/csv_export_service.py` — per-feed DTO whitelist + QUOTE_ALL + formula-injection guard (=/+/-/@/|/tab/CR prefixed with `'`).
+- `frontend/src/components/ScoreExplanationCard.jsx` — governed Claude fields with provenance chips; "Not yet classified" when null.
+- `frontend/src/components/ContactStatusChip.jsx` — 6 states derived from DTO only.
+- `frontend/src/components/CommandCenterStats.jsx` — 4 zero-fabrication counters.
+- `frontend/src/components/SavedViewsBar.jsx` — URL-driven bookmarkable views; 44px mobile / 32px desktop; carries the Export CSV link.
+- `frontend/src/components/BulkActionBar.jsx` — 44px CTAs; BCC-first `mailto:` with URI-length fallback + explicit tab-count confirm; excludes records without email; Archive button title explains "Bloodhound only — Airtable/Make unchanged".
+- `frontend/src/hooks/useLocalArchive.js` + `useTelemetry.js` — telemetry strictly non-blocking, off by default via `BLOODHOUND_TELEMETRY_ENABLED`.
+
+Backend routes added:
+- `GET /api/local-state/{feed}/archived` · `POST /archive` · `POST /unarchive` (feed allowlist)
+- `POST /api/telemetry/event` (returns `{stored:false}` unless env flag on)
+- `GET /api/exports/opportunities.csv` · `GET /api/exports/discovery/{feed}.csv` — `text/csv; charset=utf-8` + `Content-Disposition: attachment; filename=...`
+
+Wired into: OpportunityDetail (ScoreExplanationCard + ContactStatusChip), CommandCenter (Stats top of page), Opportunities (SavedViewsBar w/ CSV export).
+
+Regression sweep (all 200/expected): opportunities, discovery (all 4 feeds), perplexity status, twilio status, morning-brief 401 without bearer, archive round-trip, unknown feed rejected 400, CSV headers correct + 66-row payload.
+
+No environment variables required beyond the existing set; `BLOODHOUND_TELEMETRY_ENABLED` is optional and defaults off.

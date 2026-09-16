@@ -1499,6 +1499,105 @@ async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
         raise HTTPException(status_code=502, detail=msg[:280])
 
 
+# ─── Local archive + CSV export + telemetry ─────────────────────────────
+from services import local_state_service as _local_state
+from services import csv_export_service as _csv_export
+from fastapi.responses import Response
+
+
+class LocalArchiveRequest(BaseModel):
+    record_ids: List[str]
+
+
+@app.get("/api/local-state/{feed}/archived")
+async def get_archived(feed: str):
+    try:
+        ids = await _local_state.list_archived(feed)
+        return {"feed": feed, "archived_ids": ids}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/local-state/{feed}/archive")
+async def archive_local(feed: str, req: LocalArchiveRequest):
+    try:
+        n = await _local_state.archive_many(feed, req.record_ids)
+        return {"feed": feed, "archived": n}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/local-state/{feed}/unarchive")
+async def unarchive_local(feed: str, req: LocalArchiveRequest):
+    try:
+        n = await _local_state.unarchive_many(feed, req.record_ids)
+        return {"feed": feed, "unarchived": n}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class TelemetryEvent(BaseModel):
+    event: str
+    payload: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/telemetry/event")
+async def telemetry_event(evt: TelemetryEvent):
+    if os.environ.get("BLOODHOUND_TELEMETRY_ENABLED", "").lower() != "true":
+        return {"stored": False}
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        c = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]["bloodhound_events"]
+        await c.insert_one({
+            "event": evt.event[:80],
+            "payload": evt.payload or {},
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"stored": True}
+    except Exception:
+        return {"stored": False}
+
+
+def _csv_response(feed: str, rows):
+    body = _csv_export.build_csv(feed, rows)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_csv_export.filename_for(feed)}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/exports/opportunities.csv")
+async def export_opportunities_csv():
+    svc = get_opportunity_service()
+    rows = svc.list() if svc else []
+    return _csv_response("leads", rows)
+
+
+@app.get("/api/exports/discovery/{feed}.csv")
+async def export_discovery_csv(feed: str):
+    from services.discovery_service import (
+        list_property_managers, list_real_estate_agents,
+        list_landlords, list_investors,
+    )
+    mapping = {
+        "property-managers": ("property_managers", list_property_managers),
+        "real-estate-agents": ("re_agents", list_real_estate_agents),
+        "landlords": ("landlords", list_landlords),
+        "investors": ("investors", list_investors),
+    }
+    if feed not in mapping:
+        raise HTTPException(status_code=404, detail="unknown feed")
+    key, fn = mapping[feed]
+    result = fn(status="all") if fn.__code__.co_argcount else fn()
+    items = result.get("items", []) if isinstance(result, dict) else (result or [])
+    return _csv_response(key, items)
+
+
+
 # ─── Perplexity research routes ─────────────────────────────────────────
 # Feature-flagged: when PERPLEXITY_API_KEY is not set, /api/research
 # returns 503 cleanly and the frontend hides the research buttons.

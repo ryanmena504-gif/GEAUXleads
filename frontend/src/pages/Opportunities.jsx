@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { LayoutGrid, Rows3, X } from "lucide-react";
+import SavedViewsBar from "@/components/SavedViewsBar";
 
 const FilterChip = ({ label, active, onClick, testId }) => (
   <button
@@ -106,6 +107,7 @@ const Opportunities = () => {
       />
 
       <div className="px-4 lg:px-8 py-6 space-y-5">
+        <SavedViewsBar scope="opportunities" exportHref={api.csvOpportunitiesUrl()} />
         {/* Toolbar */}
         <div className="bh-surface rounded p-4 space-y-4">
           <div className="flex items-center gap-3 flex-wrap">

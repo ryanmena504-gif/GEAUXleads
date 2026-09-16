@@ -17,6 +17,7 @@ import {
 } from "@/lib/queue";
 import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
+import CommandCenterStats from "@/components/CommandCenterStats";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import {
   Mail,
@@ -784,6 +785,7 @@ const CommandCenter = () => {
         subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
       />
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
+        <CommandCenterStats items={items} />
         <MorningBrief />
         <LearningStrip />
         <SectionShell

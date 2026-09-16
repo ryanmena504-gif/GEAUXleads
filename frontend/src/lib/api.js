@@ -144,6 +144,18 @@ export const api = {
       .post(`/discovery/real-estate-agents/${encodeURIComponent(recordId)}/enrich`, payload)
       .then((r) => r.data),
 
+  // Bloodhound-local archive (UI hide only — never mutates Airtable/Make)
+  listLocalArchive: (feed) =>
+    client.get(`/local-state/${feed}/archived`).then((r) => r.data),
+  archiveLocal: (feed, recordIds) =>
+    client.post(`/local-state/${feed}/archive`, { record_ids: recordIds }).then((r) => r.data),
+  unarchiveLocal: (feed, recordIds) =>
+    client.post(`/local-state/${feed}/unarchive`, { record_ids: recordIds }).then((r) => r.data),
+
+  // CSV exports (server-generated; whitelist per feed; formula-injection safe)
+  csvOpportunitiesUrl: () => `${BASE}/api/exports/opportunities.csv`,
+  csvDiscoveryUrl: (feed) => `${BASE}/api/exports/discovery/${feed}.csv`,
+
   // Landlords — 63 STR-license property owners, no phone/email yet.
   // Bloodhound generates printable letters for USPS drop; ids param
   // (comma-separated) pulls an exact batch for the print view.

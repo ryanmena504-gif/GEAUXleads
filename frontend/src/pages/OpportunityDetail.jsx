@@ -11,6 +11,8 @@ import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
+import ScoreExplanationCard from "@/components/ScoreExplanationCard";
+import ContactStatusChip from "@/components/ContactStatusChip";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -468,9 +470,15 @@ const OpportunityDetail = () => {
             </div>
             </section>
 
+            {/* Governed score / priority — read-only, provenance-labeled */}
+            <ScoreExplanationCard opp={opp} testId={`score-card-${opp.id}`} />
+
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading title="Who to talk to" />
+              <div className="mb-3">
+                <ContactStatusChip record={opp} testId={`opp-contact-status-${opp.id}`} />
+              </div>
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
                 <KV label="Phone" value={opp.phone} mono testId="kv-phone" />
