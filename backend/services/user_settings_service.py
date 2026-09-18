@@ -26,6 +26,8 @@ EDITABLE_KEYS = {
     "sender_phone",
     "sender_mailing_address",
     "email_provider",
+    "brief_hour",
+    "brief_enabled",
 }
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
@@ -42,6 +44,11 @@ DEFAULTS: Dict[str, Any] = {
     "sender_phone": "(504) 264-4919",
     "sender_mailing_address": "",
     "email_provider": "apple",
+    # Morning-brief delivery — hour 0-23 in America/Chicago local time.
+    # Cron fires hourly and _deliver_morning_brief checks these before
+    # composing/sending, so a change here takes effect on the next hour tick.
+    "brief_hour": 7,
+    "brief_enabled": True,
 }
 
 
@@ -81,6 +88,19 @@ class UserSettingsService:
                 continue
             if v is None:
                 clean[k] = None
+                continue
+            # Bool + int fields short-circuit before the string coercion below.
+            if k == "brief_enabled":
+                clean[k] = bool(v)
+                continue
+            if k == "brief_hour":
+                try:
+                    h = int(v)
+                except (TypeError, ValueError):
+                    raise ValueError("brief_hour must be an integer 0-23")
+                if h < 0 or h > 23:
+                    raise ValueError("brief_hour must be between 0 and 23")
+                clean[k] = h
                 continue
             s = str(v).strip()
             if k == "sender_email":

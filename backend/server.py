@@ -1264,20 +1264,40 @@ async def morning_brief_preview():
     return await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
 
 
-async def _deliver_morning_brief() -> Dict[str, Any]:
+async def _deliver_morning_brief(force: bool = False) -> Dict[str, Any]:
     """Compose + send the brief. Isolated so both the cron worker and the
     on-demand /send-now endpoint can call it. Never raises — logs and
     returns a status dict instead so a transient failure doesn't crash
-    the cron worker or the manual test button."""
+    the cron worker or the manual test button.
+
+    The cron fires hourly (America/Chicago); this function no-ops unless
+    the current Chicago hour matches settings.brief_hour and delivery is
+    enabled. `force=True` bypasses those checks — used by the manual
+    Settings "Send now" button so Ryan can test-fire outside his window.
+    """
     from services.morning_brief_service import compose_brief, render_brief_html
     from services.email_service import send_outreach_email, EmailSendError
 
     osvc = get_opportunity_service()
     hsvc = get_handoff_service()
     usvc = get_user_settings_service()
-    brief = await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
 
     settings = await usvc.get() if usvc else USER_SETTINGS_DEFAULTS
+    if not force:
+        if not settings.get("brief_enabled", True):
+            return {"sent": False, "reason": "brief disabled in settings"}
+        # America/Chicago local hour gate. Zoneinfo is stdlib; a bad env or
+        # missing tzdata falls back to UTC hour so we never crash the cron.
+        try:
+            from zoneinfo import ZoneInfo
+            now_local = datetime.now(ZoneInfo("America/Chicago"))
+        except Exception:
+            now_local = datetime.now(timezone.utc)
+        want_hour = int(settings.get("brief_hour", 7))
+        if now_local.hour != want_hour:
+            return {"sent": False, "reason": f"hour {now_local.hour} != brief_hour {want_hour}"}
+
+    brief = await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
     recipient = (settings.get("sender_email") or "").strip()
     if not recipient:
         return {"sent": False, "reason": "no recipient in user_settings"}
@@ -1306,7 +1326,9 @@ async def morning_brief_send_now(authorization: Optional[str] = Header(None)):
     """
     if not _bearer_matches(authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return await _deliver_morning_brief()
+    # Manual test-fire bypasses the hour gate so Ryan can preview delivery
+    # regardless of what time it is.
+    return await _deliver_morning_brief(force=True)
 
 
 def _bearer_matches(auth_header: Optional[str]) -> bool:
@@ -1615,6 +1637,63 @@ async def export_discovery_csv(feed: str):
     result = fn(status="all") if fn.__code__.co_argcount else fn()
     items = result.get("items", []) if isinstance(result, dict) else (result or [])
     return _csv_response(key, items)
+
+
+# ─── Draft safety audit ────────────────────────────────────────────────
+# Scans every opportunity for message-shaped fields that would fail the
+# frontend `looksLikeAIPrompt` guard — meaning: if Ryan had tapped
+# Email Now on that record, an unrendered AI prompt or template stub
+# would have flowed into the mailto body. Read-only; touches nothing.
+# ============================================================================
+@app.get("/api/audit/draft-safety")
+async def audit_draft_safety():
+    from services.draft_safety import looks_like_ai_prompt
+    svc = get_opportunity_service()
+    all_ops = svc.all() if (svc and hasattr(svc, "all")) else []
+    # Every Airtable field the composer trusts as part of a mailto: draft.
+    # Body sources — piped straight into the email body:
+    BODY_FIELDS = ("first_message", "first_contact_message", "current_recommendation")
+    # Subject sources — piped into the subject line:
+    SUBJECT_FIELDS = ("first_message_subject",)
+    # Salutation sources — piped into "Hi X," at the top of the body. A bad
+    # value here becomes literally "Hi You are a Claude assistant,".
+    NAME_FIELDS = ("decision_maker", "contact_name")
+    ALL_FIELDS = BODY_FIELDS + SUBJECT_FIELDS + NAME_FIELDS
+    offenders = []
+    reason_counts: Dict[str, int] = {}
+    field_counts: Dict[str, int] = {}
+    for o in all_ops:
+        for field in ALL_FIELDS:
+            val = o.get(field)
+            if not val:
+                continue
+            trip, reason = looks_like_ai_prompt(val)
+            if not trip:
+                continue
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            field_counts[field] = field_counts.get(field, 0) + 1
+            offenders.append({
+                "id": o.get("id"),
+                "name": o.get("name"),
+                "field": field,
+                "reason": reason,
+                "sample": (str(val).strip()[:220]),
+                "current_queue": o.get("current_queue"),
+                "outreach_status": o.get("outreach_status"),
+                "outreach_sent": bool(o.get("flag_outreach_sent") or o.get("outreach_sent")),
+                "message_sent_date": o.get("message_sent_date"),
+            })
+    sent_offenders = [x for x in offenders if x["outreach_sent"]]
+    return {
+        "scanned": len(all_ops),
+        "fields_checked": list(ALL_FIELDS),
+        "offender_count": len(offenders),
+        "reason_counts": reason_counts,
+        "field_counts": field_counts,
+        "sent_with_bad_body_count": len(sent_offenders),
+        "sent_with_bad_body": sent_offenders,
+        "offenders": offenders,
+    }
 
 
 

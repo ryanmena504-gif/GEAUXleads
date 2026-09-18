@@ -466,10 +466,7 @@ resolved in preview; awaits redeploy to reach prod.
   into the CSV. Backend endpoint accepts the same params as
   `/api/opportunities`.
 
-## Backlog / Next
-- **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.
-- **Orphaned P1–P7 pieces** — `BulkActionBar.jsx`, `hooks/useLocalArchive.js`, `hooks/useTelemetry.js`, `csvDiscoveryUrl` are built but not wired in. Wire up or delete on next iteration.
-- **Bound `POST /api/telemetry/event` payload size** server-side (flag off by default; low risk).
+## Code-review fixes (2026-02-19)
 - **Signature preview** in Settings (see the exact email signature before sending)
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock
 - **Won streak widget** — small streak counter on the dashboard

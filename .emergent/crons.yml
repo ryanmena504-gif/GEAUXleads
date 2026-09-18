@@ -1,7 +1,7 @@
 crons:
   - name: morning-brief
-    description: "Sends Ryan the daily morning brief at 7:00 America/Chicago"
-    cron: "0 7 * * *"
+    description: "Ryan's morning brief — fires hourly; _deliver_morning_brief no-ops unless the current Chicago hour matches settings.brief_hour"
+    cron: "0 * * * *"
     timezone: "America/Chicago"
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     endpoint: "{{BASE_URL}}/api/cron/morning-brief"
