@@ -466,8 +466,42 @@ resolved in preview; awaits redeploy to reach prod.
   into the CSV. Backend endpoint accepts the same params as
   `/api/opportunities`.
 
-## Code-review fixes (2026-02-19)
-- **Signature preview** in Settings (see the exact email signature before sending)
+## URGENT — Directive-as-email bug (2026-02-19)
+Ryan tapped "Follow Up Email" on `recCGVbFaQ48Vd3C5` (Backyard Living)
+and saw the mailto body read:
+    "Hi there,
+     Build a short finish-fit memo for kitchen and renovation work."
+That body was `current_recommendation` — a Claude-authored **directive
+to Ryan** ("go build a memo") — piped verbatim into a customer-facing
+mailto. Ryan did NOT tap Send. Audit of live Airtable confirmed the
+same class of failure on 16 records total (all `current_recommendation`
+containing bare imperatives: Wait/Build/Map/Monitor/Verify/Review/
+Check/Prepare); 0 have actually been sent (`sent_with_bad_body = 0`).
+
+**Root-cause fix:** `buildFollowUpDraft` no longer reads
+`current_recommendation` at all. It's the wrong field — it's advice to
+operator, not customer copy. Follow-up drafts now use hardcoded safe
+fallback body ("Just checking in to see if now is a better time to
+chat." / landlord variant). If we ever want per-record follow-up copy,
+it needs a dedicated Airtable field with a "customer-facing" contract
+owned by Claude.
+
+**Defense-in-depth:** `looksLikeAIPrompt` guard extended to catch bare
+imperative directives (Build/Map/Monitor/Verify/Review/Prepare/Wait for
+/Check for/etc. at start of string). 39/39 pytest cases pass including
+false-positive traps ("Please let me know…", "You are correct…",
+"You're welcome to…"). Both `buildFirstDraft` and `buildFollowUpDraft`
+run the composed body through the guard as a final belt-and-braces
+check — if anything trips, the mailto button is REPLACED with a
+disabled red "Draft blocked" state and cannot be tapped.
+
+**Audit endpoint** `GET /api/audit/draft-safety` scans all 6 composer-
+touched fields (first_message, first_contact_message,
+current_recommendation, first_message_subject, decision_maker,
+contact_name), reports counts by reason and by field, and surfaces
+`sent_with_bad_body` separately so we know if anything actually went
+out. Redeploy needed to expose on production; then re-run against
+prod's Airtable snapshot.
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock
 - **Won streak widget** — small streak counter on the dashboard
 - **Voice-to-note capture** — job-site dictation into any lead

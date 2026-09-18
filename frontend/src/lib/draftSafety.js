@@ -23,6 +23,14 @@ const PROMPT_OPENERS = [
   /^\[(system|assistant|user|human|instructions?|prompt|role|task)\]/i,
   /^(system|assistant|user|human|instructions?|prompt|role|task)\s*[:—-]\s/i,
   /^###\s*(instructions?|role|task|context|prompt|system)/i,
+  // Directive-to-operator openers. These are bare imperative verbs that
+  // real outreach never starts with — Ryan's live prod bug (2026-02-19)
+  // was "Build a short finish-fit memo for kitchen and renovation work."
+  // stored as `current_recommendation` and piped into the follow-up body.
+  // Legit outreach uses first-person ("I noticed…", "I'm reaching out…")
+  // or greetings ("Hi …"), never a bare command aimed at the operator.
+  /^(build|map|monitor|verify|review|prepare|investigate|extract|scrape|classify|tag|categorize|assess|score|rate|log)\s+(a|an|the|it|this|that|these|those|recurring|any|all|for|from|to|through)\b/i,
+  /^(wait for|check for|update|ensure|confirm) (a |the |any |all )/i,
 ];
 
 // Structural markers anywhere in the body. Any single hit is a hard fail.

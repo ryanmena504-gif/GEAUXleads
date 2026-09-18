@@ -112,19 +112,22 @@ const buildFollowUpDraft = (opp, sender) => {
     "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
   const projectDefault =
     "Just checking in to see if now is a better time to chat.";
-  // Same guard as buildFirstDraft — reject prompt-shaped `current_recommendation`
-  // so a stale/garbage classifier output never lands in a Follow Up Email.
-  const airtableRec = opp?.current_recommendation || null;
-  const recCheck = airtableRec ? looksLikeAIPrompt(airtableRec) : { trip: true, reason: "empty" };
-  const usedFallback = recCheck.trip;
-  const rec = usedFallback ? (isLandlord ? landlordDefault : projectDefault) : airtableRec;
-  const cleanRec = stripLeadingGreeting(rec);
-  const body = [salutation, "", cleanRec].filter(Boolean).join("\n");
+  // CRITICAL: `current_recommendation` is Claude's ADVICE TO RYAN
+  // ("go build a memo", "wait for a reply", "map recurring scopes") — it
+  // is NOT customer-facing outreach copy. It was previously piped into
+  // the mailto body which caused directives to Ryan to be sent as
+  // messages to prospects (2026-02-19 bug). Follow-up drafts now use
+  // ONLY the hardcoded safe copy above. If we ever want a per-record
+  // follow-up line, it needs its own dedicated Airtable field owned by
+  // Claude with an explicit "customer-facing" contract — never a reused
+  // operator-directive field.
+  const rec = isLandlord ? landlordDefault : projectDefault;
+  const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),
-    airtable_rejected: airtableRec ? recCheck.trip : false,
-    airtable_reject_reason: airtableRec ? recCheck.reason : null,
+    airtable_rejected: false,
+    airtable_reject_reason: null,
   };
 };
 

@@ -29,6 +29,17 @@ _PROMPT_OPENERS = [
         re.I,
     ),
     re.compile(r"^###\s*(instructions?|role|task|context|prompt|system)", re.I),
+    # Directive-to-operator openers — bare imperatives Claude uses to tell
+    # Ryan what to do next. Live prod bug (2026-02-19) was "Build a short
+    # finish-fit memo…" stored in `current_recommendation` and piped into
+    # the mailto body.
+    re.compile(
+        r"^(build|map|monitor|verify|review|prepare|investigate|extract|scrape|"
+        r"classify|tag|categorize|assess|score|rate|log)\s+"
+        r"(a|an|the|it|this|that|these|those|recurring|any|all|for|from|to|through)\b",
+        re.I,
+    ),
+    re.compile(r"^(wait for|check for|update|ensure|confirm) (a |the |any |all )", re.I),
 ]
 
 # Structural markers anywhere in the text.

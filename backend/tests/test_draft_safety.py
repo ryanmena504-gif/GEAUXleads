@@ -21,6 +21,17 @@ from services.draft_safety import looks_like_ai_prompt as g
     "[SYSTEM] draft a follow-up",
     "I am an AI assistant that helps contractors",
     "As an AI language model, I cannot",
+    # Directive-to-operator patterns (live prod bug 2026-02-19).
+    "Build a short finish-fit memo for kitchen and renovation work.",
+    "Map recurring wet-area and outdoor finish scopes from its public project pages.",
+    "Review a short high-end finish-package concept draft tailored to Pentek Homes.",
+    "Monitor for a reply and update notes if the lead responds.",
+    "Prepare a partner-development brief, not outreach.",
+    "Wait for a reply; meanwhile verify any recent public project references.",
+    "Verify the public contact details are still active.",
+    "Check for any updates on the outreach status.",
+    "Update the record notes with the latest response.",
+    "Ensure the governed score is refreshed after enrichment.",
 ])
 def test_trip_prompt_shaped(text):
     trip, reason = g(text)
