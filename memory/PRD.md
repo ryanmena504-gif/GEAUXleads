@@ -466,6 +466,32 @@ resolved in preview; awaits redeploy to reach prod.
   into the CSV. Backend endpoint accepts the same params as
   `/api/opportunities`.
 
+## Completed Project Proof — Round 1 approved (2026-02-19)
+Schema doc saved at `/app/memory/airtable_schema_round1.md` — the sole
+Round 1 Airtable reference. Slice 1 only: read-only card that renders
+16 evidence fields Claude/Make writes to Airtable. Bloodhound stays a
+pure read-through — no crawler in FastAPI, no writes to these fields,
+no vision analysis, no draft generation, no scoring changes.
+
+Approved acceptance-test records (Claude/Make crawls these three
+only): Sweeney Restoration (`recjqiG1eqhes4HN1`), Rockwell Builders
+(`recjV6JTgEbBNgmaw`), Decor by Flora (`reczI61UIgTrHQHTm`). J Hand
+Homes (`recZ7oiv2MDNKb72Q`) held for Slice 2 (email-required rule).
+
+**Build order (locked):**
+1. ✅ Schema doc saved.
+2. ⏳ Claude/Make creates the 16 fields + runs check on the 3 records.
+3. ⏳ Ryan reviews Airtable results for factual + conservative output.
+4. ⏳ Only after step 3 approval: build `CompletedProjectProofCard.jsx`
+   + extend `airtable_service.py` DTO mapping for the 16 fields.
+5. ⏳ Three-record acceptance run + report.
+6. STOP at Slice 1.
+
+Pass/fail standard captured from Ryan's message (partially truncated —
+provisional acceptance criteria derived from his earlier Slice 1
+success condition are documented in the schema doc pending his
+completion of the truncated line).
+
 ## URGENT — Directive-as-email bug (2026-02-19)
 Ryan tapped "Follow Up Email" on `recCGVbFaQ48Vd3C5` (Backyard Living)
 and saw the mailto body read:
