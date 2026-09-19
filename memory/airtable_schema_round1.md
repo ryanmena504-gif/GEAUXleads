@@ -219,6 +219,10 @@ Translated into acceptance checks for the three records:
   `"low"` (lowercase) would have failed the strict `"Low"` equality
   check and leaked the Compliment Line. See `key()` helper in
   `CompletedProjectProofCard.jsx`.
+- 2026-02-19 (Slice 2 shipped) — `PortfolioComplimentDraft.jsx` added
+  and rendered inside the compliment hero. Approval-only mailto
+  handoff with a full 7-gate eligibility check. See PRD entry
+  "Completed Project Proof — Slice 2 shipped (2026-02-19)".
 
 ### Actual select-option values retained by Ryan (canonical, 2026-02-19)
 

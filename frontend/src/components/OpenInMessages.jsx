@@ -33,7 +33,7 @@ const DEFAULT_SENDER_PHONE = "(504) 264-4919";
 
 const enc = encodeURIComponent;
 
-const withSignature = (body, senderName, senderPhone) => {
+export const withSignature = (body, senderName, senderPhone) => {
   const base = (body || "").trim();
   const name = (senderName || DEFAULT_SENDER_NAME).trim();
   const phone = (senderPhone || DEFAULT_SENDER_PHONE).trim();
@@ -131,7 +131,7 @@ const buildFollowUpDraft = (opp, sender) => {
   };
 };
 
-const pickEmail = (opp) => {
+export const pickEmail = (opp) => {
   const raw = (opp?.email || opp?.email_alt || opp?.contact_email || "").toString().trim();
   return raw && raw.includes("@") ? raw : null;
 };

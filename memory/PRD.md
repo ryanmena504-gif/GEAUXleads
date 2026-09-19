@@ -466,6 +466,49 @@ resolved in preview; awaits redeploy to reach prod.
   into the CSV. Backend endpoint accepts the same params as
   `/api/opportunities`.
 
+## Completed Project Proof — Slice 2 shipped (2026-02-19)
+Slice 2 = "compliment → draft, human-approved only, never auto-send."
+
+- **`components/PortfolioComplimentDraft.jsx`** — new button rendered
+  INSIDE the Slice 1 compliment hero (never as a standalone action).
+  Opens a device-native mail app via `mailto:` with a composed body
+  targeting the Slice 2 spec (65-110 words: compliment + intro +
+  partnership-angle offer + low-friction CTA + signature).
+- **Eligibility gates — ALL required** before the send button renders:
+  1. `portfolio_compliment_line` populated
+  2. `portfolio_check_confidence` = high OR medium
+  3. `portfolio_project_status` = completed
+  4. `portfolio_outreach_recommendation` = portfolio_opener OR use_project_opener
+  5. Verified public business email on record (via `pickEmail`)
+  6. `outreachAllowed(opp) !== "none"` (record not in All Projects)
+  7. Composed body passes `looksLikeAIPrompt` — belt-and-braces so a
+     prompt-shaped Airtable value cannot ever reach Send
+- **Locked state** — when gates 1-4 pass but gate 5 or 6 fails, the
+  card shows `portfolio-draft-locked` with the exact reason. Satisfies
+  Slice 2 acceptance test #5 (project proof may exist, but no email
+  draft may be generated without a verified public business email).
+- **Blocked state** — when gate 7 trips, `portfolio-draft-blocked`
+  banner replaces the button. Never silent fallback.
+- **Approval-only guarantees preserved:** No Airtable writes. No auto-
+  send. No status change. No scoring change. Opening the mailto does
+  not mark the record contacted. Same guarantees as OpenInMessages.
+- **Reused helpers:** `pickEmail`, `withSignature`, `buildSalutation`
+  exported from `OpenInMessages.jsx` — no duplicated mail logic.
+
+**Slice 2 acceptance run (2026-02-19):**
+- Sweeney: button renders, body = 95 words (in target range),
+  compliment first, partnership angle used ✅
+- Rockwell: button renders (High + completed) ✅
+- Decor by Flora: button renders (Medium + completed) ✅
+- J Hand Homes: portfolio not yet run — Ryan must trigger portfolio
+  check on `recZ7oiv2MDNKb72Q` (no email on file). If the check
+  returns High/completed the card will show `portfolio-draft-locked`
+  with "No verified email on this record."
+
+**Boundary intact:** No draft generation runs backend-side. Nothing
+sends automatically. Slice 2 stops here — no rescoring, no automated
+recheck, no Airtable writes.
+
 ## Completed Project Proof — Slice 1 built (2026-02-19)
 Frontend + proxy landed. Backend Portfolio Check pipeline lives on
 Claude/Make; Bloodhound stays a pure read-through.

@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Info,
 } from "lucide-react";
+import PortfolioComplimentDraft from "@/components/PortfolioComplimentDraft";
 
 /**
  * CompletedProjectProofCard — read-only surface for the Portfolio_*
@@ -225,7 +226,9 @@ export const CompletedProjectProofCard = ({ opportunity }) => {
       </div>
 
       {/* Hero: Compliment Line — the field meant to drop straight into
-          an outreach message. Suppressed when unsafe. */}
+          an outreach message. Suppressed when unsafe. Slice 2 adds the
+          "Draft with portfolio compliment" button underneath, gated on
+          verified email + safe queue + approved recommendation. */}
       {complimentLine ? (
         <div
           data-testid="portfolio-compliment-line"
@@ -238,6 +241,7 @@ export const CompletedProjectProofCard = ({ opportunity }) => {
           <p className="mt-2 text-[15px] leading-snug text-[var(--bh-ink)]">
             &ldquo;{complimentLine}&rdquo;
           </p>
+          <PortfolioComplimentDraft opportunity={o} />
         </div>
       ) : (
         rawCompliment && complimentUnsafe && (
