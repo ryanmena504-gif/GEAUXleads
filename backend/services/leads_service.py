@@ -34,7 +34,11 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Status": "status",
     "Ai summary": "ai_summary",
     "Why lead matters": "why_lead_matters",
-    "Next action": "next_action",
+    # DTO key `next_action` used to map Airtable's "Next action" field, but
+    # that field was deprecated 2026-02-19 — Ryan stopped its duplicate write
+    # and it now goes stale. Reading from "recommended action" keeps every
+    # downstream consumer (leads_service, NextBestAction.jsx) on fresh data.
+    "recommended action": "next_action",
     "First message": "first_message",
     "Approval status": "approval_status",
     "Outreach status": "outreach_status",

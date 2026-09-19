@@ -104,7 +104,12 @@ LIVE_FIELDS: Dict[str, str] = {
     "Why lead matters": "recommendation_reason",
     "Missing information": "missing_information",
     "Risk flags": "risk_flags",
-    "Next action": "next_best_action",
+    # `next_best_action` used to mirror Airtable's "Next action" field, but
+    # Ryan stopped the duplicate write on 2026-02-19 — "Next action" is now
+    # frozen at whatever value it last had. We no longer read that field.
+    # `next_best_action` is derived from `recommended_action` in the DTO
+    # post-processing step below so every downstream consumer keeps working
+    # against fresh data.
     "recommended action": "recommended_action",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
@@ -233,7 +238,6 @@ EXPLICIT_READONLY: set = {
     "Why lead matters",
     "Missing information",
     "Risk flags",
-    "Next action",
     "recommended action",
     "Recommended offer",
     "Outreach angle",
@@ -605,8 +609,10 @@ def _derive_priority_band(opp: Dict[str, Any]) -> Optional[str]:
 
 
 def _derive_daily_mission(opp: Dict[str, Any]) -> str:
-    # Prefer the recommended action / next best action free text.
-    for source in ("next_best_action", "recommended_action", "recommended_offer",
+    # Prefer the recommended action free text. `next_best_action` is kept
+    # as a fallback for records populated before the 2026-02-19 field-write
+    # switch — Airtable's "Next action" is now frozen and no longer read.
+    for source in ("recommended_action", "next_best_action", "recommended_offer",
                    "outreach_angle"):
         v = opp.get(source)
         if v:
@@ -867,15 +873,18 @@ class AirtableOpportunityService:
         opp["priority_band_raw"] = opp.get("priority_raw")
         opp["priority_band"] = _derive_priority_band(opp)
 
-        # Daily mission — synthesise from Next action + channel hints.
-        opp["daily_mission_raw"] = opp.get("next_best_action")
+        # Daily mission — synthesise from the fresh recommended action.
+        opp["daily_mission_raw"] = opp.get("recommended_action")
         opp["daily_mission"] = _derive_daily_mission(opp)
         opp["daily_mission_code"] = None
 
-        # Recommended action fallback — prefer AI's "recommended action" over
-        # the shorter "Next action", but expose both.
-        if not opp.get("recommended_action"):
-            opp["recommended_action"] = opp.get("next_best_action")
+        # `next_best_action` legacy DTO key — mirror fresh `recommended_action`
+        # so downstream consumers (Slack blocks, Intelligence page, Relationships
+        # page, morning-brief helpers) keep working against fresh data. The
+        # underlying Airtable "Next action" field was deprecated 2026-02-19 —
+        # Ryan stopped its duplicate write and we no longer read it.
+        if not opp.get("next_best_action"):
+            opp["next_best_action"] = opp.get("recommended_action")
         opp["recommended_action_code"] = None
 
         # Dashboard pipeline status — collapse Leads workflow onto the 9 stages.

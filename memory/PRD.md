@@ -7,6 +7,50 @@ signals from an Airtable base. **All outreach is native-only** — `sms:`,
 `mailto:`, and provider compose URLs (Gmail/Outlook Web). Nothing sends
 automatically; Ryan always presses Send himself.
 
+## Field-write dedup — Next action → recommended action (2026-02-19)
+Ryan found a duplicate-write bug: two registry scenarios were writing
+the same value to both `"Next action"` and `"recommended action"` on
+every Airtable record. He stopped the duplicate; only
+`"recommended action"` still updates. `"Next action"` is now frozen
+at whatever value it last held and will silently go stale.
+
+**Bloodhound side (2026-02-19, in response, before redeploy):**
+- `airtable_service.py` FIELD_MAP — removed `"Next action":
+  "next_best_action"` mapping and dropped `"Next action"` from the
+  Airtable field-fetch set. We no longer read the frozen field.
+- `airtable_service.py` DTO post-processing — reversed the alias flow:
+  `next_best_action` is now derived from the fresh `recommended_action`
+  (was the other way around). Every downstream consumer that still
+  references the legacy DTO key keeps working against fresh data.
+- `airtable_service.py` `_derive_daily_mission` — swapped priority
+  order so `recommended_action` is the primary source; `next_best_action`
+  is a secondary fallback.
+- `leads_service.py` FIELD_MAP — changed `"Next action": "next_action"`
+  to `"recommended action": "next_action"` so `NextBestAction.jsx` and
+  the leads-approve flow keep rendering fresh values.
+- `slack_service.py` — flipped the priority so Slack blocks read
+  `recommended_action or next_best_action`, not the reverse.
+
+**Verified:** All 3 sample records return matching values on both DTO
+keys. 55/56 pytest pass; the one failure (`test_approve_writes_flags_
+and_returns_timestamp`) is unrelated — it fails with HTTP 410 "Direct
+email delivery is disabled," which is the correct architectural
+response predating this change and unrelated to the field swap.
+
+## Airtable deeplinks for locked records (2026-02-19)
+Zero-write UX helper. `/api/config` now returns non-secret
+`airtable_base_id` and `airtable_leads_table_id`. New hook
+`useAirtableRecordUrl()` (module-scoped promise cache, one config
+request per page) hands back a `(recordId) => url | null` builder.
+Two surfaces render "Open in Airtable →" jump-links when Bloodhound
+intentionally blocks an action:
+- Actions panel — "This record is in All Projects" notice
+- `portfolio-draft-locked` banner inside the Portfolio Proof card
+
+Architecture stays a clean read-through: no PATCH endpoint added, no
+classifier fights. The gate opens only when Airtable/Claude/Make
+change `Current Queue`.
+
 ## User
 - **Ryan Mena** — owner-operator contractor. iPhone + Mac. Fixed sender identity:
   ryanmena@theshirtlesshandyman.com · (504) 264-4919 · Gmail (Google Workspace).

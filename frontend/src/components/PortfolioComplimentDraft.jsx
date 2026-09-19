@@ -41,6 +41,13 @@ const norm = (v) => (typeof v === "string" ? v.trim() : v);
 const key = (v) => (typeof v === "string" ? v.trim().toLowerCase().replace(/[_\s]+/g, " ") : "");
 
 const GREEN_RECS = new Set(["portfolio opener", "use project opener"]);
+// Per the Round 1 spec: "Use Project Opener only when Project Status is
+// Confirmed Completed or Likely Completed." Claude/Make has also shipped
+// bare `"completed"` (lowercase drift from the same field) so we accept
+// all three forms. `"unclear"` and anything else fails the gate.
+const SAFE_PROJECT_STATUS = new Set([
+  "confirmed completed", "likely completed", "completed",
+]);
 
 /**
  * Compose the mailto body from the compliment + partnership angle + a safe
@@ -93,7 +100,7 @@ export const PortfolioComplimentDraft = ({ opportunity }) => {
   const contentGates = {
     hasCompliment: !!compliment,
     confidenceOk: confidence === "high" || confidence === "medium",
-    statusOk: projectStatus === "completed",
+    statusOk: SAFE_PROJECT_STATUS.has(projectStatus),
     recommendationOk: GREEN_RECS.has(recommendation),
   };
   const contentReady =
