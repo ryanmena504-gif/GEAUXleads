@@ -173,6 +173,13 @@ export const api = {
       params: { status, ids: ids ? ids.join(",") : undefined },
     }).then((r) => r.data),
 
+  // Portfolio Check — fires Claude/Make's evidence-extraction webhook for
+  // a single lead. Fire-and-forget: results land in Airtable ~15-30 sec
+  // later; caller should refetch the opportunity to render new
+  // Portfolio_* fields. Never bulk, never automatic.
+  checkPortfolio: (recordId) =>
+    client.post(`/leads/${encodeURIComponent(recordId)}/portfolio-check`).then((r) => r.data),
+
   // Investor Intelligence — real estate investors / LLC entities tracking
   // multi-property portfolios. Bloodhound is a read-only viewer.
   discoveryInvestors: (status = "all") =>

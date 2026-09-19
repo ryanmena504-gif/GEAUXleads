@@ -13,6 +13,8 @@ import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
 import ScoreExplanationCard from "@/components/ScoreExplanationCard";
 import ContactStatusChip from "@/components/ContactStatusChip";
+import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
+import CheckPortfolioButton from "@/components/CheckPortfolioButton";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -387,6 +389,20 @@ const OpportunityDetail = () => {
             {opp.lane === "landlord" && (
               <LandlordPortfolio opportunityId={opp.id} />
             )}
+            {/* Completed Project Proof — read-only card populated by
+                Claude/Make's Portfolio Check webhook. Card auto-hides
+                when no Portfolio_* field is set. Button renders always
+                so the operator can trigger a check on any lead. */}
+            <section className="flex items-center justify-between gap-3 flex-wrap"
+                     data-testid="portfolio-check-toolbar">
+              <div className="text-[12.5px] text-[var(--bh-ink-3)] leading-snug max-w-[560px]">
+                Find genuine public evidence of this business&rsquo;s
+                completed work before you write to them. Real web search
+                — one-off, per-record. Nothing sends automatically.
+              </div>
+              <CheckPortfolioButton opportunity={opp} onOpportunityUpdated={setOpp} />
+            </section>
+            <CompletedProjectProofCard opportunity={opp} />
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading

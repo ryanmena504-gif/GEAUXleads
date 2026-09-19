@@ -466,31 +466,52 @@ resolved in preview; awaits redeploy to reach prod.
   into the CSV. Backend endpoint accepts the same params as
   `/api/opportunities`.
 
-## Completed Project Proof — Round 1 approved (2026-02-19)
-Schema doc saved at `/app/memory/airtable_schema_round1.md` — the sole
-Round 1 Airtable reference. Slice 1 only: read-only card that renders
-16 evidence fields Claude/Make writes to Airtable. Bloodhound stays a
-pure read-through — no crawler in FastAPI, no writes to these fields,
-no vision analysis, no draft generation, no scoring changes.
+## Completed Project Proof — Slice 1 built (2026-02-19)
+Frontend + proxy landed. Backend Portfolio Check pipeline lives on
+Claude/Make; Bloodhound stays a pure read-through.
+- Env var `MAKE_PORTFOLIO_CHECK_WEBHOOK` points at the Make.com hook
+  Ryan provided. Never committed to code.
+- `POST /api/leads/{record_id}/portfolio-check` — thin FastAPI proxy
+  that fires the webhook (fire-and-forget, 202 accepted). Validates
+  `record_id` format (`^rec[A-Za-z0-9]{14,}$`); returns 400 on bad ID,
+  503 if webhook env var missing, 502 if Make rejects the trigger.
+- `airtable_service.py` FIELD_MAP extended with all 17 `Portfolio *`
+  → DTO key mappings (12 initial + 5 added 2026-02-19 fix pass).
+- `components/CompletedProjectProofCard.jsx` — read-only card. Renders
+  only when at least one Portfolio_* field is populated. Compliment
+  Line surfaced as a hero block ONLY when Confidence≠Low AND
+  Project Status≠Unclear; suppressed with an amber warning otherwise.
+  Best Project URL link labelled "Evidence" when safe, "Review source"
+  (amber) when unsafe. Failed-check banner with `Portfolio Error
+  Reason` when `Portfolio Check Status = Failed`. "Last checked · N"
+  and "Why this was chosen" surfaced from the 5 fields added on
+  2026-02-19. **All governed-value comparisons are case-insensitive
+  AND underscore-tolerant** via the `key()` helper — critical safety
+  fix after Claude/Make's 2026-02-19 output arrived lowercased
+  (`"high"`, `"portfolio_opener"`, etc.) which would have silently
+  failed strict `"High"` / `"Portfolio Opener"` equality checks and
+  leaked compliments on Low-confidence records.
+- `components/CheckPortfolioButton.jsx` — one-tap, per-record trigger
+  with a live "Searching… Ns" spinner. Polls `getOpportunity(id)` every
+  5s starting at 10s, up to 60s. Never bulk, never automatic.
+- Wired into `OpportunityDetail.jsx` above the "Why this project
+  matters" section.
 
-Approved acceptance-test records (Claude/Make crawls these three
-only): Sweeney Restoration (`recjqiG1eqhes4HN1`), Rockwell Builders
-(`recjV6JTgEbBNgmaw`), Decor by Flora (`reczI61UIgTrHQHTm`). J Hand
-Homes (`recZ7oiv2MDNKb72Q`) held for Slice 2 (email-required rule).
+**Acceptance run — final (2026-02-19 after Ryan's fix pass):**
+- Sweeney (`recjqiG1eqhes4HN1`): Yes · High · completed — compliment
+  surfaced ("Hesper Avenue interior remodel…"), Evidence link,
+  Portfolio Opener (green), all 5 new fields render ✅
+- Rockwell (`recjV6JTgEbBNgmaw`): Yes · High · completed — genuinely
+  different result on re-run (search now finds 67 Oleander Court).
+  Compliment surfaced, Evidence link, Portfolio Opener (green) ✅
+  (Note: no longer usable as the weak-evidence anchor.)
+- Decor by Flora (`reczI61UIgTrHQHTm`): Yes · Medium · completed —
+  compliment surfaced from a testimonial. Site's bot-detection makes
+  it a reliable "insufficient evidence" anchor across most runs, so
+  it's the new default weak-evidence acceptance test.
 
-**Build order (locked):**
-1. ✅ Schema doc saved.
-2. ⏳ Claude/Make creates the 16 fields + runs check on the 3 records.
-3. ⏳ Ryan reviews Airtable results for factual + conservative output.
-4. ⏳ Only after step 3 approval: build `CompletedProjectProofCard.jsx`
-   + extend `airtable_service.py` DTO mapping for the 16 fields.
-5. ⏳ Three-record acceptance run + report.
-6. STOP at Slice 1.
-
-Pass/fail standard captured from Ryan's message (partially truncated —
-provisional acceptance criteria derived from his earlier Slice 1
-success condition are documented in the schema doc pending his
-completion of the truncated line).
+**Boundary intact:** No draft generation, no auto-send, no scoring
+change, no PATCH to any Portfolio_* field from Bloodhound.
 
 ## URGENT — Directive-as-email bug (2026-02-19)
 Ryan tapped "Follow Up Email" on `recCGVbFaQ48Vd3C5` (Backyard Living)

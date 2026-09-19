@@ -204,3 +204,61 @@ Translated into acceptance checks for the three records:
   Project URL note; attribution workflow rule) and locked build order.
   Waiting on Claude/Make to complete steps 2–4 before frontend work
   begins.
+- 2026-02-19 (later) — Slice 1 shipped. Acceptance dry run against all
+  three approved records passed the safety-path checks.
+- 2026-02-19 (fix pass, Ryan) — five originally-missing fields now
+  populated on every check (`Portfolio Check Status`,
+  `Portfolio Checked At`, `Portfolio Evidence Basis`,
+  `Portfolio Why This Was Chosen`, `Portfolio Error Reason`).
+  `Portfolio Best Project Title` bug fixed — now required on every
+  found project. Low-confidence Compliment Line rule tightened
+  server-side (hard requirement, not soft).
+- 2026-02-19 (Bloodhound-side, in response) — card component made
+  **case-insensitive AND underscore-tolerant** on every governed value
+  comparison. Fixed a safety-critical latent bug where a stored
+  `"low"` (lowercase) would have failed the strict `"Low"` equality
+  check and leaked the Compliment Line. See `key()` helper in
+  `CompletedProjectProofCard.jsx`.
+
+### Actual select-option values retained by Ryan (canonical, 2026-02-19)
+
+These are the values Claude/Make ships today. Bloodhound treats them
+as authoritative; the card is case + underscore tolerant so any of
+the below forms round-trip correctly.
+
+| Field | Values Claude/Make ships |
+|---|---|
+| Portfolio Check Status | `Complete`, `Failed`, `Pending` (blank until first run) |
+| Portfolio Found | `yes`, `unclear`, `no` |
+| Portfolio Check Confidence | `high`, `medium`, `low` |
+| Portfolio Project Status | `completed`, `unclear`, (occasionally missing) |
+| Portfolio Business Role | `contractor`, `designer`, `architect`, (etc.) |
+| Portfolio Outreach Recommendation | `portfolio_opener`, `generic_business_opener`, `do_not_use` |
+| Portfolio Evidence Basis | Free-form short string (e.g. `Portfolio/gallery page`, `Testimonial with project reference`, `Page text/captions`) — no longer locked to a single option |
+
+### Acceptance-test slate — 2026-02-19 update
+
+Live web search is **not deterministic between runs**. On the
+2026-02-19 re-run, Rockwell Builders returned High confidence with a
+real evidence URL (67 Oleander Court, Mandeville) instead of the
+original Low/Unclear. That was not a bug — it was a genuinely better
+search result the operator's manual check missed.
+
+Practical rule for future QA: **do not pin any specific record to a
+specific outcome.** Verify safety *behaviour* instead:
+
+- **Any record that comes back with `Confidence = Low` OR
+  `Project Status = Unclear`** must produce: blank Compliment Line,
+  "Review source" link label, amber warning colour on the link, and
+  the `portfolio-compliment-suppressed` banner if Airtable happens to
+  hold a value in that field anyway.
+- **Any record that comes back with `Confidence = High/Medium` AND
+  `Project Status = completed`** may surface the Compliment Line as
+  a hero, "Evidence" link label, and green Recommendation styling.
+- **Any record with `Portfolio Check Status = Failed`** must show
+  the red failure banner with the `Portfolio Error Reason` — the
+  rest of the card body may be blank.
+
+Decor by Flora is now the most reliable anchor for the "insufficient
+evidence" acceptance path because its site actively blocks scrapers,
+so the check tends to return Unclear/Low across runs.

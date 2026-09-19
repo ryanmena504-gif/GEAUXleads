@@ -180,6 +180,31 @@ LIVE_FIELDS: Dict[str, str] = {
     "Project Fit Reason": "project_fit_reason",
     "Last Classified At": "last_classified_at",
     "Classification Version": "classification_version",
+
+    # === Completed Project Proof — Round 1 Slice 1 (2026-02-19) =============
+    # Written by Claude/Make via the "Portfolio Check" enrichment webhook.
+    # Read-only from Bloodhound; no PATCH endpoint may touch these. See
+    # `/app/memory/airtable_schema_round1.md` for the full contract.
+    "Portfolio Found": "portfolio_found",
+    "Portfolio Best Project Title": "portfolio_best_project_title",
+    "Portfolio Best Project URL": "portfolio_best_project_url",
+    "Portfolio Project Type": "portfolio_project_type",
+    "Portfolio Project Status": "portfolio_project_status",
+    "Portfolio Business Role": "portfolio_business_role",
+    "Portfolio Evidence Summary": "portfolio_evidence_summary",
+    "Portfolio Safe Observation": "portfolio_safe_observation",
+    "Portfolio Compliment Line": "portfolio_compliment_line",
+    "Portfolio Partnership Angle": "portfolio_partnership_angle",
+    "Portfolio Check Confidence": "portfolio_check_confidence",
+    "Portfolio Outreach Recommendation": "portfolio_outreach_recommendation",
+    # Added 2026-02-19 after Ryan's Slice 1 fix pass — restores the
+    # "last checked" timestamp, explainability line, and lifecycle
+    # status. Failed runs surface `portfolio_error_reason` in the card.
+    "Portfolio Check Status": "portfolio_check_status",
+    "Portfolio Checked At": "portfolio_checked_at",
+    "Portfolio Evidence Basis": "portfolio_evidence_basis",
+    "Portfolio Why This Was Chosen": "portfolio_why_this_was_chosen",
+    "Portfolio Error Reason": "portfolio_error_reason",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.

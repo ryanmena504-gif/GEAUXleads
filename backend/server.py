@@ -1639,6 +1639,44 @@ async def export_discovery_csv(feed: str):
     return _csv_response(key, items)
 
 
+# ─── Portfolio Check proxy ─────────────────────────────────────────────
+# Fire-and-forget POST to the Make.com webhook Claude/Make owns. Real web
+# search runs behind it (~15-30 sec); Make writes results into 12
+# `Portfolio *` fields on the same Airtable record. Bloodhound polls
+# opportunity data after the fact — no direct reply is expected here.
+# Bloodhound never crawls or scores; this endpoint is a thin proxy so the
+# webhook URL doesn't get exposed in the browser and CORS is handled
+# server-side.
+# ============================================================================
+import re as _re_portfolio
+import httpx as _httpx_portfolio
+
+_RECORD_ID_RE = _re_portfolio.compile(r"^rec[A-Za-z0-9]{14,}$")
+
+
+@app.post("/api/leads/{record_id}/portfolio-check", status_code=202)
+async def portfolio_check(record_id: str):
+    """Trigger Claude/Make's Portfolio Check webhook for a single lead.
+    Returns 202 immediately — results land in Airtable after ~15-30 sec
+    and the frontend re-fetches the opportunity to display them."""
+    if not _RECORD_ID_RE.match(record_id):
+        raise HTTPException(status_code=400, detail="invalid record_id format")
+    webhook = os.environ.get("MAKE_PORTFOLIO_CHECK_WEBHOOK", "").strip()
+    if not webhook:
+        raise HTTPException(status_code=503, detail="portfolio check webhook not configured")
+    try:
+        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook, json={"record_id": record_id})
+            if resp.status_code >= 400:
+                logger.warning("Portfolio webhook returned %s: %s", resp.status_code, resp.text[:200])
+                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
+    except _httpx_portfolio.RequestError as e:
+        logger.error("Portfolio webhook request error: %s", e)
+        raise HTTPException(status_code=502, detail="could not reach portfolio webhook")
+    return {"accepted": True, "record_id": record_id,
+            "hint": "results land in ~15-30 seconds; refetch the opportunity"}
+
+
 # ─── Draft safety audit ────────────────────────────────────────────────
 # Scans every opportunity for message-shaped fields that would fail the
 # frontend `looksLikeAIPrompt` guard — meaning: if Ryan had tapped
