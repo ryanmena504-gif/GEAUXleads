@@ -55,7 +55,7 @@ export const ResearchPanel = ({
         toast.error(detail);
       }
     },
-    [researchType, recordId, query],
+    [researchType, recordId, query, onResult],
   );
 
   return (
