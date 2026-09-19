@@ -15,6 +15,7 @@ import ScoreExplanationCard from "@/components/ScoreExplanationCard";
 import ContactStatusChip from "@/components/ContactStatusChip";
 import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
 import CheckPortfolioButton from "@/components/CheckPortfolioButton";
+import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -161,6 +162,7 @@ const OpportunityDetail = () => {
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
+  const airtableUrlFor = useAirtableRecordUrl();
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
@@ -320,15 +322,30 @@ const OpportunityDetail = () => {
                 {(() => {
                   const bucket = queueBucket(opp);
                   if (bucket === "all") {
+                    const atUrl = airtableUrlFor(opp?.id);
                     return (
                       <div
                         data-testid="no-outreach-notice"
-                        className="rounded-md border p-3 text-[12.5px] text-[var(--bh-ink-3)]"
+                        className="rounded-md border p-3 text-[12.5px] text-[var(--bh-ink-3)] space-y-2"
                         style={{ borderColor: "var(--bh-hair)" }}
                       >
-                        This record is in All Projects — the classifier hasn&apos;t
-                        approved outreach yet. Add the missing evidence in
-                        Airtable to promote it to Ready to Contact.
+                        <div>
+                          This record is in All Projects — the classifier hasn&apos;t
+                          approved outreach yet. Add the missing evidence in
+                          Airtable to promote it to Ready to Contact.
+                        </div>
+                        {atUrl && (
+                          <a
+                            href={atUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            data-testid="open-in-airtable-link"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium"
+                            style={{ color: "var(--bh-brass)" }}
+                          >
+                            Open in Airtable →
+                          </a>
+                        )}
                       </div>
                     );
                   }

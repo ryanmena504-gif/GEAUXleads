@@ -337,6 +337,12 @@ async def config():
         # Reason the Airtable init failed (401, missing table, etc.) — null
         # when Airtable is live or was never attempted.
         "airtable_init_error": get_last_init_error(),
+        # Airtable identifiers used only to construct DEEPLINKS in the UI
+        # (e.g. "Open in Airtable" jump-links from locked-outreach notices).
+        # Not secrets — base + table IDs are visible to any authenticated
+        # Airtable user on the base. API key stays server-side.
+        "airtable_base_id": os.environ.get("AIRTABLE_BASE_ID") or None,
+        "airtable_leads_table_id": os.environ.get("AIRTABLE_LEADS_TABLE_ID") or None,
     }
 
 

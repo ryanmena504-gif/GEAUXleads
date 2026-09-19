@@ -1,10 +1,11 @@
 import React from "react";
-import { Mail, ShieldCheck, AlertTriangle, Lock } from "lucide-react";
+import { Mail, ShieldCheck, AlertTriangle, Lock, ExternalLink } from "lucide-react";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
 import { buildSalutation } from "@/lib/greeting";
 import { looksLikeAIPrompt } from "@/lib/draftSafety";
 import { pickEmail, withSignature } from "@/components/OpenInMessages";
+import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 
 /**
  * PortfolioComplimentDraft — Slice 2 of Completed Project Proof.
@@ -77,6 +78,7 @@ const btnBase =
 
 export const PortfolioComplimentDraft = ({ opportunity }) => {
   const { settings } = useUserSettings();
+  const airtableUrlFor = useAirtableRecordUrl();
 
   const compliment = norm(opportunity?.portfolio_compliment_line);
   const confidence = key(opportunity?.portfolio_check_confidence);
@@ -121,10 +123,11 @@ export const PortfolioComplimentDraft = ({ opportunity }) => {
     const reason = !email
       ? "No verified email on this record."
       : "This record is in All Projects — the classifier hasn't approved outreach yet.";
+    const atUrl = airtableUrlFor(opportunity?.id);
     return (
       <div
         data-testid="portfolio-draft-locked"
-        className="mt-3 rounded-md p-3 flex items-start gap-2 text-[12.5px] leading-relaxed"
+        className="mt-3 rounded-md p-3 space-y-2 text-[12.5px] leading-relaxed"
         style={{
           background: "var(--bh-surface)",
           border: "1px solid var(--bh-hair)",
@@ -132,11 +135,25 @@ export const PortfolioComplimentDraft = ({ opportunity }) => {
         }}
         title="Portfolio draft is intentionally blocked — see reason."
       >
-        <Lock size={12} className="mt-0.5 shrink-0" style={{ color: "var(--bh-ink-3)" }} />
-        <span>
-          <strong>Draft with portfolio compliment · disabled.</strong> {reason}
-          {" "}Project proof stays visible above so you can act on it another way.
-        </span>
+        <div className="flex items-start gap-2">
+          <Lock size={12} className="mt-0.5 shrink-0" style={{ color: "var(--bh-ink-3)" }} />
+          <span>
+            <strong>Draft with portfolio compliment · disabled.</strong> {reason}
+            {" "}Project proof stays visible above so you can act on it another way.
+          </span>
+        </div>
+        {atUrl && (
+          <a
+            href={atUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="portfolio-locked-open-in-airtable"
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium ml-5"
+            style={{ color: "var(--bh-brass)" }}
+          >
+            <ExternalLink size={11} strokeWidth={1.75} /> Open in Airtable →
+          </a>
+        )}
       </div>
     );
   }
