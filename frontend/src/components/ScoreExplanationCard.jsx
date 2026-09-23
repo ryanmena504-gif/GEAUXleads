@@ -10,7 +10,7 @@ const PROV_STYLES = {
   claude: { label: "Claude", color: "#8a6a3f", bg: "rgba(191,150,90,0.14)" },
   source: { label: "Source", color: "#3f6b6b", bg: "rgba(63,107,107,0.12)" },
   enrichment: { label: "Enrichment", color: "#5b7a4a", bg: "rgba(91,122,74,0.12)" },
-  bloodhound: { label: "Bloodhound UI", color: "#6a5a8a", bg: "rgba(106,90,138,0.12)" },
+  bloodhound: { label: "GEAUXleads UI", color: "#6a5a8a", bg: "rgba(106,90,138,0.12)" },
 };
 
 const Prov = ({ kind }) => {

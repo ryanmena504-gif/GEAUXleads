@@ -491,7 +491,7 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
                   border: "1px solid var(--bh-hair)",
                   color: "var(--bh-ink-2)",
                 }}
-                placeholder="Context for Ryan before he sends this outside Bloodhound…"
+                placeholder="Context for Ryan before he sends this outside GEAUXleads…"
               />
             </Field>
 

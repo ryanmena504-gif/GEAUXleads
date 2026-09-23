@@ -1,6 +1,6 @@
 import React from "react";
 import { Bell, Search } from "lucide-react";
-import BloodhoundLogo from "@/components/BloodhoundLogo";
+import GeauxLogo from "@/components/GeauxLogo";
 import { useCommandPalette } from "@/layouts/AppLayout";
 
 export const TopHeader = ({ pageTitle, subtitle, right }) => {
@@ -20,7 +20,7 @@ export const TopHeader = ({ pageTitle, subtitle, right }) => {
     >
       <div className="px-5 lg:px-10 h-[72px] flex items-center gap-5">
         <div className="lg:hidden">
-          <BloodhoundLogo compact />
+          <GeauxLogo compact />
         </div>
 
         <div className="hidden lg:flex flex-col leading-tight">

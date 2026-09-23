@@ -135,7 +135,7 @@ def _build_blocks(opp: Dict[str, Any], *, reason: str) -> List[Dict[str, Any]]:
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "Open in Bloodhound"},
+                    "text": {"type": "plain_text", "text": "Open in GEAUXleads"},
                     "url": link,
                     "style": "primary",
                 }

@@ -31,7 +31,7 @@ import { toast } from "sonner";
  * plus a collapsible showing the pitch that WILL send when they're
  * unlocked.
  *
- * Bloodhound respects Claude's Outreach Gate absolutely — no locked
+ * GEAUXleads respects Claude's Outreach Gate absolutely — no locked
  * agent gets a callable button, even if their phone/email happens to
  * be enriched separately.
  */
@@ -316,7 +316,7 @@ const Row = ({ agent, senderName, researchOpen, onToggleResearch, onEnriched }) 
               </div>
               <p className="text-[11.5px] text-[var(--bh-ink-3)] leading-relaxed">
                 Extracted from Perplexity's answer. Edit before sending —
-                nothing writes until you tap Send. Bloodhound only touches
+                nothing writes until you tap Send. GEAUXleads only touches
                 Email + Phone; the Outreach Gate stays Claude's.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -510,7 +510,7 @@ const DiscoveryRealEstateAgents = () => {
 
       <div className="mt-5 text-[10.5px] text-[var(--bh-ink-mute)] leading-snug">
         <ExternalLink size={9} className="inline mr-1 -mt-0.5" />
-        Outreach Gate is owned by Airtable + Make. Bloodhound never sends
+        Outreach Gate is owned by Airtable + Make. GEAUXleads never sends
         without the gate cleared.
       </div>
     </div>

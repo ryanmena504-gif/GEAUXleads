@@ -113,7 +113,7 @@ const Lookup = () => {
             No match on file
           </div>
           <div className="text-[15px] font-semibold text-[var(--bh-ink)]">
-            {phone} isn&apos;t in Bloodhound.
+            {phone} isn&apos;t in GEAUXleads.
           </div>
           <div className="text-[12.5px] text-[var(--bh-ink-3)]">
             {state.error}. If this is a lead, add them in Airtable and the

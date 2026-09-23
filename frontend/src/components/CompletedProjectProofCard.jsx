@@ -14,7 +14,7 @@ import PortfolioComplimentDraft from "@/components/PortfolioComplimentDraft";
 /**
  * CompletedProjectProofCard — read-only surface for the Portfolio_*
  * fields Claude/Make writes via the Portfolio Check enrichment webhook.
- * Bloodhound never writes these fields; this component only renders.
+ * GEAUXleads never writes these fields; this component only renders.
  *
  * Safety rules (from `/app/memory/airtable_schema_round1.md`):
  *   • Render ONLY when at least one Portfolio_* field has a value.
@@ -33,7 +33,7 @@ import PortfolioComplimentDraft from "@/components/PortfolioComplimentDraft";
  * `portfolio_opener` for the same field across runs. Safety must not
  * depend on which casing landed today.
  *
- * Zero writes from Bloodhound: no PATCH endpoint touches these fields.
+ * Zero writes from GEAUXleads: no PATCH endpoint touches these fields.
  */
 
 const norm = (v) => (typeof v === "string" ? v.trim() : v);

@@ -579,7 +579,7 @@ const ENRICHMENT_STALE_DAYS = 30;
  */
 const buildClaudeNudgePrompt = (opp) => {
   const lines = [
-    "Please enrich this Bloodhound lead — it has been on the table with no score and no reachable channel:",
+    "Please enrich this GEAUXleads lead — it has been on the table with no score and no reachable channel:",
     "",
     `• Name: ${opp.name || "Unnamed record"}`,
   ];
@@ -614,7 +614,7 @@ const EnrichmentRow = ({ opp }) => {
     e.preventDefault();
     e.stopPropagation();
     const prompt = buildClaudeNudgePrompt(opp);
-    const title = `Nudge Claude · ${opp.name || "Bloodhound lead"}`;
+    const title = `Nudge Claude · ${opp.name || "GEAUXleads lead"}`;
     // Prefer the native share sheet on iOS PWA — Ryan can pick Claude,
     // Messages, Notes, etc. Fall back to clipboard everywhere else.
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {

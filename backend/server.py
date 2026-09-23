@@ -55,7 +55,7 @@ async def lifespan(_app: FastAPI):
         pass
 
 
-app = FastAPI(title="Bloodhound Intelligence API", lifespan=lifespan)
+app = FastAPI(title="GEAUXleads Intelligence API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO,
@@ -92,7 +92,7 @@ class ResultUpdate(BaseModel):
 
 @api_router.get("/")
 async def root():
-    return {"service": "Bloodhound Intelligence API", "status": "online"}
+    return {"service": "GEAUXleads Intelligence API", "status": "online"}
 
 
 @api_router.get("/health")
@@ -400,13 +400,13 @@ async def leads_next_best_action():
 async def leads_action(lead_id: str, body: LeadAction):
     action = (body.action or "").lower()
     if action == "approve":
-        # Bloodhound is approval-only. A dashboard approval must never become
+        # GEAUXleads is approval-only. A dashboard approval must never become
         # provider delivery: use the device-native draft handoff instead.
         raise HTTPException(
             status_code=410,
             detail=(
                 "Direct email delivery is disabled. Open a device-native draft, "
-                "send it yourself, then record the result in Bloodhound."
+                "send it yourself, then record the result in GEAUXleads."
             ),
         )
 
@@ -417,6 +417,10 @@ async def leads_action(lead_id: str, body: LeadAction):
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     if action == "hold":
         return svc.hold(lead_id)
+    if action == "release_hold":
+        if (svc.get(lead_id) or {}).get("hunt_status") != "Paused":
+            raise HTTPException(status_code=409, detail="Lead is not on hold (Hunt status is not Paused)")
+        return svc.release_hold(lead_id)
     if action == "skip":
         return svc.skip(lead_id)
     if action == "do_not_contact":
@@ -1123,7 +1127,7 @@ async def landlord_portfolio(opp_id: str):
 # Discovery — Property Manager Discovery Queue
 # ----------------------------------------------------------------------------
 # The Airtable base has a separate "Property Manager Discovery Queue" table
-# (owned by Claude + Make). Bloodhound is a strictly-read viewer of this
+# (owned by Claude + Make). GEAUXleads is a strictly-read viewer of this
 # table. Ryan uses the Discovery UI to triage "Worth a look" candidates and
 # do native call/website handoff — any promote-to-Leads write happens on the
 # Airtable side (Claude owns that flow).
@@ -1490,7 +1494,7 @@ async def twilio_lookup(number: str):
 
 
 # ─── Auto-fill Contact — write email/phone onto a Real Estate Agent row.
-# The ONLY write route Bloodhound has into any Discovery table. Never
+# The ONLY write route GEAUXleads has into any Discovery table. Never
 # touches governed fields (Outreach Gate, Contact Enrichment Status,
 # etc.) — Claude/Make still own those. Cache is invalidated on success
 # so the next agent-list fetch reflects the new contact immediately.
@@ -1648,9 +1652,9 @@ async def export_discovery_csv(feed: str):
 # ─── Portfolio Check proxy ─────────────────────────────────────────────
 # Fire-and-forget POST to the Make.com webhook Claude/Make owns. Real web
 # search runs behind it (~15-30 sec); Make writes results into 12
-# `Portfolio *` fields on the same Airtable record. Bloodhound polls
+# `Portfolio *` fields on the same Airtable record. GEAUXleads polls
 # opportunity data after the fact — no direct reply is expected here.
-# Bloodhound never crawls or scores; this endpoint is a thin proxy so the
+# GEAUXleads never crawls or scores; this endpoint is a thin proxy so the
 # webhook URL doesn't get exposed in the browser and CORS is handled
 # server-side.
 # ============================================================================

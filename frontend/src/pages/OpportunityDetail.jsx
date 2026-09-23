@@ -162,11 +162,26 @@ const OpportunityDetail = () => {
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const airtableUrlFor = useAirtableRecordUrl();
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
   }, [id]);
+
+  const releaseHold = async () => {
+    setReleasing(true);
+    try {
+      const r = await api.leadsAction(id, { action: "release_hold" });
+      if (!r?.persisted) throw new Error("Airtable write failed");
+      toast.success("Hold released — Hunt status → Investigating. The classifier will re-evaluate on its next run.");
+      setOpp(await api.getOpportunity(id));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not release hold");
+    } finally {
+      setReleasing(false);
+    }
+  };
 
   const handleStatus = async (status) => {
     setBusy(status);
@@ -334,6 +349,30 @@ const OpportunityDetail = () => {
                           approved outreach yet. Add the missing evidence in
                           Airtable to promote it to Ready to Contact.
                         </div>
+                        {opp?.hunt_status === "Paused" && (
+                          <div
+                            data-testid="hold-notice"
+                            className="rounded border p-2.5 space-y-2"
+                            style={{ borderColor: "var(--bh-hair-warm)", background: "var(--bh-brass-mute)" }}
+                          >
+                            <div className="text-[var(--bh-ink-2)]">
+                              <span className="font-semibold">On hold.</span> Hunt status is
+                              &ldquo;Paused&rdquo; — set when you tapped Save for later. The
+                              classifier skips paused records, so this gate won&apos;t re-open
+                              until the hold is released.
+                            </div>
+                            <button
+                              type="button"
+                              data-testid="release-hold-btn"
+                              disabled={releasing}
+                              onClick={releaseHold}
+                              className="h-9 px-3 rounded text-[12.5px] font-medium text-white disabled:opacity-60 transition-colors duration-150"
+                              style={{ background: "var(--bh-brass)" }}
+                            >
+                              {releasing ? "Releasing…" : "Release hold → Investigating"}
+                            </button>
+                          </div>
+                        )}
                         {atUrl && (
                           <a
                             href={atUrl}

@@ -124,7 +124,7 @@ export const api = {
     client.patch("/settings/user", patch).then((r) => r.data),
 
   // Property Manager Discovery Queue — Claude owns Review Status on the
-  // Airtable side. Bloodhound is a strictly-read viewer. Default filter
+  // Airtable side. GEAUXleads is a strictly-read viewer. Default filter
   // is "worth_a_look"; pass status: "all" to see every record.
   discoveryPropertyManagers: (status = "worth_a_look") =>
     client.get("/discovery/property-managers", { params: { status } }).then((r) => r.data),
@@ -144,7 +144,7 @@ export const api = {
       .post(`/discovery/real-estate-agents/${encodeURIComponent(recordId)}/enrich`, payload)
       .then((r) => r.data),
 
-  // Bloodhound-local archive (UI hide only — never mutates Airtable/Make)
+  // GEAUXleads-local archive (UI hide only — never mutates Airtable/Make)
   listLocalArchive: (feed) =>
     client.get(`/local-state/${feed}/archived`).then((r) => r.data),
   archiveLocal: (feed, recordIds) =>
@@ -166,7 +166,7 @@ export const api = {
   csvDiscoveryUrl: (feed) => `${BASE}/api/exports/discovery/${feed}.csv`,
 
   // Landlords — 63 STR-license property owners, no phone/email yet.
-  // Bloodhound generates printable letters for USPS drop; ids param
+  // GEAUXleads generates printable letters for USPS drop; ids param
   // (comma-separated) pulls an exact batch for the print view.
   discoveryLandlords: ({ status = "not_contacted", ids = null } = {}) =>
     client.get("/discovery/landlords", {
@@ -181,7 +181,7 @@ export const api = {
     client.post(`/leads/${encodeURIComponent(recordId)}/portfolio-check`).then((r) => r.data),
 
   // Investor Intelligence — real estate investors / LLC entities tracking
-  // multi-property portfolios. Bloodhound is a read-only viewer.
+  // multi-property portfolios. GEAUXleads is a read-only viewer.
   discoveryInvestors: (status = "all") =>
     client.get("/discovery/investors", { params: { status } }).then((r) => r.data),
 };

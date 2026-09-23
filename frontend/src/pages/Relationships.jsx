@@ -212,7 +212,7 @@ const PartnerIntelligence = () => {
             People, proof, and the next step in one place.
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--bh-ink-3)]">
-            Bloodhound only shows a project connection when the exact public business name
+            GEAUXleads only shows a project connection when the exact public business name
             matches a saved public project record. A public website or social link stays visible
             so you can judge the fit yourself.
           </p>

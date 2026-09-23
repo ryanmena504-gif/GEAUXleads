@@ -8,7 +8,7 @@ import {
   Bug,
   Building2,
 } from "lucide-react";
-import BloodhoundLogo from "@/components/BloodhoundLogo";
+import GeauxLogo from "@/components/GeauxLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 
 // Sidebar shows ONLY the governed operating structure: Home (the 3-queue
@@ -31,7 +31,7 @@ export const Sidebar = () => {
       style={{ background: "var(--bh-surface)" }}
     >
       <div className="px-6 pt-7 pb-5 border-b bh-hairline">
-        <BloodhoundLogo />
+        <GeauxLogo />
       </div>
 
       <nav className="flex-1 px-3 py-6 space-y-0.5">

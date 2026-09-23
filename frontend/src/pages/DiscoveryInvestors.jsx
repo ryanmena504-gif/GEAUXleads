@@ -20,7 +20,7 @@ import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggl
  * DiscoveryInvestors — real estate investors / LLC entities tracking
  * multi-property portfolios. Mirrors the Real Estate Agent feed's
  * Outreach-Gate discipline: while Airtable says the gate is locked, no
- * mailto/tel buttons render. Bloodhound is strictly a read-only viewer.
+ * mailto/tel buttons render. GEAUXleads is strictly a read-only viewer.
  *
  * Investor Intelligence table is currently empty pending Claude's data
  * seed. This page renders a "no investors yet" empty state that flips
@@ -224,7 +224,7 @@ const DiscoveryInvestors = () => {
       </h1>
       <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] max-w-3xl">
         Real estate investors and LLC entities tracking multi-property
-        portfolios. Bloodhound reads Claude&apos;s classified list — the moment
+        portfolios. GEAUXleads reads Claude&apos;s classified list — the moment
         an Outreach Gate unlocks and contact info lands, Email + Call
         buttons appear here automatically.
       </p>
@@ -277,7 +277,7 @@ const DiscoveryInvestors = () => {
 
       <div className="mt-5 text-[10.5px] text-[var(--bh-ink-mute)] leading-snug">
         <ExternalLink size={9} className="inline mr-1 -mt-0.5" />
-        Outreach Gate is owned by Airtable + Make. Bloodhound never sends
+        Outreach Gate is owned by Airtable + Make. GEAUXleads never sends
         without the gate cleared.
       </div>
     </div>

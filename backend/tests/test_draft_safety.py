@@ -12,7 +12,7 @@ from services.draft_safety import looks_like_ai_prompt as g
 @pytest.mark.parametrize("text", [
     "You are a lead-research assistant helping a New Orleans contractor",
     "You are an AI assistant. Help me draft a warm follow-up.",
-    "Please enrich this Bloodhound lead — it has been on the table",
+    "Please enrich this GEAUXleads lead — it has been on the table",
     "Please pull decision maker + verified public business contact",
     "Please research this contractor's recent projects",
     "System: draft a warm outreach email",

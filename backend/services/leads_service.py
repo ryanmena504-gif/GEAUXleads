@@ -400,6 +400,13 @@ class LeadsAirtableService:
         self._refresh_cache(force=True)
         return {"lead_id": lead_id, "state": "hold", "persisted": wrote}
 
+    def release_hold(self, lead_id: str) -> Dict[str, Any]:
+        # Reverses hold(): only touches the Hunt status we set ourselves.
+        self._held.discard(lead_id)
+        wrote = self._safe_update(lead_id, "Hunt status", "Investigating")
+        self._refresh_cache(force=True)
+        return {"lead_id": lead_id, "state": "released", "persisted": wrote}
+
     def skip(self, lead_id: str) -> Dict[str, Any]:
         self._skipped.add(lead_id)
         return {"lead_id": lead_id, "state": "skipped"}
