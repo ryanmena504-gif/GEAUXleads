@@ -45,59 +45,37 @@ const shortHost = (url) => {
   }
 };
 
-const ListSkeleton = ({ rows = 3, testId }) => (
-  <div className="bh-surface rounded overflow-hidden" data-testid={testId}>
-    {Array.from({ length: rows }).map((_, i) => (
-      <div
-        key={i}
-        className="flex items-center gap-3 px-4 py-4 border-b bh-hairline last:border-b-0"
-      >
-        <div className="h-3 w-3/5 rounded bg-white/[0.06] animate-pulse" />
-        <div className="ml-auto h-3 w-12 rounded bg-white/[0.04] animate-pulse" />
-      </div>
-    ))}
-  </div>
-);
+/**
+ * SourceChip — one-tap link to the origin of a lead (permit filing, listing,
+ * post, etc.). Rendered on Ready to Contact rows so the operator can verify
+ * the source in a single tap. Purely a navigation link — no state changes,
+ * no backend write.
+ */
+const SourceChip = ({ opp }) => {
+  const url = opp?.source_url;
+  if (!url) return null;
+  const host = shortHost(url);
+  const label = host || sourceLabel(opp.source) || "Source";
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid={`source-chip-${opp.id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[12px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)] hover:bg-white/[0.03] transition-colors"
+      title={url}
+    >
+      <ExternalLink size={12} strokeWidth={1.75} />
+      <span className="mono uppercase tracking-widest text-[10px] opacity-75">Source</span>
+      <span className="truncate max-w-[180px]">{label}</span>
+    </a>
+  );
+};
 
-const CommandCenter = () => {
-  const navigate = useNavigate();
-  const [summary, setSummary] = useState(null);
-  const [missions, setMissions] = useState(null);
-  const [pipeline, setPipeline] = useState([]);
-  const [top, setTop] = useState([]);
-  const [recent, setRecent] = useState([]);
-  const [activeMission, setActiveMission] = useState("all");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api.summary(),
-      api.missions(),
-      api.pipeline(),
-      api.top(6),
-      api.recent(6),
-    ])
-      .then(([s, m, p, t, r]) => {
-        if (cancelled) return;
-        setSummary(s);
-        setMissions(m);
-        setPipeline(p);
-        setTop(t);
-        setRecent(r);
-        setLoadError(null);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError("Could not reach the intelligence API.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+// ─── mailto helpers ───────────────────────────────────────────────────────
+// Draft-only. Opening a draft NEVER writes to Airtable. Ryan chooses whether
+// to press Send inside his native mail app.
 
 const enc = encodeURIComponent;
 
@@ -214,70 +192,24 @@ const EmptyCard = ({ children, testId }) => (
   </div>
 );
 
-        {loadError && (
-          <div
-            data-testid="dashboard-load-error"
-            className="bh-surface rounded-md border-t-2 border-t-red-500/60 p-4 text-sm text-red-200"
-          >
-            {loadError} Figures below are not current.
-          </div>
-        )}
+// ─── Row variants ─────────────────────────────────────────────────────────
 
-        {/* Metric row */}
-        <section
-          data-testid="metric-strip"
-          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
-        >
-          <MetricCard
-            testId="metric-new"
-            label="New Opportunities"
-            value={summary?.new_opportunities ?? "—"}
-            hint="Fresh signals to triage"
-            icon={Zap}
-            loading={loading}
-            onClick={() => goFilter({ status: "New" })}
-          />
-          <MetricCard
-            testId="metric-immediate"
-            label="Immediate Action"
-            value={summary?.immediate_action ?? "—"}
-            hint="Call, text, or visit today"
-            icon={Flame}
-            accent
-            loading={loading}
-            onClick={() => goFilter({ daily_mission: "Call Today" })}
-          />
-          <MetricCard
-            testId="metric-ready"
-            label="Ready to Contact"
-            value={summary?.ready_to_contact ?? "—"}
-            hint="Complete profile, high intent"
-            icon={PhoneCall}
-            loading={loading}
-            onClick={() => goFilter({ status: "Ready" })}
-          />
-          <MetricCard
-            testId="metric-research"
-            label="Needs Research"
-            value={summary?.needs_research ?? "—"}
-            hint="Enrich before outreach"
-            icon={SearchCode}
-            loading={loading}
-            onClick={() => goFilter({ status: "Needs research" })}
-          />
-          <MetricCard
-            testId="metric-pipeline"
-            label="Pipeline Value"
-            /* No `?? 0`: a null total means no active record carries an
-               estimate. Rendering "$0" would state a falsehood about the
-               pipeline; fmtMoney renders null as an em dash. */
-            value={fmtMoney(summary?.total_pipeline_value)}
-            hint={pipelineHint}
-            icon={Landmark}
-            loading={loading}
-            onClick={() => navigate("/opportunities")}
-          />
-        </section>
+const HeaderMeta = ({ opp }) => (
+  <div className="mt-1 flex items-center gap-3 text-[12.5px] text-[var(--bh-ink-mute)] flex-wrap">
+    <DaysOnTable
+      days={opp.days_on_table}
+      testId={`days-on-table-${opp.id}`}
+    />
+    {opp.project_address && (
+      <span className="inline-flex items-center gap-1.5">
+        <MapPin size={11} strokeWidth={1.75} />
+        {opp.project_address}
+      </span>
+    )}
+    {opp.project_type && <span>· {opp.project_type}</span>}
+    {opp.source && <span>· Found on {sourceLabel(opp.source)}</span>}
+  </div>
+);
 
 /**
  * ReadyRow — Ready to Contact. Shows governed signals, Priority Explanation
@@ -588,21 +520,22 @@ const ReferralRow = ({ opp, sender }) => {
   );
 };
 
-          <div className="space-y-2 bh-fade-in">
-            {loading ? (
-              <ListSkeleton rows={4} testId="missions-loading" />
-            ) : missionList.length === 0 ? (
-              <div
-                data-testid="missions-empty"
-                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
-              >
-                No missions in this bucket.
-              </div>
-            ) : (
-              missionList.slice(0, 8).map((o) => (
-                <OpportunityRow key={o.id} opp={o} />
-              ))
-            )}
+/**
+ * AllProjectsRow — no messaging controls of any kind. Shows why the
+ * record is NOT ready (from Contact Readiness governed field).
+ */
+const AllProjectsRow = ({ opp }) => {
+  const reason = notReadyReason(opp);
+  return (
+    <Link
+      to={`/opportunities/${opp.id}`}
+      data-testid={`all-row-${opp.id}`}
+      className="block bh-surface rounded-md p-4 transition-colors duration-150 hover:bg-white/[0.03]"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-[16px] text-[var(--bh-ink)] tracking-tight truncate">
+            {opp.name}
           </div>
           <HeaderMeta opp={opp} />
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -874,61 +807,31 @@ const CommandCenter = () => {
                 <ReadyRow key={opp.id} opp={opp} sender={senderSettings} />
               ))}
             </div>
-            {loading ? (
-              <ListSkeleton rows={4} testId="top-loading" />
-            ) : top.length === 0 ? (
-              <div
-                data-testid="top-empty"
-                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
-              >
-                No active opportunities.
-              </div>
-            ) : (
-            <div className="bh-surface rounded overflow-hidden">
-              {top.map((o, i) => (
-                <Link
-                  key={o.id}
-                  to={`/opportunities/${o.id}`}
-                  data-testid={`top-opp-${o.id}`}
-                  className="flex items-center gap-3 px-4 py-3 border-b bh-hairline last:border-b-0 hover:bg-white/[0.03] transition-colors duration-150"
-                >
-                  <div className="mono text-neutral-600 text-sm w-6 tabular-nums">
-                    {String(i + 1).padStart(2, "0")}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate font-medium text-neutral-100">
-                      {o.name}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-neutral-500">
-                      <span>{sourceLabel(o.source)}</span>
-                      <span>·</span>
-                      <span className="truncate">{o.project_type}</span>
-                    </div>
-                    <div className="mt-1 text-[12px] text-amber-200/80 truncate">
-                      → {o.next_best_action}
-                    </div>
-                  </div>
-                  <div className="hidden sm:flex flex-col items-end min-w-[80px]">
-                    <PriorityScore
-                      score={o.priority_score}
-                      band={o.priority_band}
-                      size="sm"
-                    />
-                    <PriorityBand band={o.priority_band} className="mt-1" />
-                  </div>
-                  <div className="hidden md:flex flex-col items-end min-w-[70px]">
-                    <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
-                      Est.
-                    </div>
-                    <div className="font-display font-semibold text-neutral-200 tabular-nums">
-                      {fmtMoney(o.estimated_value)}
-                    </div>
-                  </div>
-                </Link>
+          )}
+        </SectionShell>
+
+        <SectionShell
+          testId="section-contacted"
+          eyebrow="2 · Contacted"
+          title="Contacted"
+          hint="Records already reached out to. Follow-up drafts only — no first-contact actions here."
+          icon={Reply}
+          count={contacted?.length}
+        >
+          {contacted === null ? (
+            <EmptyCard testId="contacted-loading">Loading…</EmptyCard>
+          ) : contacted.length === 0 ? (
+            <EmptyCard testId="contacted-empty">
+              Nothing to follow up on yet.
+            </EmptyCard>
+          ) : (
+            <div className="space-y-2">
+              {contacted.map((opp) => (
+                <ContactedRow key={opp.id} opp={opp} sender={senderSettings} />
               ))}
             </div>
-            )}
-          </div>
+          )}
+        </SectionShell>
 
         {referrals && referrals.length > 0 && (
           <SectionShell
@@ -970,24 +873,24 @@ const CommandCenter = () => {
                 </div>
               )}
             </div>
-            {loading ? (
-              <ListSkeleton rows={4} testId="recent-loading" />
-            ) : recent.length === 0 ? (
-              <div
-                data-testid="recent-empty"
-                className="bh-surface rounded p-8 text-center text-neutral-500 text-sm"
-              >
-                No discoveries yet.
+          )}
+        </SectionShell>
+
+        <section data-testid="section-needs-enrichment" className="space-y-3">
+          <button
+            type="button"
+            data-testid="needs-enrichment-toggle"
+            onClick={() => setEnrichmentOpen((v) => !v)}
+            className="w-full text-left flex items-start gap-3 py-1 hover:opacity-90 transition-opacity"
+          >
+            <div className="flex-1">
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 flex items-center gap-1.5">
+                <Snowflake size={11} strokeWidth={1.75} />
+                4 · Cold — Needs Enrichment
               </div>
-            ) : (
-            <div className="bh-surface rounded overflow-hidden">
-              {recent.map((o) => (
-                <Link
-                  key={o.id}
-                  to={`/opportunities/${o.id}`}
-                  data-testid={`recent-opp-${o.id}`}
-                  className="flex items-start gap-3 px-4 py-3 border-b bh-hairline last:border-b-0 hover:bg-white/[0.03] transition-colors duration-150"
-                >
+              <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+                Needs Enrichment
+                {enrichment?.length ? (
                   <span
                     className="ml-2 text-[13px] text-[var(--bh-ink-mute)] tabular-nums"
                     data-testid="needs-enrichment-count"
@@ -1035,15 +938,7 @@ const CommandCenter = () => {
                 </div>
               )}
             </div>
-            <h2 className="font-display text-xl font-bold text-neutral-100">
-              Status Pipeline
-            </h2>
-          </div>
-          <StatusPipeline
-            stages={pipeline}
-            loading={loading}
-            onSelect={(s) => goFilter({ status: s })}
-          />
+          )}
         </section>
       </main>
     </>
