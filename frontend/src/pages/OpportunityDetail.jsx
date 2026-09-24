@@ -258,13 +258,49 @@ const OpportunityDetail = () => {
                 <MapPin size={14} className="text-[var(--bh-ink-mute)]" />
                 {opp.project_address}
               </div>
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 min-w-0">
-                <div data-testid="governed-priority-score">
-                  <div className="bh-eyebrow">Governed priority score</div>
-                  <div className="font-display text-2xl lg:text-3xl font-bold text-[var(--bh-ink)] tabular-nums mt-1">
-                    {typeof opp.governed_priority_score === "number"
-                      ? opp.governed_priority_score
-                      : <span className="text-[var(--bh-ink-mute)] italic text-[16px]">Not scored</span>}
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Priority
+                  </div>
+                  <div className="mt-1">
+                    <PriorityScore
+                      score={opp.priority_score}
+                      band={opp.priority_band}
+                      size="lg"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Official project value
+                  </div>
+                  <div className="font-display text-2xl lg:text-3xl font-bold text-neutral-100 tabular-nums mt-1">
+                    {fmtMoneyOrStatus(opp.construction_value, "Not public")}
+                  </div>
+                </div>
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Possible work for us
+                  </div>
+                  <div className="font-display text-2xl lg:text-3xl font-bold text-neutral-100 tabular-nums mt-1">
+                    {fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
+                  </div>
+                </div>
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Source
+                  </div>
+                  <div className="mt-1 text-neutral-100 font-medium">
+                    {sourceLabel(opp.source)}
+                  </div>
+                </div>
+                <div>
+                  <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                    Project type
+                  </div>
+                  <div className="mt-1 text-neutral-100 font-medium">
+                    {opp.project_type}
                   </div>
                 </div>
                 <GovernedSignal label="Money signal" value={opp.money_signal} testId="governed-money-signal" />
@@ -502,8 +538,13 @@ const OpportunityDetail = () => {
                 <KV label="Permit source" value={opp.permit_source} />
                 <KV label="Filing date" value={fmtDate(opp.permit_filing_date)} mono />
                 <KV
-                  label="Construction value"
-                  value={opp.construction_value ? fmtMoneyFull(opp.construction_value) : null}
+                  label="Official project value"
+                  value={fmtMoneyOrStatus(opp.construction_value, "Not public")}
+                  mono
+                />
+                <KV
+                  label="Possible work for us"
+                  value={fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
                   mono
                 />
                 <KV
@@ -530,8 +571,52 @@ const OpportunityDetail = () => {
 
           {/* Right col: Activity */}
           <div className="space-y-6">
+            <section
+              className="bh-surface rounded-md p-5"
+              data-testid="detail-relationships-preview"
+            >
+              <SectionHeading
+                code="Section / 04"
+                title="Relationships"
+                hint="Not built yet"
+              />
+              {/* This panel used to show invented values ("1 possible via
+                  Sarah Delatte", confidence "Low") next to real lead fields on
+                  the page an operator decides from. Only the field names are
+                  kept — no graph exists to populate them. */}
+              <PreviewNotice
+                testId="detail-relationships-notice"
+                detail="No relationship graph is computed yet. These are the fields this panel will report; none of them influence the priority score or outreach eligibility."
+              >
+                <div className="space-y-2">
+                  {[
+                    { icon: User, label: "Direct relationship" },
+                    { icon: Network, label: "Mutual connection" },
+                    { icon: Building2, label: "Referral source" },
+                    { icon: Signal, label: "Relationship confidence" },
+                    { icon: Hammer, label: "Recommended intro path" },
+                  ].map((r) => (
+                    <div
+                      key={r.label}
+                      className="bh-surface-2 rounded p-3 flex items-center gap-3"
+                    >
+                      <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
+                        <r.icon size={14} className="text-neutral-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+                          {r.label}
+                        </div>
+                        <div className="text-sm text-neutral-600">—</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PreviewNotice>
+            </section>
+
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading title="Recent activity" />
+              <SectionHeading code="Section / 05" title="Activity Timeline" />
               <ol className="relative border-l bh-hairline pl-5 space-y-4">
                 {(opp.activity_timeline || []).map((a, i) => {
                   const Icon = activityIcon(a.type);

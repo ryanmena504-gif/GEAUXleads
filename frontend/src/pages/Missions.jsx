@@ -31,11 +31,31 @@ const missionCopy = {
     "Do nothing today. The signal is developing — check back Friday.",
 };
 
+const CardSkeleton = () => (
+  <div className="bh-surface rounded p-4">
+    <div className="h-6 w-14 rounded bg-white/[0.06] animate-pulse" />
+    <div className="mt-3 h-4 w-4/5 rounded bg-white/[0.06] animate-pulse" />
+    <div className="mt-2 h-3 w-3/5 rounded bg-white/[0.04] animate-pulse" />
+    <div className="mt-4 h-3 w-full rounded bg-white/[0.04] animate-pulse" />
+    <div className="mt-4 h-9 w-full rounded bg-white/[0.05] animate-pulse" />
+  </div>
+);
+
 const Missions = () => {
   const [grouped, setGrouped] = useState({});
   const [completed, setCompleted] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
-  const load = () => api.missions().then(setGrouped);
+  const load = () =>
+    api
+      .missions()
+      .then((g) => {
+        setGrouped(g);
+        setLoadError(null);
+      })
+      .catch(() => setLoadError("Could not reach the intelligence API."))
+      .finally(() => setLoading(false));
 
   useEffect(() => {
     load();
@@ -43,6 +63,10 @@ const Missions = () => {
 
   const total = Object.values(grouped).reduce((a, arr) => a + arr.length, 0);
   const doneCount = Object.keys(completed).length;
+  // "0 of 0 complete" before the fetch resolves reads as a finished day.
+  const subtitle = loading
+    ? "Loading today's dispatch…"
+    : `${doneCount} of ${total} complete`;
 
   const markDone = (id) => {
     setCompleted((c) => ({ ...c, [id]: true }));
@@ -61,7 +85,10 @@ const Missions = () => {
 
   return (
     <>
-      <TopHeader pageTitle="Follow-Ups" subtitle={`${doneCount} of ${total} done`} />
+      <TopHeader
+        pageTitle="Today's Missions"
+        subtitle={subtitle}
+      />
 
       <div className="px-4 lg:px-8 py-6 space-y-6">
         <div className="bh-surface rounded p-4 flex items-center gap-3 border-t border-t-amber-500/60">
@@ -77,7 +104,28 @@ const Missions = () => {
           </div>
         </div>
 
-        {MISSIONS.map((m) => {
+        {loadError && (
+          <div
+            data-testid="missions-load-error"
+            className="bh-surface rounded-md border-t-2 border-t-red-500/60 p-4 text-sm text-red-200"
+          >
+            {loadError} No missions can be shown.
+          </div>
+        )}
+
+        {loading && (
+          <div
+            data-testid="missions-loading"
+            className="grid md:grid-cols-2 xl:grid-cols-3 gap-3"
+          >
+            {Array.from({ length: 6 }).map((_, i) => (
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+        )}
+
+        {!loading &&
+          MISSIONS.map((m) => {
           const items = grouped[m] || [];
           if (items.length === 0) return null;
           return (
@@ -165,9 +213,12 @@ const Missions = () => {
           );
         })}
 
-        {total === 0 && (
-          <div className="bh-surface rounded p-12 text-center text-[var(--bh-ink-mute)] text-sm">
-            No follow-ups right now.
+        {!loading && !loadError && total === 0 && (
+          <div
+            data-testid="missions-empty"
+            className="bh-surface rounded p-12 text-center text-neutral-500 text-sm"
+          >
+            No active missions right now.
           </div>
         )}
       </div>

@@ -16,11 +16,12 @@ import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 // triage), Debug (governance sanity check — one row per record showing
 // every governed field), Settings.
 const nav = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/opportunities", label: "All Projects", icon: FileText },
-  { to: "/discovery/property-managers", label: "Discovery", icon: Building2 },
-  { to: "/debug", label: "Debug", icon: Bug },
-  { to: "/settings", label: "Settings", icon: Sliders },
+  { to: "/", label: "Command Center", icon: LayoutDashboard, code: "CC" },
+  { to: "/opportunities", label: "Opportunities", icon: Crosshair, code: "OP" },
+  { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
+  { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },
+  { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN", preview: true },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, code: "SE" },
 ];
 
 export const Sidebar = () => {

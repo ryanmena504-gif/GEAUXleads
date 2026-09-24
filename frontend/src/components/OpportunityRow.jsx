@@ -81,19 +81,19 @@ export const OpportunityRow = ({ opp }) => (
         </div>
       </div>
 
-      <div className="flex-col items-end text-right hidden md:flex shrink-0">
-        {(() => {
-          const money = moneyDisplay(opp);
-          if (!money) return null;
-          return (
-            <>
-              <div className="bh-eyebrow">Possible work value</div>
-              <div className="font-display text-[20px] text-[var(--bh-ink)] tabular-nums mt-0.5">
-                {money}
-              </div>
-            </>
-          );
-        })()}
+      <div className="flex-col items-end text-right hidden md:flex">
+        <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+          Possible work for us
+        </div>
+        <div className="font-display text-lg font-semibold text-neutral-100 tabular-nums">
+          {fmtMoneyOrStatus(opp.estimated_value, "Not estimated yet")}
+        </div>
+        <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mt-2">
+          Official project value
+        </div>
+        <div className="text-xs text-neutral-300 tabular-nums">
+          {fmtMoneyOrStatus(opp.construction_value, "Not public")}
+        </div>
         {opp.decision_maker && (
           <div className="text-[12px] text-[var(--bh-ink-mute)] mt-2 truncate max-w-[180px]">
             {opp.decision_maker}

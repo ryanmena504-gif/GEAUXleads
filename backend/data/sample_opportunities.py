@@ -509,7 +509,7 @@ SAMPLE_OPPORTUNITIES = [
         "project_address": "8112 Zimpel St, New Orleans, LA 70118",
         "estimated_value": 68000,
         "decision_maker": "Maya Delgado",
-        "phone": "504-555-0166",
+        "phone": "504-555-0173",
         "email": "maya.d@example.com",
         "priority_score": 60,
         "priority_band": "B",

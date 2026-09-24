@@ -1,10 +1,17 @@
-"""
-Leads-table service for the Next Best Action panel.
+"""Leads-table service for the Next Best Action panel.
 
 Independent of the Opportunities service. Reads the `Leads` table on the same
 Airtable base, uses a schema-driven field map (never renames Airtable fields),
 and enforces a strict write allowlist for approve / hold / do-not-contact /
 message-edit actions.
+
+Safety model:
+- Every approval is gated server-side by `services.outreach_policy`. The UI
+  cannot approve a lead the policy rejects, because the UI is not what decides.
+- Duplicate leads are grouped by `services.dedupe`; only the canonical record of
+  a group is actionable, so the same homeowner cannot be messaged twice from two
+  cards.
+- Approvals are idempotent and audited via `services.audit`.
 """
 from __future__ import annotations
 
@@ -17,6 +24,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pyairtable import Api
+
+from services import dedupe
+from services.audit import derive_idempotency_key, get_audit_log
+from services.field_norm import clean_text, is_valid_email, is_valid_phone
+from services.outreach_policy import (
+    EligibilityResult,
+    PolicyThresholds,
+    computed_readiness,
+    evaluate,
+)
 
 log = logging.getLogger("bloodhound.leads")
 
@@ -62,7 +79,12 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "SCORE band": "score_band",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
-    "SMS Permission": "sms_permission",
+    # Read by the eligibility policy and the dedupe fingerprint. Advisory AI
+    # prose is namespaced at the API boundary, never treated as live state.
+    "Risk flags": "risk_flags",
+    "Missing information": "missing_information",
+    "Permit number": "permit_number",
+    "Confidence score": "confidence_score",
 }
 
 # Only these Airtable fields may ever be written by this service.
@@ -113,6 +135,27 @@ _EXCLUDE_STATUS_SUBSTRING = ("do not contact", "duplicate")
 
 PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "normal": 2, "low": 1}
 
+# Written on approve. Must exist as options on the Airtable single-selects.
+APPROVED_VALUE = "Approved"
+
+# Tried in order when reverting an approval. Airtable rejects a single-select
+# value that is not a configured option, so we degrade through plausible
+# vocabulary before clearing the cell outright.
+REVERT_CANDIDATES = ("Pending", "Pending Approval", "Needs Review", "Not Approved", None)
+
+
+class OutreachBlocked(Exception):
+    """Raised when a write is refused by the outreach policy.
+
+    Carries the structured result so the API layer can return the blocking
+    reasons rather than a bare 4xx.
+    """
+
+    def __init__(self, result: EligibilityResult):
+        self.result = result
+        blockers = "; ".join(f.message for f in result.blockers) or "not eligible"
+        super().__init__(blockers)
+
 
 _LANE_LABELS = {
     "market_capture": "Market Capture",
@@ -152,12 +195,15 @@ class LeadsAirtableService:
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}
+        self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
         self._last_refresh: float = 0.0
         self._field_map: Dict[str, str] = {}
+        self._schema_field_names: List[str] = []
         # Per-process session state — reset on backend restart.
         self._skipped: set = set()
         self._held: set = set()
         self._approvals: Dict[str, str] = {}
+        self._audit = get_audit_log()
         self._load_schema()
 
     # ---------- schema ----------
@@ -174,6 +220,7 @@ class LeadsAirtableService:
             )
         self._table_id = table.id
         available = {f.name for f in table.fields}
+        self._schema_field_names = sorted(available)
         self._field_map = {
             at: sn for at, sn in LEADS_FIELD_MAP.items() if at in available
         }
@@ -196,8 +243,10 @@ class LeadsAirtableService:
             dto = self._record_to_dto(r)
             if dto.get("id"):
                 new_cache[dto["id"]] = dto
+        index = dedupe.annotate(list(new_cache.values()))
         with self._lock:
             self._cache = new_cache
+            self._duplicate_index = index
             self._last_refresh = now
 
     def _record_to_dto(self, record: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,6 +257,9 @@ class LeadsAirtableService:
         }
         for at_name, snake in self._field_map.items():
             dto[snake] = fields.get(at_name)
+        # Guarantee every mapped key exists so the UI never reads undefined.
+        for snake in LEADS_FIELD_MAP.values():
+            dto.setdefault(snake, None)
         # Compose a stable Airtable URL for "Open Full Lead"
         if self._table_id and dto["id"]:
             dto["_airtable_url"] = f"https://airtable.com/{self._base_id}/{self._table_id}/{dto['id']}"
@@ -227,6 +279,29 @@ class LeadsAirtableService:
         with self._lock:
             cached = self._cache.get(lead_id)
             return deepcopy(cached) if cached else None
+
+    def duplicates_report(self) -> Dict[str, Any]:
+        self._refresh_cache()
+        with self._lock:
+            index = deepcopy(self._duplicate_index)
+        return dedupe.duplicate_report(index)
+
+    # ---------- eligibility ----------
+    def eligibility(self, lead: Dict[str, Any]) -> EligibilityResult:
+        """Evaluate the outreach policy against a lead DTO."""
+        return evaluate(lead, thresholds=PolicyThresholds.from_env(),
+                        duplicate_of=lead.get("duplicate_of"))
+
+    def eligibility_for_id(self, lead_id: str) -> Optional[EligibilityResult]:
+        lead = self.get(lead_id)
+        return self.eligibility(lead) if lead else None
+
+    def readiness(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        """Live-field readiness for the detail view (fix: no stale AI prose)."""
+        lead = self.get(lead_id)
+        if not lead:
+            return None
+        return computed_readiness(lead, duplicate_of=lead.get("duplicate_of"))
 
     # ---------- selection logic ----------
     @staticmethod
@@ -259,8 +334,8 @@ class LeadsAirtableService:
                 return True
         # A lead is not actionable without a name AND a recommended next action.
         # Empty/skeleton rows in Airtable must never surface as the NBA.
-        name = (lead.get("name") or "").strip() if isinstance(lead.get("name"), str) else ""
-        next_action = (lead.get("next_action") or "").strip() if isinstance(lead.get("next_action"), str) else ""
+        name = clean_text(lead.get("name"))
+        next_action = clean_text(lead.get("next_action"))
         if not name or not next_action:
             return True
         for key in ("status", "outreach_status", "approval_status"):
@@ -283,10 +358,16 @@ class LeadsAirtableService:
         return score
 
     def _has_usable_contact(self, lead: Dict[str, Any]) -> bool:
-        return bool(
-            lead.get("contact_phone") or lead.get("contact_email")
-            or lead.get("phone_number") or lead.get("email")
-            or lead.get("verified_opportunity") or lead.get("contact_found")
+        """A contact is usable only if it is syntactically reachable.
+
+        The `Verified opportunity` / `Contact found` checkboxes used to count
+        here, which let a lead with no phone and no email look contactable.
+        """
+        return (
+            is_valid_phone(lead.get("contact_phone"))
+            or is_valid_phone(lead.get("phone_number"))
+            or is_valid_email(lead.get("contact_email"))
+            or is_valid_email(lead.get("email"))
         )
 
     def _ai_complete(self, lead: Dict[str, Any]) -> bool:
@@ -303,21 +384,21 @@ class LeadsAirtableService:
                 return v
         return 0
 
-    def _explain(self, lead: Dict[str, Any]) -> str:
-        parts: List[str] = []
-        if self._ai_complete(lead):
-            parts.append("AI enrichment complete")
-        if self._has_usable_contact(lead):
-            parts.append("verified contact")
-        if lead.get("priority"):
-            parts.append(f"priority {lead['priority']}")
-        if lead.get("lead_score"):
-            parts.append(f"score {lead['lead_score']}")
+    def _explain(self, lead: Dict[str, Any], result: EligibilityResult) -> str:
+        """Why this lead surfaced — stated from live field values, not from the
+        AI's stored narrative."""
+        parts: List[str] = [f"score {result.score:g} ({result.score_source.replace('_', ' ')})"]
+        if result.recipient.channel:
+            parts.append(f"reachable by {result.recipient.channel}")
+        if result.recipient.counterparty:
+            parts.append(f"contact {result.recipient.counterparty}")
         if lead.get("opportunity_type"):
             parts.append(str(lead["opportunity_type"]).lower())
         if lead.get("source"):
             parts.append(f"from {lead['source']}")
-        return " · ".join(parts) if parts else "top of actionable queue"
+        if not result.eligible:
+            parts.append(f"{len(result.blockers)} blocker(s)")
+        return " · ".join(parts)
 
     def pick_next_best_action(self) -> Optional[Dict[str, Any]]:
         candidates = [
@@ -347,14 +428,16 @@ class LeadsAirtableService:
         return pick
 
     def queue_stats(self) -> Dict[str, int]:
-        total = len(self.all())
-        eligible = sum(
-            1 for l in self.all()
-            if not self._is_excluded(l) and l["id"] not in self._skipped
-        )
+        leads = self.all()
+        queued = [l for l in leads
+                  if not self._is_excluded(l) and l["id"] not in self._skipped]
+        approvable = sum(1 for l in queued if self.eligibility(l).eligible)
         return {
-            "total": total,
-            "eligible": eligible,
+            "total": len(leads),
+            "eligible": len(queued),
+            "approvable": approvable,
+            "blocked_by_policy": len(queued) - approvable,
+            "duplicates_suppressed": sum(1 for l in leads if l.get("duplicate_of")),
             "skipped_this_session": len(self._skipped),
             "on_hold": len(self._held),
             "approved_this_session": len(self._approvals),
@@ -371,8 +454,43 @@ class LeadsAirtableService:
             log.exception("Leads: update %s=%s failed on %s", at_field, value, lead_id)
             return False
 
-    def approve(self, lead_id: str) -> Dict[str, Any]:
+    def approve(self, lead_id: str,
+                idempotency_key: Optional[str] = None,
+                actor: Optional[str] = None,
+                acknowledged_warnings: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Approve a lead for outreach.
+
+        Refuses with `OutreachBlocked` unless the policy passes. Idempotent: a
+        replay of the same key returns the original response instead of writing
+        to Airtable again.
+        """
+        lead = self.get(lead_id)
+        if lead is None:
+            raise KeyError(lead_id)
+
+        key = idempotency_key or derive_idempotency_key("approve", lead_id)
+        replay = self._audit.idempotency.get(key)
+        if replay is not None:
+            self._audit.record(
+                action="approve", entity_id=lead_id, outcome="replayed",
+                actor=actor, idempotency_key=key,
+                reason="Idempotency key already processed — no write performed.",
+            )
+            return {**replay, "replayed": True}
+
+        result = self.eligibility(lead)
+        if not result.eligible:
+            self._audit.record(
+                action="approve", entity_id=lead_id, outcome="rejected",
+                actor=actor, idempotency_key=key,
+                reason="Blocked by outreach policy.",
+                eligibility=result.to_dict(),
+            )
+            raise OutreachBlocked(result)
+
         ts = datetime.now(timezone.utc).isoformat()
+        wrote_approval = self._safe_update(lead_id, "Approval status", APPROVED_VALUE)
+        wrote_outreach = self._safe_update(lead_id, "Outreach status", APPROVED_VALUE)
         self._approvals[lead_id] = ts
         # Approval status DOES have an "Approved" option.
         wrote_approval = self._safe_update(lead_id, "Approval status", "Approved")
@@ -381,40 +499,116 @@ class LeadsAirtableService:
         # session store + Approval status already capture the state, so we
         # skip the invalid write.
         self._refresh_cache(force=True)
-        return {
+
+        response = {
             "lead_id": lead_id,
             "state": "approved",
             "approved_at": ts,
-            "persisted": {"Approval status": wrote_approval},
-            "note": "Approved — awaiting messaging connection.",
+            "idempotency_key": key,
+            "persisted": {"Approval status": wrote_approval,
+                          "Outreach status": wrote_outreach},
+            "recipient": result.to_dict()["recipient"],
+            "acknowledged_warnings": acknowledged_warnings or [],
+            "revertible": wrote_approval or wrote_outreach,
+            "note": ("Approved — no message has been sent. Dispatch is not yet "
+                     "connected; see docs/INTEGRATIONS.md."),
         }
+        self._audit.idempotency.put(key, response)
+        self._audit.record(
+            action="approve", entity_id=lead_id, outcome="accepted",
+            actor=actor, idempotency_key=key,
+            eligibility=result.to_dict(),
+            changes={"Approval status": APPROVED_VALUE, "Outreach status": APPROVED_VALUE},
+            metadata={"persisted": response["persisted"],
+                      "acknowledged_warnings": acknowledged_warnings or []},
+        )
+        return response
 
-    def hold(self, lead_id: str) -> Dict[str, Any]:
+    def revert_approval(self, lead_id: str,
+                        actor: Optional[str] = None,
+                        reason: Optional[str] = None) -> Dict[str, Any]:
+        """Undo an approval.
+
+        Safe because approval only sets two allowlisted status columns and never
+        dispatches a message — there is nothing sent to recall. Clears the
+        idempotency entry so the lead can be deliberately re-approved.
+        """
+        lead = self.get(lead_id)
+        if lead is None:
+            raise KeyError(lead_id)
+
+        reverted_to: Optional[str] = None
+        persisted: Dict[str, Any] = {}
+        for candidate in REVERT_CANDIDATES:
+            if self._safe_update(lead_id, "Approval status", candidate):
+                reverted_to = candidate
+                persisted["Approval status"] = candidate
+                break
+        if reverted_to is not None:
+            if self._safe_update(lead_id, "Outreach status", reverted_to):
+                persisted["Outreach status"] = reverted_to
+
+        self._approvals.pop(lead_id, None)
+        self._audit.idempotency.invalidate(derive_idempotency_key("approve", lead_id))
+        self._refresh_cache(force=True)
+
+        response = {
+            "lead_id": lead_id,
+            "state": "approval_reverted",
+            "reverted_to": reverted_to,
+            "persisted": persisted,
+            "note": ("Approval withdrawn. No message had been dispatched."
+                     if persisted else
+                     "Session approval cleared, but no Airtable status field was writable."),
+        }
+        self._audit.record(
+            action="revert_approval", entity_id=lead_id,
+            outcome="accepted" if persisted else "error",
+            actor=actor, reason=reason, changes=persisted,
+        )
+        return response
+
+    def hold(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
         self._held.add(lead_id)
         # Hunt status = Paused is the canonical hold signal on Airtable.
         wrote = self._safe_update(lead_id, "Hunt status", "Paused")
         self._refresh_cache(force=True)
+        self._audit.record(action="hold", entity_id=lead_id, outcome="accepted",
+                           actor=actor, changes={"Outreach status": "Hold"} if wrote else {})
         return {"lead_id": lead_id, "state": "hold", "persisted": wrote}
 
-    def skip(self, lead_id: str) -> Dict[str, Any]:
+    def skip(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
         self._skipped.add(lead_id)
+        self._audit.record(action="skip", entity_id=lead_id, outcome="accepted",
+                           actor=actor, reason="Session-only skip; nothing written.")
         return {"lead_id": lead_id, "state": "skipped"}
 
-    def do_not_contact(self, lead_id: str) -> Dict[str, Any]:
-        # Hunt status = Rejected is the canonical DNC signal on Airtable.
-        # Outreach status doesn't have a DNC value, so we stop there.
-        if self._safe_update(lead_id, "Hunt status", "Rejected"):
-            self._refresh_cache(force=True)
-            return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": "Hunt status"}
+    def do_not_contact(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
+        # Prefer Status; if unwritable/absent, try Outreach status; then Approval status.
+        for field in ("Status", "Outreach status", "Approval status"):
+            if self._safe_update(lead_id, field, "Do Not Contact"):
+                self._refresh_cache(force=True)
+                self._audit.record(action="do_not_contact", entity_id=lead_id,
+                                   outcome="accepted", actor=actor,
+                                   changes={field: "Do Not Contact"})
+                return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": field}
         # Fallback: session-only exclude
         self._held.add(lead_id)
+        self._audit.record(action="do_not_contact", entity_id=lead_id, outcome="error",
+                           actor=actor,
+                           reason="No writable status field; suppressed in session only.")
         return {"lead_id": lead_id, "state": "do_not_contact", "persisted_to": None,
                 "note": "Session-only (no writable Status field found)"}
 
-    def update_message(self, lead_id: str, message: str) -> Optional[Dict[str, Any]]:
+    def update_message(self, lead_id: str, message: str,
+                       actor: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        previous = (self.get(lead_id) or {}).get("first_message")
         if not self._safe_update(lead_id, "First message", message):
             return None
         self._refresh_cache(force=True)
+        self._audit.record(action="update_message", entity_id=lead_id,
+                           outcome="accepted", actor=actor,
+                           changes={"First message": {"from": previous, "to": message}})
         return self.get(lead_id)
 
     # ---------- outreach send ----------

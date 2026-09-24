@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional
 
 from pyairtable import Api
 
+from services import aggregations, dedupe, ingestion_diagnostics
+
 log = logging.getLogger("bloodhound.airtable")
 
 
@@ -68,6 +70,10 @@ LIVE_FIELDS: Dict[str, str] = {
     "Opportunity type": "project_type",
     "Permit number": "permit_number",
     "Permit description": "permit_description",
+    # Keep the two money concepts separate. A permit amount is the published
+    # total project value, while the AI estimate is only the possible portion
+    # of that project that could become Shirtless Handyman work.
+    "Permit project value": "construction_value",
     "Estimated job value": "estimated_value",
     # Formula money fields — kept as-is (string). The frontend prefers
     # `estimated_value` (number) when populated, else falls back to these so
@@ -545,17 +551,7 @@ def _normalize_contact_confidence(v: Any) -> Optional[str]:
         return None
     return str(v)
 
-ACTIONABLE_MISSIONS = [
-    "Call Today",
-    "Send Text",
-    "Send Email",
-    "Research First",
-    "Visit Property",
-    "Prepare Estimate",
-    "Ask for Referral",
-    "Follow Up",
-    "Wait",
-]
+ACTIONABLE_MISSIONS = aggregations.ACTIONABLE_MISSIONS
 
 
 def _to_list(value: Any) -> List[Any]:
@@ -663,6 +659,9 @@ class AirtableOpportunityService:
         self._readonly_field_names: set = set()
         self._field_map: Dict[str, str] = {}
         self._reverse_map: Dict[str, str] = {}
+        self._schema_field_names: List[str] = []
+        self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
+        self._ingestion = ingestion_diagnostics.IngestionRecorder()
         self._load_schema()
 
     # ---------- schema ----------
@@ -685,6 +684,7 @@ class AirtableOpportunityService:
                 available[f.name] = f
                 if getattr(f, "type", None) in READONLY_FIELD_TYPES:
                     self._readonly_field_names.add(f.name)
+            self._schema_field_names = sorted(available)
 
             # The user has explicitly requested certain formula/system fields
             # be treated as read-only even if the schema type didn't flag them.
@@ -756,8 +756,8 @@ class AirtableOpportunityService:
                 opp[k] = _first(opp[k])
 
         # Ensure numeric types where sensible
-        for k in ("lead_score", "confidence_score", "estimated_value",
-                  "closed_revenue", "estimated_gross_profit"):
+        for k in ("lead_score", "confidence_score", "construction_value",
+                  "estimated_value", "closed_revenue", "estimated_gross_profit"):
             v = opp.get(k)
             if isinstance(v, list):
                 v = _first(v)
@@ -926,13 +926,25 @@ class AirtableOpportunityService:
             try:
                 records = self._table.all()
                 new_cache: Dict[str, Dict[str, Any]] = {}
+                self._ingestion.start()
                 for r in records:
-                    dto = self._record_to_opportunity(r)
+                    self._ingestion.record_seen()
+                    # One malformed record must not take the whole refresh down,
+                    # but the loss has to be visible — see /api/diagnostics/ingestion.
+                    try:
+                        dto = self._record_to_opportunity(r)
+                    except Exception as exc:  # noqa: BLE001
+                        self._ingestion.record_failure(r.get("id"), exc)
+                        continue
                     rid = dto.get("id")
                     if rid:
                         new_cache[rid] = dto
+                        self._ingestion.record_projected()
+                self._ingestion.finish()
+                index = dedupe.annotate(list(new_cache.values()))
                 with self._lock:
                     self._cache = new_cache
+                    self._duplicate_index = index
                     self._last_refresh = time.time()
                     self._refreshing = False
                     self._last_error = None
@@ -1066,30 +1078,10 @@ class AirtableOpportunityService:
         return sort_opportunities(active, mode="lead_score")[:limit]
 
     def recent(self, limit: int = 10) -> List[Dict[str, Any]]:
-        items = self._all_cached()
-        items.sort(key=lambda o: o.get("created_time") or "", reverse=True)
-        return items[:limit]
+        return aggregations.recent(self._all_cached(), limit=limit)
 
     def summary(self) -> Dict[str, Any]:
-        all_ops = self._all_cached()
-        active = [o for o in all_ops if o.get("status") not in CLOSED_STATUSES]
-        immediate = [o for o in active if o.get("daily_mission") in
-                     ("Call Today", "Send Text", "Visit Property")]
-        ready = [o for o in active if o.get("status") == "Ready"]
-        needs_research = [o for o in active
-                          if o.get("status") == "Needs research"
-                          or o.get("daily_mission") == "Research First"]
-        new_ops = [o for o in all_ops if o.get("status") == "New"]
-        pipeline_value = sum([(o.get("estimated_value") or 0) for o in active])
-        return {
-            "new_opportunities": len(new_ops),
-            "immediate_action": len(immediate),
-            "ready_to_contact": len(ready),
-            "needs_research": len(needs_research),
-            "total_pipeline_value": pipeline_value,
-            "active_count": len(active),
-            "total_count": len(all_ops),
-        }
+        return aggregations.summary(self._all_cached())
 
     def group_by_mission(self) -> Dict[str, List[Dict[str, Any]]]:
         groups: Dict[str, List[Dict[str, Any]]] = {m: [] for m in ACTIONABLE_MISSIONS}
@@ -1104,17 +1096,27 @@ class AirtableOpportunityService:
         return groups
 
     def pipeline_counts(self) -> List[Dict[str, Any]]:
-        counts = {s: 0 for s in PIPELINE_STATUSES}
-        values = {s: 0.0 for s in PIPELINE_STATUSES}
-        for o in self._all_cached():
-            s = o.get("status")
-            if s in counts:
-                counts[s] += 1
-                values[s] += (o.get("estimated_value") or 0)
-        return [
-            {"status": s, "count": counts[s], "value": values[s]}
-            for s in PIPELINE_STATUSES
-        ]
+        return aggregations.pipeline_counts(self._all_cached())
+
+    # ---------- duplicates & diagnostics ----------
+    def duplicates_report(self) -> Dict[str, Any]:
+        self._refresh_cache()
+        with self._lock:
+            index = deepcopy(self._duplicate_index)
+        return dedupe.duplicate_report(index)
+
+    def ingestion_report(self) -> Dict[str, Any]:
+        records = self._all_cached()
+        with self._lock:
+            index = deepcopy(self._duplicate_index)
+        return ingestion_diagnostics.build_report(
+            records=records,
+            field_map=self._field_map,
+            known_field_map=KNOWN_FIELD_MAP,
+            schema_field_names=self._schema_field_names,
+            pipeline_report=self._ingestion.report(),
+            duplicates=dedupe.duplicate_report(index),
+        )
 
     # ---------- writes (whitelist) ----------
     def _writable_airtable_fields(self, updates_by_snake: Dict[str, Any]) -> Dict[str, Any]:

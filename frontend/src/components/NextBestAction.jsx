@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
+  Undo2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
@@ -33,16 +34,24 @@ export const NextBestAction = () => {
   const [state, setState] = useState({ loading: true, lead: null, note: null, queue: null });
   const [busy, setBusy] = useState(null);
   const [confirmDNC, setConfirmDNC] = useState(false);
-  const [draftDrawerOpen, setDraftDrawerOpen] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  // Server verdict. Seeded from the queue payload, then replaced whenever a
+  // write is refused so the panel reflects the reason the write actually failed.
+  const [eligibility, setEligibility] = useState(null);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true }));
     try {
       const r = await api.leadsNextBestAction();
       setState({ loading: false, lead: r.lead, note: r.note, queue: r.queue });
+      setDraft(r.lead?.first_message || "");
+      setEligibility(r.lead?._eligibility || null);
+      setEditing(false);
       setConfirmDNC(false);
+      setApproveOpen(false);
     } catch {
-      setState({ loading: false, lead: null, note: "Could not load your next best step", queue: null });
+      setState({ loading: false, lead: null, note: "Could not load next best action", queue: null });
+      setEligibility(null);
     }
   }, []);
 
@@ -57,13 +66,40 @@ export const NextBestAction = () => {
       const res = await api.leadsAction(state.lead.id, { action, ...extra });
       toast.success(res.note || `${action.replace(/_/g, " ")} · done`);
       await load();
+      return true;
     } catch (err) {
-      const reason =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        `Failed: ${action}`;
-      toast.error(reason, { duration: 8000 });
+      const blocked = outreachBlockedFrom(err);
+      if (blocked) {
+        setEligibility(blocked);
+        setApproveOpen(false);
+        toast.error(
+          blocked.blockers?.[0]?.message || "Blocked by the outreach policy.",
+        );
+      } else {
+        toast.error(`Failed: ${action}`);
+      }
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmApprove = (acknowledgedWarnings) =>
+    act("approve", {
+      confirm: true,
+      acknowledged_warnings: acknowledgedWarnings,
+    });
+
+  const saveMessage = async () => {
+    if (!state.lead) return;
+    setBusy("edit");
+    try {
+      await api.leadsUpdateMessage(state.lead.id, draft);
+      toast.success("Message saved");
+      setEditing(false);
+      await load();
+    } catch {
+      toast.error("Save failed");
     } finally {
       setBusy(null);
     }
@@ -111,9 +147,21 @@ export const NextBestAction = () => {
   }
 
   const l = state.lead;
-  const timeSince = l?.date_discovered || l?.created_time;
-  const level = priorityLevel(l.priority_band, l.priority_score);
-  const reason = priorityReason(l);
+  const approved =
+    !!l._approved_at ||
+    (typeof l.approval_status === "string" &&
+      l.approval_status.toLowerCase().includes("approved"));
+  const timeSince = l.date_discovered || l.created_time;
+  const blockers = eligibility?.blockers || [];
+  // Default to blocked when the verdict has not loaded. An approve control that
+  // is live before the policy is known is the exact failure this guards against.
+  const canApprove = eligibility?.eligible === true;
+  const approveTitle = approved
+    ? "Already approved"
+    : canApprove
+      ? "Review the recipient, then confirm"
+      : blockers.map((b) => b.message).join(" · ") ||
+        "Eligibility has not loaded yet";
 
   return (
     <section
@@ -129,8 +177,10 @@ export const NextBestAction = () => {
               Today&rsquo;s top action
             </div>
             {state.queue && (
-              <span className="mono text-[9px] text-[var(--bh-ink-mute)] uppercase tracking-widest">
-                · {state.queue.eligible} waiting for you
+              <span className="mono text-[9px] text-neutral-500 uppercase tracking-widest">
+                · {state.queue.approvable} approvable / {state.queue.eligible} queued
+                {state.queue.duplicates_suppressed > 0 &&
+                  ` · ${state.queue.duplicates_suppressed} duplicate${state.queue.duplicates_suppressed === 1 ? "" : "s"} suppressed`}
               </span>
             )}
           </div>
@@ -197,10 +247,41 @@ export const NextBestAction = () => {
         <OpenInMessages opportunity={l} variant="panel" />
       </div>
 
+      {/* Server eligibility verdict */}
+      <EligibilityPanel eligibility={eligibility} />
+
       {/* Action buttons */}
       <div className="px-5 sm:px-7 pb-5 pt-3 border-t bh-hairline flex flex-wrap gap-2">
-        {/* Draft-a-note retired — Email Now / Follow Up Email inside
-            OpenInMessages is the single outreach entry point. */}
+        <button
+          onClick={() => setApproveOpen(true)}
+          disabled={busy === "approve" || approved || !canApprove}
+          title={approveTitle}
+          data-testid="nba-approve"
+          className="flex-1 min-w-[160px] h-11 rounded bg-amber-500 text-neutral-950 hover:bg-amber-400 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors duration-150"
+        >
+          {busy === "approve" ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <CheckCircle2 size={14} />
+          )}
+          {approved ? "Approved" : canApprove ? "Approve outreach" : "Not approvable"}
+        </button>
+        {approved && (
+          <button
+            onClick={() => act("revert_approval")}
+            disabled={busy === "revert_approval"}
+            data-testid="nba-revert-approval"
+            title="Withdraw the approval. Nothing has been dispatched."
+            className="h-11 px-4 rounded border bh-hairline text-neutral-200 hover:bg-white/[0.03] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
+          >
+            {busy === "revert_approval" ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Undo2 size={13} />
+            )}
+            Undo approval
+          </button>
+        )}
         <button
           onClick={() => act("hold")}
           disabled={busy === "hold"}

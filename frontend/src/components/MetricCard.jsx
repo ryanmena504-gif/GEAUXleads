@@ -3,8 +3,9 @@ import clsx from "clsx";
 import { ArrowUpRight } from "lucide-react";
 
 /**
- * MetricCard — material swatch. Restrained corner accent + soft warm border,
- * 12px radius, no chrome. Preserves label / value / hint / onClick contract.
+ * `loading` renders a skeleton instead of a value. Without it an unresolved
+ * metric renders as 0 or a dash, which reads as "we looked and there is
+ * nothing" rather than "we have not looked yet".
  */
 export const MetricCard = ({
   label,
