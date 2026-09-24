@@ -147,7 +147,7 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
   const [savedDrafts, setSavedDrafts] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  const opp = opportunity || {};
+  const opp = useMemo(() => opportunity || {}, [opportunity]);
   const tokens = useMemo(() => {
     const contactRaw = opp.decision_maker || opp.contact_name || "";
     return {
@@ -216,7 +216,7 @@ export const DraftNoteDrawer = ({ open, onOpenChange, opportunity }) => {
     return () => {
       cancelled = true;
     };
-  }, [open, opp.id]);
+  }, [open, opp, tokens]);
 
   const switchPlaybook = useCallback(
     (id) => {
