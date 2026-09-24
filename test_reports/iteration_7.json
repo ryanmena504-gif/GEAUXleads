@@ -1,0 +1,65 @@
+{
+  "summary": "Backend + frontend testing of canonical Lead-score ranking, sort modes (lead_score / freshness / confidence), /top, /top-by-lane, NBA, and the CRITICAL Hunt-status guardrail regression from iteration_6. 15/15 backend pytest cases PASS. All frontend sort interactions work and UI ordering matches API exactly across the three modes; Command Center top-opps prefix matches /api/opportunities/top perfectly (6/6 IDs). The iteration_6 CRITICAL bug (Hunt status='Rejected' not blocking approve+send) is FIXED — POST /api/leads/{id}/action now returns 422 with 'Blocked by Hunt status=...' and no email is sent. LEADS_FIELD_MAP correctly includes 'Hunt status' → 'hunt_status' (leads_service.py:42). Priority score is now cleaned Airtable Lead score (float or None); unscored records rank LAST in lead_score & confidence modes, dateless records rank LAST in freshness mode. NOTE: The previously-used test lead rec1j1S6sVvAu0ofb is no longer accessible in Airtable (403 INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND). Switched to rec9oACK2PGWSmfmk (Greige Interiors) which is the current NBA pick.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/reload",
+        "issue": "Still only resets opportunity_service singleton; leads_service is orphaned. The hunt-status test had to fall back to `sudo supervisorctl restart backend` to force a cache bust because the leads-service TTL is 45s. Iteration_6 called this out as well — not yet addressed."
+      },
+      {
+        "endpoint": "/api/opportunities/{id}/fields",
+        "issue": "Previous test lead rec1j1S6sVvAu0ofb now returns 404 (Airtable 403 on that record ID). Not a code bug — record was deleted or permissions revoked — but future tests should not hard-code this ID."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Opportunities list view (OpportunityRow)",
+        "issue": "List-view rows have NO data-testid tied to the record id. Only the Cards view exposes data-testid=`opp-card-{id}`. Testing agents that verify ordering in the default List view have no stable per-row selector. Add data-testid=`opp-row-{id}` to OpportunityRow.",
+        "selector": "OpportunityRow root element",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Opportunities sort control",
+        "issue": "Clicking a sort button updates internal state and re-fetches, but does NOT push the selected sort to the URL as ?sort=. The spec says 'Clicking each button changes the ?sort= query param'. Fix: call setSearchParams in setSort handler so refresh/deep-link preserves the sort choice.",
+        "selector": "[data-testid^='opps-sort-']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/opportunities_sort_test.py",
+    "/app/backend/tests/leads_approve_email_test.py",
+    "/app/test_reports/pytest/opps_sort_results.xml"
+  ],
+  "action_items": [
+    "Add data-testid=`opp-row-{id}` to OpportunityRow so list-view ordering is testable without switching to Cards view.",
+    "Persist sort selection into URL (?sort=) via setSearchParams so refresh/deep-link preserves it, matching the spec.",
+    "Extend /api/admin/reload to also call reset_leads_service() so cache invalidation is uniform (iteration_6 follow-up, still outstanding).",
+    "Optional: expose a POST /api/admin/leads-reload if unifying isn't desired."
+  ],
+  "critical_code_review_comments": [
+    "leads_service.py:42 — 'Hunt status' mapping now present. Guardrail path (line 407-411) is live and verified.",
+    "airtable_service.py:261-286 — sort_opportunities is the single source of truth for ranking. Clean implementation with scored-first / unscored-last partitioning and correct freshness DESC tie-break.",
+    "server.py:382 (/api/admin/reload) — still only resets opportunity_service. leads_service cache invalidation depends on 45s TTL, which forced the hunt-status test to restart the backend to guarantee freshness.",
+    "Opportunities.jsx:46 setSort — updates only local state, not searchParams. This diverges from the stated spec that sort should be reflected in ?sort= query param.",
+    "OpportunityRow (list view) lacks a per-row data-testid — makes list ordering untestable via stable selectors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/opportunities_sort_test.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 tests) — including the iteration_6 critical hunt-status guardrail",
+    "frontend": "100% for sort UI + Command Center top-opps ranking match; 2 minor UX/testability observations"
+  },
+  "test_credentials": "N/A (no auth). Airtable + EMERGENT_EMAIL_KEY already in backend/.env.",
+  "seed_data_creation": "All mutations on rec9oACK2PGWSmfmk (Greige Interiors) are wrapped in try/finally with _restore(). Fields touched: Contact email, Hunt status, Outreach sent, Approval status, Outreach status, Status. All restored after each test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test lead rec1j1S6sVvAu0ofb is DEAD (403 from Airtable). Use rec9oACK2PGWSmfmk instead — it's the current NBA pick and is safe to mutate/restore. Always run pytest with `-o addopts=''` (pytest.ini enables -n xdist which races on the single Airtable lead). The hunt-status guardrail test restarts the backend to bust the 45s leads-service cache — expect ~15s of test time. Frontend Opportunities page has TWO views (List / Cards); only Cards view exposes per-row data-testid, so switch to Cards via `[data-testid=view-grid]` before asserting per-row order.",
+  "rca of the issue": "iteration_6 CRITICAL bug (Hunt status guardrail dead-code) is confirmed FIXED. LEADS_FIELD_MAP at line 42 of /app/backend/services/leads_service.py now includes '\"Hunt status\": \"hunt_status\"'. As a result _record_to_dto surfaces hunt_status, can_send() sees 'Rejected', and returns {ok:False, reason:'Blocked by Hunt status=...'}. Verified end-to-end: set Hunt status='Rejected' + Contact email='delivered@resend.dev' via pyairtable, restart backend to bust cache, POST /api/leads/{id}/action {action:approve} → 422 with detail containing 'hunt status'; Outreach sent remains false; no Resend call."
+}

@@ -44,6 +44,8 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Business name": "business_name",
     "Opportunity type": "opportunity_type",
     "Source": "source",
+    "Source category": "source_category",
+    "Source URL": "source_url",
     "Lead score": "lead_score",
     "Priority": "priority",
     "Status": "status",
@@ -54,6 +56,7 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Approval status": "approval_status",
     "Outreach status": "outreach_status",
     "Enrichment status": "enrichment_status",
+    "Hunt status": "hunt_status",
     "Estimated job value": "estimated_job_value",
     "contact confidence": "contact_confidence",
     "Contact name": "contact_name",
@@ -90,11 +93,45 @@ EDITABLE_FIELDS = {
     "Outreach status",
     "Status",
     "First message",
+    "Outreach sent",       # checkbox flipped after a successful send
+    "Message sent date",   # datetime
+    "Outreach channel",    # single-select (Email / SMS / …)
+    "Hunt status",
 }
 
-# Case-insensitive substring match — any lead whose Status / Outreach status /
-# Approval status contains one of these is excluded from the action queue.
-EXCLUDE_TOKENS = ("duplicate", "do not contact", "sent", "closed", "complete")
+# Do-not-send / NBA-exclude guardrails (case-insensitive).
+_DO_NOT_SEND_STATUS = ("do not contact", "dnc")
+_DO_NOT_SEND_HUNT = ("rejected", "closed", "disqualified")
+# Hunt statuses that mean "leave this lead alone" for the NBA queue.
+# Includes Paused (hold) so a backend restart cannot resurrect held leads.
+_EXCLUDE_HUNT = ("rejected", "closed", "disqualified", "paused")
+
+# Fixed fallback template used when a lead has no `First message` yet.
+_FALLBACK_SUBJECT = "Following up on your {opportunity_type} permit at {project_address}"
+_FALLBACK_TEXT = (
+    "Hi {first_name},\n\n"
+    "I saw the recent {opportunity_type} permit at {project_address} and wanted "
+    "to reach out — I run a small local team in New Orleans and we specialize "
+    "in exactly this kind of work. Happy to swing by, take a look, and give you "
+    "a straight quote if you're still evaluating options.\n\n"
+    "Reply anytime — no pressure.\n\n"
+    "— Ryan"
+)
+
+# Exact Status / Outreach / Approval values that remove a lead from the NBA
+# queue. Prefer exact matches over bare substring "sent" — otherwise
+# "Not sent" falsely excludes every fresh lead.
+_EXCLUDE_STATUS_EXACT = {
+    "sent",
+    "closed",
+    "complete",
+    "duplicate",
+    "replied",
+    "no response",
+    "not interested",
+    "do not contact",
+}
+_EXCLUDE_STATUS_SUBSTRING = ("do not contact", "duplicate")
 
 PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "normal": 2, "low": 1}
 
@@ -118,6 +155,33 @@ class OutreachBlocked(Exception):
         self.result = result
         blockers = "; ".join(f.message for f in result.blockers) or "not eligible"
         super().__init__(blockers)
+
+
+_LANE_LABELS = {
+    "market_capture": "Market Capture",
+    "partner": "Partner Pipeline",
+    "non_permit": "Non-Permit Signals",
+}
+_PARTNER_TYPE_TOKENS = ("contractor", "remodel", "designer", "architect",
+                        "supplier", "vendor", "referral", "partner")
+_PARTNER_SOURCE_TOKENS = ("partner", "referral", "network", "trade")
+
+
+def _derive_lane_from_lead(dto: Dict[str, Any]) -> str:
+    otype = (dto.get("opportunity_type") or "")
+    otype_l = otype.lower() if isinstance(otype, str) else ""
+    if any(tok in otype_l for tok in _PARTNER_TYPE_TOKENS):
+        return "partner"
+    src_cat = (dto.get("source_category") or "")
+    src_cat_l = src_cat.lower() if isinstance(src_cat, str) else ""
+    src = (dto.get("source") or "")
+    src_l = src.lower() if isinstance(src, str) else ""
+    if any(tok in src_cat_l for tok in _PARTNER_SOURCE_TOKENS) \
+            or any(tok in src_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    if src_l and "permit" not in src_l and "permit" not in src_cat_l:
+        return "non_permit"
+    return "market_capture"
 
 
 class LeadsAirtableService:
@@ -199,6 +263,10 @@ class LeadsAirtableService:
         # Compose a stable Airtable URL for "Open Full Lead"
         if self._table_id and dto["id"]:
             dto["_airtable_url"] = f"https://airtable.com/{self._base_id}/{self._table_id}/{dto['id']}"
+        # Lane classification — mirror airtable_service._derive_lane so the NBA
+        # panel can label the lead consistently with the rest of the dashboard.
+        dto["lane"] = _derive_lane_from_lead(dto)
+        dto["lane_label"] = _LANE_LABELS.get(dto["lane"], dto["lane"])
         return dto
 
     def all(self) -> List[Dict[str, Any]]:
@@ -236,15 +304,34 @@ class LeadsAirtableService:
         return computed_readiness(lead, duplicate_of=lead.get("duplicate_of"))
 
     # ---------- selection logic ----------
+    @staticmethod
+    def _workflow_field_excluded(value: Any) -> bool:
+        """True when a Status / Outreach / Approval value means leave it alone."""
+        if value is None or value is False:
+            return False
+        low = (value if isinstance(value, str) else str(value)).lower().strip()
+        if not low:
+            return False
+        if low in _EXCLUDE_STATUS_EXACT:
+            return True
+        if any(tok in low for tok in _EXCLUDE_STATUS_SUBSTRING):
+            return True
+        return False
+
     def _is_excluded(self, lead: Dict[str, Any]) -> bool:
         if lead["id"] in self._held:
             return True
         if lead.get("job_won") is True:
             return True
-        # A suppressed duplicate is never independently actionable — the
-        # canonical member of its group carries the action.
-        if lead.get("duplicate_of"):
+        if lead.get("outreach_sent") is True:
             return True
+        # Hunt status is the canonical hold / DNC signal. Without this check,
+        # Rejected / Paused leads reappear in NBA after a process restart.
+        hunt = lead.get("hunt_status")
+        if isinstance(hunt, str) and hunt.strip():
+            hunt_l = hunt.lower()
+            if any(tok in hunt_l for tok in _EXCLUDE_HUNT):
+                return True
         # A lead is not actionable without a name AND a recommended next action.
         # Empty/skeleton rows in Airtable must never surface as the NBA.
         name = clean_text(lead.get("name"))
@@ -252,10 +339,7 @@ class LeadsAirtableService:
         if not name or not next_action:
             return True
         for key in ("status", "outreach_status", "approval_status"):
-            v = (lead.get(key) or "")
-            v = v if isinstance(v, str) else str(v)
-            low = v.lower()
-            if any(tok in low for tok in EXCLUDE_TOKENS):
+            if self._workflow_field_excluded(lead.get(key)):
                 return True
         return False
 
@@ -323,19 +407,22 @@ class LeadsAirtableService:
         ]
         if not candidates:
             return None
-        candidates.sort(key=lambda l: (
-            -self._completeness(l),
-            -int(self._ai_complete(l)),
-            -int(self._has_usable_contact(l)),
-            -self._priority_rank(l.get("priority")),
-            -(l.get("lead_score") or 0),
-            (l.get("date_discovered") or l.get("created_time") or ""),
-        ))
-        pick = candidates[0]
-        result = self.eligibility(pick)
-        pick["_eligibility"] = result.to_dict()
-        pick["_readiness"] = computed_readiness(pick, duplicate_of=pick.get("duplicate_of"))
-        pick["_selection_reason"] = self._explain(pick, result)
+        # Canonical: `Lead score` DESC first — the single primary priority.
+        # Ties: freshness DESC, then id ASC. Unscored records land LAST.
+        def _score(l):
+            s = l.get("lead_score")
+            return s if isinstance(s, (int, float)) else None
+        def _date(l):
+            return l.get("date_discovered") or l.get("created_time") or ""
+        scored   = [l for l in candidates if _score(l) is not None]
+        unscored = [l for l in candidates if _score(l) is None]
+        scored.sort(key=lambda l: l["id"])
+        scored.sort(key=lambda l: _date(l), reverse=True)
+        scored.sort(key=lambda l: -_score(l))
+        unscored.sort(key=lambda l: l["id"])
+        ordered = scored + unscored
+        pick = ordered[0]
+        pick["_selection_reason"] = self._explain(pick)
         if pick["id"] in self._approvals:
             pick["_approved_at"] = self._approvals[pick["id"]]
         return pick
@@ -405,6 +492,12 @@ class LeadsAirtableService:
         wrote_approval = self._safe_update(lead_id, "Approval status", APPROVED_VALUE)
         wrote_outreach = self._safe_update(lead_id, "Outreach status", APPROVED_VALUE)
         self._approvals[lead_id] = ts
+        # Approval status DOES have an "Approved" option.
+        wrote_approval = self._safe_update(lead_id, "Approval status", "Approved")
+        # Outreach status only has {Not sent, Sent, Replied, No response,
+        # Not interested, SMS Draft} — writing "Approved" here 422s. The
+        # session store + Approval status already capture the state, so we
+        # skip the invalid write.
         self._refresh_cache(force=True)
 
         response = {
@@ -477,7 +570,8 @@ class LeadsAirtableService:
 
     def hold(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
         self._held.add(lead_id)
-        wrote = self._safe_update(lead_id, "Outreach status", "Hold")
+        # Hunt status = Paused is the canonical hold signal on Airtable.
+        wrote = self._safe_update(lead_id, "Hunt status", "Paused")
         self._refresh_cache(force=True)
         self._audit.record(action="hold", entity_id=lead_id, outcome="accepted",
                            actor=actor, changes={"Outreach status": "Hold"} if wrote else {})
@@ -516,6 +610,100 @@ class LeadsAirtableService:
                            outcome="accepted", actor=actor,
                            changes={"First message": {"from": previous, "to": message}})
         return self.get(lead_id)
+
+    # ---------- outreach send ----------
+    def _first_name(self, lead: Dict[str, Any]) -> str:
+        raw = lead.get("contact_name") or lead.get("name") or "there"
+        raw = str(raw).strip()
+        return raw.split()[0] if raw else "there"
+
+    def _recipient(self, lead: Dict[str, Any]) -> Optional[str]:
+        for k in ("contact_email", "email"):
+            v = lead.get(k)
+            if isinstance(v, str) and "@" in v:
+                return v.strip()
+        return None
+
+    def can_send(self, lead_id: str) -> Dict[str, Any]:
+        """Guardrails. Returns {ok:bool, reason:str, lead:...}."""
+        lead = self.get(lead_id)
+        if not lead:
+            return {"ok": False, "reason": "Lead not found", "lead": None}
+        recipient = self._recipient(lead)
+        if not recipient:
+            return {"ok": False, "reason": "Lead has no contact email on file",
+                    "lead": lead}
+        status = (lead.get("status") or "")
+        status_l = status.lower() if isinstance(status, str) else ""
+        if any(tok in status_l for tok in _DO_NOT_SEND_STATUS):
+            return {"ok": False, "reason": f"Blocked by Status={status!r}",
+                    "lead": lead}
+        hunt = (lead.get("hunt_status") or "")
+        hunt_l = hunt.lower() if isinstance(hunt, str) else ""
+        if any(tok in hunt_l for tok in _DO_NOT_SEND_HUNT):
+            return {"ok": False, "reason": f"Blocked by Hunt status={hunt!r}",
+                    "lead": lead}
+        # `Rejection reason` — snake key not mapped here; check any *rejection*
+        # field surfaced by the schema, plus outreach_status containing 'reject'.
+        outreach_l = (lead.get("outreach_status") or "").lower() if isinstance(lead.get("outreach_status"), str) else ""
+        if "reject" in outreach_l:
+            return {"ok": False, "reason": "Blocked by Outreach status rejection",
+                    "lead": lead}
+        # Approval status must be Approved (session-level or already-persisted).
+        appr = (lead.get("approval_status") or "").lower() if isinstance(lead.get("approval_status"), str) else ""
+        session_approved = lead_id in self._approvals
+        if not session_approved and "approved" not in appr:
+            return {"ok": False,
+                    "reason": "Lead is not approved — click Approve first",
+                    "lead": lead}
+        return {"ok": True, "reason": "ready", "lead": lead, "recipient": recipient}
+
+    def compose_email(self, lead: Dict[str, Any]) -> Dict[str, Any]:
+        """Return {subject, html, text, used_fallback}."""
+        first_message = lead.get("first_message")
+        if isinstance(first_message, str) and first_message.strip():
+            text = first_message.strip()
+            subject = (
+                f"Following up on your {lead.get('opportunity_type') or 'project'}"
+                + (f" at {lead.get('address')}" if lead.get("address") else "")
+            )
+            used_fallback = False
+        else:
+            ctx = {
+                "first_name": self._first_name(lead),
+                "opportunity_type": (lead.get("opportunity_type") or "recent").strip(),
+                "project_address": (lead.get("address") or "your property").strip(),
+            }
+            subject = _FALLBACK_SUBJECT.format(**ctx)
+            text = _FALLBACK_TEXT.format(**ctx)
+            used_fallback = True
+        # Minimal HTML — inline styles only, no external assets.
+        html = (
+            '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
+            'font-size:15px;line-height:1.55;color:#222;max-width:560px;">'
+            + "".join(f"<p style=\"margin:0 0 12px 0;\">{para}</p>"
+                      for para in text.split("\n\n") if para.strip())
+            + "</div>"
+        )
+        return {"subject": subject, "html": html, "text": text,
+                "used_fallback": used_fallback}
+
+    def mark_sent(self, lead_id: str, *, sent_at_iso: str,
+                  channel: str = "Email",
+                  first_message_written: Optional[str] = None) -> Dict[str, Any]:
+        """After a successful send, persist the send-side fields on Airtable."""
+        persisted: Dict[str, bool] = {}
+        # Order matters: mark sent BEFORE approval so it hides from queue immediately.
+        persisted["Outreach sent"] = self._safe_update(lead_id, "Outreach sent", True)
+        persisted["Message sent date"] = self._safe_update(lead_id, "Message sent date", sent_at_iso)
+        persisted["Outreach channel"] = self._safe_update(lead_id, "Outreach channel", channel)
+        persisted["Approval status"] = self._safe_update(lead_id, "Approval status", "Approved")
+        persisted["Outreach status"] = self._safe_update(lead_id, "Outreach status", "Sent")
+        if first_message_written:
+            persisted["First message"] = self._safe_update(lead_id, "First message",
+                                                           first_message_written)
+        self._refresh_cache(force=True)
+        return persisted
 
 
 _singleton: Optional[LeadsAirtableService] = None

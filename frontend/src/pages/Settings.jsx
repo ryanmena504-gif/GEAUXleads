@@ -1,8 +1,159 @@
 import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
+import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save } from "lucide-react";
 import { toast } from "sonner";
+import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
+
+/**
+ * Sender identity block — Ryan can point mailto: drafts at whichever email
+ * address he wants to appear as the sender. This is a display-only value
+ * (mailto: cannot force a specific From account on iPhone / Mac Mail), but
+ * having the right address visible in the composed body keeps him from
+ * hitting Send on the wrong account.
+ */
+const SenderIdentitySection = () => {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [mailingAddress, setMailingAddress] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchUserSettings().then((s) => {
+      if (!s) return;
+      setEmail(s.sender_email || "");
+      setName(s.sender_name || "");
+      setPhone(s.sender_phone || "");
+      setMailingAddress(s.sender_mailing_address || "");
+      setLoaded(true);
+    });
+  }, []);
+
+  const save = async () => {
+    const trimmed = email.trim();
+    if (trimmed && (!trimmed.includes("@") || !trimmed.split("@")[1]?.includes("."))) {
+      toast.error("That doesn't look like an email address");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveUserSettings({
+        sender_email: trimmed,
+        sender_name: name.trim(),
+        sender_phone: phone.trim(),
+        sender_mailing_address: mailingAddress.trim(),
+      });
+      toast.success("Sender identity saved");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Save failed";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section data-testid="section-sender-identity">
+      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+        <Mail size={11} /> Your sender identity
+      </div>
+      <div className="bh-surface rounded p-5 space-y-4">
+        <p className="text-sm text-neutral-400 leading-relaxed">
+          Every email draft is signed with this name, phone, and email so
+          recipients always see the same contact info from The Shirtless
+          Handyman. Change it here if you ever need a different one.
+        </p>
+        <p className="text-[12px] text-neutral-500 leading-relaxed">
+          Note: iPhone and Mac Mail always send from whichever account is set
+          as default on your device, and text messages always come from your
+          iPhone&rsquo;s own number. Bloodhound cannot pick either one — this
+          value just makes sure the right info appears inside the draft
+          before you press Send.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Your name
+            </div>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              data-testid="settings-sender-name"
+              placeholder="Ryan Mena"
+              disabled={!loaded}
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Sender email
+            </div>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              data-testid="settings-sender-email"
+              placeholder="ryanmena@theshirtlesshandyman.com"
+              disabled={!loaded}
+              type="email"
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+              Sender phone
+            </div>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              data-testid="settings-sender-phone"
+              placeholder="(504) 264-4919"
+              disabled={!loaded}
+              type="tel"
+              className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+            />
+          </div>
+        </div>
+        <div>
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+            Return mailing address
+          </div>
+          <textarea
+            value={mailingAddress}
+            onChange={(e) => setMailingAddress(e.target.value)}
+            data-testid="settings-sender-mailing-address"
+            placeholder={"The Shirtless Handyman\n1234 Magazine St\nNew Orleans, LA 70115"}
+            disabled={!loaded}
+            rows={3}
+            className="w-full bg-transparent border bh-hairline rounded p-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50 font-body leading-snug resize-none"
+          />
+          <p className="text-[11px] text-neutral-500 mt-1.5 leading-snug">
+            Printed on landlord letters as the return address block. One line
+            per address line. Leave blank to fall back to &ldquo;The Shirtless
+            Handyman · New Orleans, LA&rdquo;.
+          </p>
+        </div>
+        <div className="flex items-center justify-end">
+          <button
+            onClick={save}
+            disabled={!loaded || saving}
+            data-testid="settings-sender-save"
+            className="text-[13px] h-9 px-4 rounded-md font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
+            style={{
+              background: "var(--bh-brass)",
+              color: "var(--bh-surface)",
+            }}
+          >
+            <Save size={13} />
+            {saving ? "Saving…" : "Save sender identity"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const Row = ({ icon: Icon, title, subtitle, right }) => (
   <div className="bh-surface rounded p-4 flex items-center gap-4">
@@ -77,13 +228,13 @@ const Settings = () => {
 
   return (
     <>
-      <TopHeader pageTitle="Settings" subtitle="Configure your operator profile" />
+      <TopHeader pageTitle="Settings" subtitle="Configure your account preferences" />
       <div className="px-4 lg:px-8 py-6 space-y-6 max-w-5xl">
         <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <div className="mono text-[10px] uppercase tracking-widest text-neutral-500">
-              Section / 01 · Data Sources
-            </div>
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
+            Data sources
+          </div>
+          <div className="flex items-baseline justify-end mb-3">
             <button
               onClick={reload}
               disabled={reloading}
@@ -130,7 +281,7 @@ const Settings = () => {
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            Section / 02 · Airtable Connection
+            How Bloodhound connects to Airtable
           </div>
           <div className="bh-surface rounded p-5 space-y-3">
             <p className="text-sm text-neutral-400 leading-relaxed">
@@ -155,7 +306,7 @@ const Settings = () => {
         {isLive && schema && (
           <section data-testid="section-schema">
             <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-              Section / 03 · Live Airtable Schema
+              Live Airtable schema
             </div>
             <div className="bh-surface rounded p-5">
               <div className="grid md:grid-cols-3 gap-4 mb-4">
@@ -226,14 +377,23 @@ const Settings = () => {
           </section>
         )}
 
+        <SenderIdentitySection />
+
+        <section data-testid="section-playbooks">
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+            <BookMarked size={11} /> Message playbooks
+          </div>
+          <PlaybookEditor />
+        </section>
+
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            Section / 04 · Operator Preferences
+            Your account
           </div>
           <div className="bh-surface rounded p-5 space-y-4">
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
-                Operator name
+                Account name
               </div>
               <input
                 defaultValue="Ryan C."

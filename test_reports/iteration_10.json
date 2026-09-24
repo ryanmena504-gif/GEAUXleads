@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 10 — verified draft-open is now ZERO backend writes. Playwright request interception on the live frontend URL (filtered to own-host /api/* only) fired ALL draft-open surfaces: opp_sweeney open-email-draft, open-text-draft (not rendered — SMS not permitted), action-draft-note (drawer opens, listPlaybooks/listDrafts are GETs, not writes), draft-copy inside drawer; opp_greige open-followup-email-draft; plus plain visits to /opportunities/opp_greige and /opportunities/opp_louisiana. Total POST/PATCH/PUT/DELETE to /api/*: 0. DB verification: cleared any stale contact_handoffs rows for the three QA ids, re-ran the full draft-open flow, count remains 0 → confirms no contact_handoffs row is created merely by opening/preparing a draft. Regression: result-sent-opp_sweeney fires exactly ONE POST /api/opportunities/opp_sweeney/result (2xx, 'Saved as sent' toast rendered) — this is the ONE explicit outcome write path and it still works. All iteration-9 backend invariants re-pass (6/6): total=18, buckets 4/5/9, opp_greige=Contacted/Follow-Up Due/partner, opp_louisiana=All Projects/Paused/score 20/partner, opp_sweeney=Ready to Contact/Ready/score 93/partner, Ready ordering opp_004(96)→opp_001(94)→opp_sweeney(93)→opp_002(88). Governed-queue UI invariants from iteration_9 (sidebar Home/All Projects/Settings only, LANES=market_capture only, no draft buttons on All Projects, only follow-up on Contacted, full email on Ready) were validated in iteration_9 and the underlying components (OpenInMessages, ContactResults) are unchanged in their gating logic — only side effects were removed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_9_governed_leaks.py",
+    "/app/backend/tests/test_iteration_10_no_write_on_draft.py",
+    "/app/test_reports/pytest/iteration_10_regression.xml",
+    "/app/test_reports/pytest/iteration_10_no_write.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OpenInMessages.jsx: onEmailTap is now a no-op comment-only function and onTextTap only sets local `textedFirst` state — no api import, no side effects. Follow-up EmailButton has no onClick. Zero-write invariant is enforced structurally, not just behaviorally.",
+    "ContactResults.jsx: recordResult is the single POST path, gated to Ready via firstContactOnly filter (`mode !== 'first_contact'` hides 'I sent it' on Contacted records) plus reply/estimate/no-response/not-interested outcomes. Correct.",
+    "DraftNoteDrawer.jsx opens with two GET calls only (listPlaybooks, listDrafts) — merely opening the drawer is safely zero-write. Save/copy only fire on explicit user save action, which is separate from open.",
+    "api.logHandoff is still exported but no client code references it (grep confirms only the api.js definition remains). Safe to keep for future explicit outcome logging; consider deleting or marking @deprecated for clarity.",
+    "Backend POST /api/opportunities/{id}/handoff endpoint still exists on the server (backend/server.py:787) but is now unused by any UI flow. Same recommendation — keep for future or remove."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_10_no_write_on_draft.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. Deleted 1 stale contact_handoffs row (opp_sweeney) that was left over from iteration_9's now-removed draft-open write, to establish a clean baseline for the zero-write test. No production data modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Zero-write draft-open invariant is now enforced. If a future change re-adds any api.logHandoff/api.recordResult call on a draft-open path, this Playwright interception pattern (filter /api/ writes to own host, ignore cdn-cgi/rum + ap.emergent.sh/flags) will catch it. Regression file: /app/backend/tests/test_iteration_9_governed_leaks.py. Baseline check: /app/backend/tests/test_iteration_10_no_write_on_draft.py.",
+  "rca of the issue": "N/A — iteration 10 confirmed the fix from main agent. Draft-open code paths (OpenInMessages onEmailTap/onTextTap, DraftNoteDrawer open+copy, follow-up button) now perform zero POST/PATCH/PUT/DELETE to /api/*, and the DB baseline for contact_handoffs is unchanged after exercising every draft-open surface. Only result-sent (explicit human outcome) writes."
+}

@@ -1,138 +1,182 @@
-@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-    --bh-bg: #0b0c10;
-    --bh-surface: #15161a;
-    --bh-surface-2: #1f2026;
-    --bh-border: rgba(255, 255, 255, 0.08);
-    --bh-border-strong: rgba(255, 255, 255, 0.15);
-    --bh-text: #f3f2ee;
-    --bh-text-2: #9ca3af;
-    --bh-text-muted: #6b7280;
-    --bh-accent: #d97706;
-    --bh-accent-hover: #f59e0b;
-    --bh-accent-muted: rgba(217, 119, 6, 0.15);
-    --bh-success: #10b981;
-    --bh-info: #3b82f6;
-    --bh-warning: #f59e0b;
-    --bh-error: #ef4444;
+    /* Material palette — bone, limestone, plaster, sand, graphite, aged brass, muted olive */
+    --bh-paper: #f4efe6;         /* app canvas — warm bone */
+    --bh-surface: #faf6ed;       /* raised paper */
+    --bh-surface-2: #eee7d8;     /* recessed limestone */
+    --bh-surface-3: #e6dcc7;     /* sand accent — quiet */
+    --bh-bg: var(--bh-paper);
+
+    --bh-ink: #1f1d18;           /* graphite deep */
+    --bh-ink-2: #3d3830;         /* graphite */
+    --bh-ink-3: #635b4e;         /* stone */
+    --bh-ink-mute: #8a8072;      /* muted stone */
+    --bh-ink-faint: #b8ad9b;
+
+    --bh-hair: rgba(31, 29, 24, 0.09);         /* warm hairline */
+    --bh-hair-strong: rgba(31, 29, 24, 0.15);
+    --bh-hair-warm: rgba(138, 106, 59, 0.18);
+
+    --bh-brass: #8a6a3b;         /* aged brass — accent, not glow */
+    --bh-brass-2: #a08258;
+    --bh-brass-mute: rgba(138, 106, 59, 0.12);
+
+    --bh-olive: #6b7a55;         /* muted olive — positive */
+    --bh-olive-mute: rgba(107, 122, 85, 0.12);
+
+    --bh-clay: #a55a3e;          /* restrained clay — for cautions, never alarm */
+    --bh-clay-mute: rgba(165, 90, 62, 0.10);
+
+    --bh-shadow-sm: 0 1px 1px rgba(31, 29, 24, 0.03);
+    --bh-shadow-md:
+        0 1px 2px rgba(31, 29, 24, 0.04),
+        0 12px 24px -20px rgba(31, 29, 24, 0.16);
+    --bh-shadow-lg:
+        0 1px 2px rgba(31, 29, 24, 0.04),
+        0 24px 40px -24px rgba(31, 29, 24, 0.22);
 }
 
 @layer base {
     :root {
-        --background: 230 15% 6%;
-        --foreground: 40 20% 95%;
-        --card: 230 12% 10%;
-        --card-foreground: 40 20% 95%;
-        --popover: 230 12% 10%;
-        --popover-foreground: 40 20% 95%;
-        --primary: 32 95% 44%;
-        --primary-foreground: 230 15% 6%;
-        --secondary: 230 8% 15%;
-        --secondary-foreground: 40 20% 95%;
-        --muted: 230 8% 15%;
-        --muted-foreground: 220 8% 65%;
-        --accent: 32 95% 44%;
-        --accent-foreground: 230 15% 6%;
-        --destructive: 0 84% 60%;
-        --destructive-foreground: 40 20% 95%;
-        --border: 230 8% 18%;
-        --input: 230 8% 15%;
-        --ring: 32 95% 44%;
-        --radius: 0.375rem;
+        --background: 41 33% 93%;
+        --foreground: 34 12% 12%;
+        --card: 42 42% 96%;
+        --card-foreground: 34 12% 12%;
+        --popover: 42 42% 96%;
+        --popover-foreground: 34 12% 12%;
+        --primary: 33 40% 39%;
+        --primary-foreground: 42 42% 96%;
+        --secondary: 40 30% 88%;
+        --secondary-foreground: 34 12% 12%;
+        --muted: 40 30% 88%;
+        --muted-foreground: 34 8% 44%;
+        --accent: 33 40% 39%;
+        --accent-foreground: 42 42% 96%;
+        --destructive: 14 45% 45%;
+        --destructive-foreground: 42 42% 96%;
+        --border: 34 12% 82%;
+        --input: 40 30% 88%;
+        --ring: 33 40% 45%;
+        --radius: 0.625rem;
     }
 }
 
 * {
-    border-color: hsl(var(--border));
+    border-color: var(--bh-hair);
 }
 
 html,
 body,
 #root {
     background: var(--bh-bg);
-    color: var(--bh-text);
+    color: var(--bh-ink);
     min-height: 100vh;
 }
 
 body {
     margin: 0;
-    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-family: "General Sans", "Satoshi", -apple-system, BlinkMacSystemFont,
+        "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11", "tnum";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.005em;
 }
 
 .font-display {
-    font-family: "Cabinet Grotesk", "IBM Plex Sans", sans-serif;
-    letter-spacing: -0.01em;
+    /* Editorial title, used sparingly on page headings */
+    font-family: "Fraunces", "General Sans", ui-serif, Georgia, serif;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    font-optical-sizing: auto;
 }
 
 .font-mono,
 .mono {
-    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+    /* No terminal typography. This is a soft eyebrow label, not a code voice. */
+    font-family: "General Sans", "Satoshi", ui-sans-serif, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     font-feature-settings: "tnum", "zero";
 }
 
+.tabular-nums {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Surface primitives */
 .bh-surface {
     background: var(--bh-surface);
-    border: 1px solid var(--bh-border);
+    border: 1px solid var(--bh-hair);
+    box-shadow: var(--bh-shadow-sm);
+}
+
+.bh-surface-raised {
+    background: var(--bh-surface);
+    border: 1px solid var(--bh-hair);
+    box-shadow: var(--bh-shadow-md);
 }
 
 .bh-surface-2 {
     background: var(--bh-surface-2);
-    border: 1px solid var(--bh-border);
+    border: 1px solid var(--bh-hair);
+}
+
+.bh-surface-3 {
+    background: var(--bh-surface-3);
+    border: 1px solid var(--bh-hair);
 }
 
 .bh-hairline {
-    border-color: var(--bh-border);
+    border-color: var(--bh-hair);
 }
-
 .bh-hairline-strong {
-    border-color: var(--bh-border-strong);
+    border-color: var(--bh-hair-strong);
+}
+.bh-hairline-warm {
+    border-color: var(--bh-hair-warm);
 }
 
+/* Ink helpers — kept semantic */
+.bh-text-strong {
+    color: var(--bh-ink);
+}
+.bh-text {
+    color: var(--bh-ink-2);
+}
 .bh-text-muted {
-    color: var(--bh-text-muted);
+    color: var(--bh-ink-mute);
+}
+.bh-text-faint {
+    color: var(--bh-ink-faint);
 }
 
-.bh-scanline {
-    background-image: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.02) 0%,
-        rgba(255, 255, 255, 0) 25%,
-        rgba(255, 255, 255, 0) 75%,
-        rgba(0, 0, 0, 0.2) 100%
-    );
+/* Accents — aged brass */
+.bh-accent {
+    color: var(--bh-brass);
 }
-
-.bh-grid-bg {
-    background-image:
-        linear-gradient(
-            to right,
-            rgba(255, 255, 255, 0.025) 1px,
-            transparent 1px
-        ),
-        linear-gradient(
-            to bottom,
-            rgba(255, 255, 255, 0.025) 1px,
-            transparent 1px
-        );
-    background-size: 44px 44px;
+.bh-accent-hover:hover {
+    color: var(--bh-brass-2);
+}
+.bh-accent-bg {
+    background: var(--bh-brass-mute);
+    color: var(--bh-brass);
+    border: 1px solid var(--bh-hair-warm);
 }
 
 /* Selection */
 ::selection {
-    background: var(--bh-accent);
-    color: var(--bh-bg);
+    background: var(--bh-brass-mute);
+    color: var(--bh-ink);
 }
 
-/* Scrollbars */
+/* Quiet scrollbars */
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -141,24 +185,25 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--bh-hair-strong);
     border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(31, 29, 24, 0.22);
 }
 
-/* Focus */
+/* Focus — restrained brass ring */
 :focus-visible {
-    outline: 1px solid var(--bh-accent);
+    outline: 1.5px solid var(--bh-brass-2);
     outline-offset: 2px;
+    border-radius: 2px;
 }
 
-/* Animation utilities */
+/* Animations */
 @keyframes bh-fade-in {
     from {
         opacity: 0;
-        transform: translateY(4px);
+        transform: translateY(3px);
     }
     to {
         opacity: 1;
@@ -166,7 +211,7 @@ body {
     }
 }
 .bh-fade-in {
-    animation: bh-fade-in 240ms ease-out both;
+    animation: bh-fade-in 220ms ease-out both;
 }
 
 @keyframes bh-pulse-dot {
@@ -175,9 +220,128 @@ body {
         opacity: 1;
     }
     50% {
-        opacity: 0.35;
+        opacity: 0.4;
     }
 }
 .bh-pulse-dot {
-    animation: bh-pulse-dot 1.8s ease-in-out infinite;
+    animation: bh-pulse-dot 2s ease-in-out infinite;
 }
+
+/* Material swatch — restrained corner accent for KPI blocks */
+.bh-swatch {
+    position: relative;
+    background: var(--bh-surface);
+    border: 1px solid var(--bh-hair);
+    border-radius: 12px;
+    box-shadow: var(--bh-shadow-sm);
+    overflow: hidden;
+}
+.bh-swatch::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 3px;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        var(--bh-hair-warm),
+        transparent
+    );
+}
+.bh-swatch--brass::after {
+    background: var(--bh-brass);
+    opacity: 0.35;
+    height: 2px;
+}
+.bh-swatch--olive::after {
+    background: var(--bh-olive);
+    opacity: 0.35;
+    height: 2px;
+}
+.bh-swatch--clay::after {
+    background: var(--bh-clay);
+    opacity: 0.35;
+    height: 2px;
+}
+.bh-swatch--sand::after {
+    background: #b8996a;
+    opacity: 0.28;
+    height: 2px;
+}
+
+/* Guidance note — replaces classified-file warnings */
+.bh-note {
+    background: var(--bh-surface-2);
+    border: 1px solid var(--bh-hair);
+    color: var(--bh-ink-3);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+}
+
+/* Eyebrow — small sentence-case label. Uses ink-3 (not ink-mute) so it
+   passes WCAG AA on the warm bone background. */
+.bh-eyebrow {
+    font-family: "General Sans", sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--bh-ink-3);
+    text-transform: none;
+}
+
+/* ---------------------------------------------------------------------
+   Light-theme contrast overrides.
+
+   Uses word-boundary attribute selectors: `[class^=...]` matches when the
+   token is the first class, `[class*=" token"]` matches when preceded by
+   a space. Together they catch bare classes AND Tailwind opacity variants
+   (e.g. `text-amber-200/90`) while EXCLUDING hover:/md:/lg: variants
+   (those are preceded by `:` not a space and never appear at start).
+   --------------------------------------------------------------------- */
+[class^="text-neutral-400"], [class*=" text-neutral-400"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-500"], [class*=" text-neutral-500"] { color: var(--bh-ink-3) !important; }
+[class^="text-neutral-600"], [class*=" text-neutral-600"] { color: var(--bh-ink-3) !important; }
+[class^="text-neutral-700"], [class*=" text-neutral-700"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-300"], [class*=" text-neutral-300"] { color: var(--bh-ink-2) !important; }
+[class^="text-neutral-200"], [class*=" text-neutral-200"] { color: var(--bh-ink)   !important; }
+[class^="text-neutral-100"], [class*=" text-neutral-100"] { color: var(--bh-ink)   !important; }
+
+/* Amber value text (evidence / signal / next-best-action) → body ink.
+   Amber icons / accent chips (amber-300/400) → aged brass. */
+[class^="text-amber-200"], [class*=" text-amber-200"] { color: var(--bh-ink-2) !important; }
+[class^="text-amber-300"], [class*=" text-amber-300"] { color: var(--bh-brass) !important; }
+[class^="text-amber-400"], [class*=" text-amber-400"] { color: var(--bh-brass) !important; }
+
+/* Sky / light-blue → deep teal so labels are legible on bone. */
+[class^="text-sky-200"], [class*=" text-sky-200"] { color: #24484d !important; }
+[class^="text-sky-300"], [class*=" text-sky-300"] { color: #24484d !important; }
+[class^="text-sky-400"], [class*=" text-sky-400"] { color: #24484d !important; }
+
+/* Emerald / positive → muted olive from design tokens. */
+[class^="text-emerald-200"], [class*=" text-emerald-200"] { color: var(--bh-olive) !important; }
+[class^="text-emerald-300"], [class*=" text-emerald-300"] { color: var(--bh-olive) !important; }
+[class^="text-emerald-400"], [class*=" text-emerald-400"] { color: var(--bh-olive) !important; }
+
+/* Red / destructive → restrained clay. */
+[class^="text-red-200"], [class*=" text-red-200"] { color: var(--bh-clay) !important; }
+[class^="text-red-300"], [class*=" text-red-300"] { color: var(--bh-clay) !important; }
+[class^="text-red-400"], [class*=" text-red-400"] { color: var(--bh-clay) !important; }
+
+/* Hover variants — deepen toward ink instead of lifting toward white. */
+.hover\:text-neutral-200:hover,
+.hover\:text-neutral-100:hover { color: var(--bh-ink) !important; }
+.hover\:text-amber-300:hover,
+.hover\:text-amber-400:hover  { color: var(--bh-brass-2) !important; }
+.hover\:text-sky-200:hover    { color: #12303a !important; }
+
+/* Amber-tinted backgrounds/borders on dark → brass mutes on light. */
+[class*="bg-amber-500"]     { background-color: var(--bh-brass-mute) !important; }
+[class*="border-amber-500"] { border-color: var(--bh-hair-warm) !important; }
+[class*="border-sky-500"]   { border-color: rgba(36,72,77,0.28) !important; }
+[class*="bg-emerald-500"]   { background-color: var(--bh-olive-mute) !important; }
+[class*="border-emerald-500"]{ border-color: rgba(107,122,85,0.32) !important; }
+[class*="bg-red-500"]       { background-color: var(--bh-clay-mute) !important; }
+[class*="border-red-500"]   { border-color: rgba(165,90,62,0.32) !important; }
+

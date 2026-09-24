@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="4" time="0.903" timestamp="2026-08-16T06:35:26.024984+00:00" hostname="agent-env-d38f23d4-ffcc-4195-8832-0ee65956de25"><testcase classname="tests.test_iteration_10_no_write_on_draft" name="test_qa_records_have_no_handoffs" time="0.029"><failure message="AssertionError: unexpected handoff rows: [{'handoff_id': 'd036ecde-af79-490b-a6d3-9625490c7dca', 'opportunity_id': 'opp_sweeney', 'opportunity_name': 'Sweeney Restoration', 'channel': 'email', 'recipient': 'colleen@sweeneyrestoration.example.com', 'device_hint': 'linux', 'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.0 Safari/537.36', 'at': '2026-08-16T05:39:44.605992+00:00'}]&#10;assert [{'handoff_id...'email', ...}] == []&#10;  &#10;  Left contains one more item: {'handoff_id': 'd036ecde-af79-490b-a6d3-9625490c7dca', 'opportunity_id': 'opp_sweeney', 'opportunity_name': 'Sweeney Restoration', 'channel': 'email', ...}&#10;  &#10;  Full diff:&#10;  - []&#10;  + [&#10;  +     {...&#10;  &#10;  ...Full output truncated (11 lines hidden), use '-vv' to show">backend/tests/test_iteration_10_no_write_on_draft.py:29: in test_qa_records_have_no_handoffs
+    assert rows == [], f"unexpected handoff rows: {rows}"
+E   AssertionError: unexpected handoff rows: [{'handoff_id': 'd036ecde-af79-490b-a6d3-9625490c7dca', 'opportunity_id': 'opp_sweeney', 'opportunity_name': 'Sweeney Restoration', 'channel': 'email', 'recipient': 'colleen@sweeneyrestoration.example.com', 'device_hint': 'linux', 'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.0 Safari/537.36', 'at': '2026-08-16T05:39:44.605992+00:00'}]
+E   assert [{'handoff_id...'email', ...}] == []
+E     
+E     Left contains one more item: {'handoff_id': 'd036ecde-af79-490b-a6d3-9625490c7dca', 'opportunity_id': 'opp_sweeney', 'opportunity_name': 'Sweeney Restoration', 'channel': 'email', ...}
+E     
+E     Full diff:
+E     - []
+E     + [
+E     +     {...
+E     
+E     ...Full output truncated (11 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_iteration_10_no_write_on_draft" name="test_qa_record_available[opp_sweeney]" time="0.164" /><testcase classname="tests.test_iteration_10_no_write_on_draft" name="test_qa_record_available[opp_greige]" time="0.002" /><testcase classname="tests.test_iteration_10_no_write_on_draft" name="test_qa_record_available[opp_louisiana]" time="0.002" /></testsuite></testsuites>

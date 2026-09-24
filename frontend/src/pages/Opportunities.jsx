@@ -6,8 +6,8 @@ import { PriorityBand, PriorityScore } from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import MissionBadge from "@/components/MissionBadge";
 import { api } from "@/lib/api";
-import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES } from "@/lib/constants";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { LayoutGrid, Rows3, X } from "lucide-react";
 
 const FilterChip = ({ label, active, onClick, testId }) => (
@@ -43,6 +43,16 @@ const Opportunities = () => {
     Number(searchParams.get("min_score") || 0),
   );
   const [q, setQ] = useState(searchParams.get("q") || "");
+  const sort = searchParams.get("sort") || "lead_score";
+  const setSort = (value) => {
+    const next = new URLSearchParams(searchParams);
+    if (!value || value === "lead_score") {
+      next.delete("sort");
+    } else {
+      next.set("sort", value);
+    }
+    setSearchParams(next);
+  };
 
   const filters = {
     source: searchParams.get("source") || undefined,
@@ -50,8 +60,10 @@ const Opportunities = () => {
     priority_band: searchParams.get("priority_band") || undefined,
     daily_mission: searchParams.get("daily_mission") || undefined,
     project_type: searchParams.get("project_type") || undefined,
+    lane: searchParams.get("lane") || undefined,
     min_score: minScore || undefined,
     q: q || undefined,
+    sort,
   };
 
   const setFilter = (key, value) => {
@@ -65,14 +77,16 @@ const Opportunities = () => {
   };
 
   useEffect(() => {
+    // filters is derived from these three inputs; listing them directly is
+    // equivalent to depending on `filters` itself without recreating the
+    // object every render.
     api.listOpportunities(filters).then(setItems);
-    // filters is derived from searchParams/minScore/q; safe to depend on those
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, minScore, q]);
 
   const activeFilterCount = useMemo(
     () =>
-      ["source", "status", "priority_band", "daily_mission", "project_type"].filter(
+      ["source", "status", "priority_band", "daily_mission", "project_type", "lane"].filter(
         (k) => searchParams.get(k),
       ).length + (minScore ? 1 : 0) + (q ? 1 : 0),
     [searchParams, minScore, q],
@@ -87,8 +101,8 @@ const Opportunities = () => {
   return (
     <>
       <TopHeader
-        pageTitle="Opportunities"
-        subtitle={`${items.length} matching · ${activeFilterCount} filters`}
+        pageTitle="Project List"
+        subtitle={`${items.length} matching · ${activeFilterCount} filters applied`}
       />
 
       <div className="px-4 lg:px-8 py-6 space-y-5">
@@ -100,8 +114,29 @@ const Opportunities = () => {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search name, address, permit, decision maker…"
               data-testid="opps-search"
-              className="flex-1 min-w-[220px] bg-transparent border bh-hairline rounded h-9 px-3 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-amber-500/50 outline-none"
+              className="flex-1 min-w-[220px] bg-transparent border bh-hairline rounded-md h-10 px-3 text-[14px] text-[var(--bh-ink)] placeholder:text-[var(--bh-ink-mute)] focus:border-[var(--bh-brass)]/60 outline-none"
             />
+            <div className="inline-flex items-center border bh-hairline rounded overflow-hidden" data-testid="opps-sort">
+              {[
+                { k: "lead_score", label: "Priority" },
+                { k: "freshness",  label: "Newest" },
+                { k: "confidence", label: "Can I reach them" },
+              ].map((s) => (
+                <button
+                  key={s.k}
+                  onClick={() => setSort(s.k)}
+                  data-testid={`opps-sort-${s.k}`}
+                  className={
+                    "text-[12px] px-3 h-10 tracking-tight transition-colors duration-150 " +
+                    (sort === s.k
+                      ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
+                      : "text-[var(--bh-ink-mute)] hover:text-[var(--bh-ink)]")
+                  }
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
             <div className="inline-flex items-center border bh-hairline rounded overflow-hidden">
               <button
                 onClick={() => setView("list")}
@@ -109,7 +144,7 @@ const Opportunities = () => {
                 className={
                   "px-3 h-9 text-xs inline-flex items-center gap-1.5 transition-colors duration-150 " +
                   (view === "list"
-                    ? "bg-white/[0.05] text-neutral-100"
+                    ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
                     : "text-neutral-500 hover:text-neutral-200")
                 }
               >
@@ -121,7 +156,7 @@ const Opportunities = () => {
                 className={
                   "px-3 h-9 text-xs inline-flex items-center gap-1.5 transition-colors duration-150 " +
                   (view === "grid"
-                    ? "bg-white/[0.05] text-neutral-100"
+                    ? "bg-[var(--bh-surface-3)]/60 text-[var(--bh-ink)]"
                     : "text-neutral-500 hover:text-neutral-200")
                 }
               >
@@ -140,6 +175,18 @@ const Opportunities = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <FilterGroup title="Lane">
+              {LANES.map((l) => (
+                <FilterChip
+                  key={l.key}
+                  testId={`filter-lane-${l.key}`}
+                  label={l.label}
+                  active={filters.lane === l.key}
+                  onClick={() => setFilter("lane", l.key)}
+                />
+              ))}
+            </FilterGroup>
+
             <FilterGroup title="Source">
               {SOURCES.map((s) => (
                 <FilterChip
@@ -164,24 +211,27 @@ const Opportunities = () => {
               ))}
             </FilterGroup>
 
-            <FilterGroup title="Priority Band">
-              {BANDS.map((b) => (
-                <FilterChip
-                  key={b}
-                  testId={`filter-band-${b}`}
-                  label={`Band ${b}`}
-                  active={filters.priority_band === b}
-                  onClick={() => setFilter("priority_band", b)}
-                />
-              ))}
+            <FilterGroup title="Priority">
+              {BANDS.map((b) => {
+                const labelMap = { A: "High", B: "Medium", C: "Low", D: "Low" };
+                return (
+                  <FilterChip
+                    key={b}
+                    testId={`filter-band-${b}`}
+                    label={labelMap[b] || b}
+                    active={filters.priority_band === b}
+                    onClick={() => setFilter("priority_band", b)}
+                  />
+                );
+              })}
             </FilterGroup>
 
-            <FilterGroup title="Daily Mission">
+            <FilterGroup title="Today's action">
               {MISSIONS.map((m) => (
                 <FilterChip
                   key={m}
                   testId={`filter-mission-${m}`}
-                  label={m}
+                  label={m === "Research First" ? "Get more info first" : m}
                   active={filters.daily_mission === m}
                   onClick={() => setFilter("daily_mission", m)}
                 />
@@ -202,7 +252,7 @@ const Opportunities = () => {
 
             <div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">
-                Minimum Priority Score
+                Minimum priority score
               </div>
               <div className="flex items-center gap-3">
                 <input
@@ -214,7 +264,7 @@ const Opportunities = () => {
                   data-testid="filter-min-score"
                   className="flex-1 accent-amber-500"
                 />
-                <div className="mono text-sm text-neutral-100 w-10 text-right tabular-nums">
+                <div className="text-[14px] text-[var(--bh-ink)] w-10 text-right tabular-nums">
                   {minScore}
                 </div>
               </div>
@@ -250,25 +300,28 @@ const Opportunities = () => {
                   />
                   <PriorityBand band={o.priority_band} />
                 </div>
-                <div className="mt-3 font-display font-semibold text-neutral-100 leading-tight">
+                <div className="mt-3 font-display text-[19px] text-[var(--bh-ink)] leading-tight tracking-tight">
                   {o.name}
                 </div>
                 <div className="mt-1 text-xs text-neutral-500 truncate">
                   {o.project_address}
                 </div>
                 <div className="mt-3 text-[13px] text-amber-200/90 line-clamp-2">
-                  → {o.next_best_action}
+                  <span className="mono text-[10px] uppercase tracking-widest text-neutral-500 mr-1.5">
+                    Next
+                  </span>
+                  {o.next_best_action}
                 </div>
                 <div className="mt-auto pt-4 flex items-center flex-wrap gap-1.5">
                   <MissionBadge mission={o.daily_mission} size="sm" />
                   <StatusBadge status={o.status} />
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="mono text-[10px] text-neutral-500 uppercase tracking-widest">
-                    {sourceLabel(o.source)}
+                  <span className="text-[10.5px] text-[var(--bh-ink-mute)] tracking-tight">
+                    Found on {sourceLabel(o.source)}
                   </span>
                   <span className="font-display font-semibold text-neutral-200">
-                    {fmtMoney(o.estimated_value)}
+                    {moneyDisplay(o) || "—"}
                   </span>
                 </div>
               </Link>

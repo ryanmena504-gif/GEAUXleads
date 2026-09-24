@@ -31,6 +31,15 @@ from services import aggregations, dedupe, ingestion_diagnostics
 log = logging.getLogger("bloodhound.airtable")
 
 
+class AirtableWriteError(Exception):
+    """Raised when Airtable rejects a write. Carries the HTTP status code from
+    the upstream response so the API layer can pass it through unchanged."""
+
+    def __init__(self, message: str, status_code: int = 422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 # =============================================================================
 # CENTRAL FIELD MAP — projects the LIVE `Leads` Airtable table into the
 # dashboard's Opportunity DTO. The dashboard was originally built for an
@@ -66,6 +75,12 @@ LIVE_FIELDS: Dict[str, str] = {
     # of that project that could become Shirtless Handyman work.
     "Permit project value": "construction_value",
     "Estimated job value": "estimated_value",
+    # Formula money fields — kept as-is (string). The frontend prefers
+    # `estimated_value` (number) when populated, else falls back to these so
+    # the app renders whatever Airtable actually shows Ryan on a given record.
+    "Official project value": "official_project_value",
+    "Estimated opportunity value": "opportunity_value_display",
+    "Permit project value": "permit_project_value",
 
     # Contact block
     "Contact name": "decision_maker",
@@ -82,6 +97,12 @@ LIVE_FIELDS: Dict[str, str] = {
     "contact confidence": "contact_confidence_raw",
     "Best contact method": "best_contact_method",
     "Preferred contact method": "preferred_contact_method",
+    "First message": "first_message",
+    "First contact message": "first_contact_message",
+    "First contact channel": "first_contact_channel",
+    "Open approved message iPhone": "open_approved_message_iphone",
+    "Open approved message": "open_approved_message",
+    "SMS Permission": "sms_permission",
 
     # AI intelligence
     "Ai status": "ai_status",
@@ -93,7 +114,6 @@ LIVE_FIELDS: Dict[str, str] = {
     "recommended action": "recommended_action",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
-    "First message": "first_message",
     "Confidence score": "confidence_score",
     "Lead score": "lead_score",
     "Priority": "priority_raw",
@@ -123,6 +143,14 @@ LIVE_FIELDS: Dict[str, str] = {
     "Premium property or client ": "flag_premium",
     "Recent activity ": "flag_recent_activity",
     "Partnership potential ": "flag_partnership",
+    "Landlord signal": "flag_landlord",
+
+    # Landlord-specific fields — Make classifies portfolio size and turnover
+    # cadence when a lead is flagged as a landlord. Absent on non-landlord
+    # records and rendered as blank — never invented.
+    "Turnover Cadence": "turnover_cadence",
+    "Portfolio Size": "portfolio_size",
+    "Last Turnover Check": "last_turnover_check",
 
     # Funnel checkboxes (drive derived Status)
     "Verified opportunity": "flag_verified",
@@ -136,6 +164,28 @@ LIVE_FIELDS: Dict[str, str] = {
     # Money
     "Closed revenue": "closed_revenue",
     "Estimated gross profit": "estimated_gross_profit",
+
+    # === Governed current-state layer (owned by Airtable + Make) =============
+    # These are the AUTHORITATIVE decision fields. Never written from the
+    # frontend and never recalculated locally — the classifier in Make sets
+    # them and Bloodhound reads them straight through.
+    "Current Queue": "current_queue",
+    "Contact Readiness": "contact_readiness",
+    "Contact State": "contact_state",
+    "Money Signal": "money_signal",
+    "Operator Activity": "operator_activity",
+    "Premium Fit": "premium_fit",
+    "Evidence Status": "evidence_status",
+    "Freshness": "freshness",
+    "Governed Priority Score": "governed_priority_score",
+    "Score Basis": "score_basis",
+    "Priority Explanation": "priority_explanation",
+    "Current Recommendation": "current_recommendation",
+    "Public Contact Evidence": "public_contact_evidence",
+    "Contact Verified Date": "contact_verified_date",
+    "Project Fit Reason": "project_fit_reason",
+    "Last Classified At": "last_classified_at",
+    "Classification Version": "classification_version",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.
@@ -172,17 +222,30 @@ EXPLICIT_READONLY: set = {
     "Confidence score",
     "Lead score",
     "Enrichment status",
-    "Reply summary",
-    "Reply classification",
     "Verified opportunity",
     "Qualified opportunity",
-    "Outreach sent",
-    "Reply received",
-    "Positive conversation",
-    "Estimate opportunity",
-    "Job won",
     "Closed revenue",
     "Estimated gross profit",
+    "SMS Permission",
+    # Governed current-state layer — owned by Airtable + Make. NEVER written
+    # from the app.
+    "Current Queue",
+    "Contact Readiness",
+    "Contact State",
+    "Money Signal",
+    "Operator Activity",
+    "Premium Fit",
+    "Evidence Status",
+    "Freshness",
+    "Governed Priority Score",
+    "Score Basis",
+    "Priority Explanation",
+    "Current Recommendation",
+    "Public Contact Evidence",
+    "Contact Verified Date",
+    "Project Fit Reason",
+    "Last Classified At",
+    "Classification Version",
 }
 
 # Only these Airtable field names may ever be written from the app.
@@ -200,6 +263,12 @@ EDITABLE_FIELDS = {
     "Notes",
     "Approval status",
     "Outreach status",
+    "Outreach channel",
+    "Message sent date",
+    "Date contacted",
+    "Reply classification",
+    "Reply summary",
+    "Date replied",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -213,6 +282,12 @@ WRITE_ALIAS: Dict[str, str] = {
     "notes": "Notes",
     "approval_status": "Approval status",
     "outreach_status": "Outreach status",
+    "outreach_channel": "Outreach channel",
+    "message_sent_date": "Message sent date",
+    "date_contacted": "Date contacted",
+    "reply_classification": "Reply classification",
+    "reply_summary": "Reply summary",
+    "date_replied": "Date replied",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.
@@ -230,18 +305,118 @@ READONLY_FIELD_TYPES = {
     "externalSyncSource",
 }
 
-# Statuses / stages / missions live in services.aggregations so both backends
-# agree on what a count means. Re-exported here for existing importers.
-CLOSED_STATUSES = set(aggregations.CLOSED_STATUSES)
-PIPELINE_STATUSES = aggregations.PIPELINE_STATUSES
+# Statuses considered "closed" for pipeline/summary calcs.
+CLOSED_STATUSES = {"Won", "Lost", "Disqualified"}
 
+
+def _days_on_table(created_time: Optional[str]) -> Optional[int]:
+    """Whole days between record creation and now. Uses Airtable's
+    `createdTime` metadata (already mapped to `created_time` on the DTO).
+    Returns None if unparseable."""
+    if not created_time:
+        return None
+    try:
+        s = str(created_time).replace("Z", "+00:00")
+        created = datetime.fromisoformat(s)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - created
+        return max(0, delta.days)
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Canonical sort — `Lead score` (Airtable) is the primary priority everywhere.
+# Unscored records rank BELOW scored ones. Ties: freshness DESC, id ASC.
+# ---------------------------------------------------------------------------
+def _score_num(o: Dict[str, Any]) -> Optional[float]:
+    s = o.get("priority_score")
+    return s if isinstance(s, (int, float)) else None
+
+
+def _date_str(o: Dict[str, Any]) -> str:
+    return (o.get("last_reviewed") or o.get("created_time") or "")
+
+
+def _conf_num(o: Dict[str, Any]) -> Optional[float]:
+    c = o.get("confidence_score") or o.get("evidence_confidence")
+    try:
+        return float(c) if c not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def sort_opportunities(items: List[Dict[str, Any]], mode: str = "lead_score") -> List[Dict[str, Any]]:
+    """Canonical dashboard sort. Never mutates the input list."""
+    mode = (mode or "lead_score").lower()
+    if mode == "freshness":
+        with_d = [o for o in items if _date_str(o)]
+        without = [o for o in items if not _date_str(o)]
+        with_d.sort(key=lambda o: o.get("id") or "")
+        with_d.sort(key=lambda o: _date_str(o), reverse=True)
+        without.sort(key=lambda o: o.get("id") or "")
+        return with_d + without
+    if mode == "confidence":
+        scored = [o for o in items if _conf_num(o) is not None]
+        unscored = [o for o in items if _conf_num(o) is None]
+        scored.sort(key=lambda o: o.get("id") or "")
+        scored.sort(key=lambda o: _date_str(o), reverse=True)
+        scored.sort(key=lambda o: -_conf_num(o))
+        unscored.sort(key=lambda o: o.get("id") or "")
+        return scored + unscored
+    # Default: canonical Lead score
+    scored = [o for o in items if _score_num(o) is not None]
+    unscored = [o for o in items if _score_num(o) is None]
+    scored.sort(key=lambda o: o.get("id") or "")
+    scored.sort(key=lambda o: _date_str(o), reverse=True)
+    scored.sort(key=lambda o: -_score_num(o))
+    unscored.sort(key=lambda o: o.get("id") or "")
+    return scored + unscored
+
+
+PIPELINE_STATUSES = [
+    "New",
+    "Needs research",
+    "Ready",
+    "Conversation started",
+    "Estimate requested",
+    "Estimate sent",
+    "Won",
+    "Lost",
+    "Disqualified",
+]
 
 # Derive a dashboard-pipeline stage from the Leads workflow state.
+# IMPORTANT: `outreach_status` is Ryan's manual source of truth — the
+# ContactResults buttons write to it. If it's set to one of the terminal
+# manual values we honor it BEFORE re-deriving from signal flags, otherwise
+# the read path would silently override what the write path just stored.
+# "Sent" / "No response" intentionally do NOT auto-advance the pipeline stage.
+# Won / Lost flags still win over outreach (a closed deal is closed).
 def _derive_status(opp: Dict[str, Any]) -> str:
     if opp.get("flag_won"):
         return "Won"
     if opp.get("outcome"):
         return "Lost"
+
+    outreach = opp.get("outreach_status")
+    if isinstance(outreach, str) and outreach.strip():
+        ol = outreach.lower().strip()
+        if "not interested" in ol or "do not contact" in ol:
+            return "Disqualified"
+        if "estimate requested" in ol:
+            return "Estimate requested"
+        if ol in ("replied", "reply received") or "reply received" in ol:
+            return "Conversation started"
+        # "sent", "no response", "not sent", "sms draft" — fall through
+
+    reply = opp.get("reply_classification")
+    if isinstance(reply, str) and reply.strip():
+        rl = reply.lower().strip()
+        if "not interested" in rl:
+            return "Disqualified"
+
     if opp.get("flag_estimate"):
         return "Estimate sent"
     if opp.get("flag_reply_received") or opp.get("flag_positive_conversation"):
@@ -260,42 +435,70 @@ def _derive_status(opp: Dict[str, Any]) -> str:
     return "New"
 
 
-# Derive a 0-100 priority score from what the Leads table actually populates.
-# Real Lead score / Confidence score are almost always 0 in this base, so we
-# synthesise from richness signals until the automation starts scoring.
+# Priority score is the canonical Airtable `Lead score`. Do NOT synthesise —
+# a missing value means "needs scoring", never zero, never a fake value.
 def _derive_priority_score(opp: Dict[str, Any]) -> Optional[float]:
     raw = opp.get("lead_score")
+    if raw is None or raw == "":
+        return None
     try:
-        if raw is not None and float(raw) > 0:
-            return float(raw)
+        return float(raw)
     except (TypeError, ValueError):
-        pass
-    score = 0
-    if (opp.get("ai_status") or "").lower() == "complete":
-        score += 35
-    if opp.get("evidence_summary"):
-        score += 10
-    if opp.get("recommendation_reason"):
-        score += 5
-    if opp.get("phone") or opp.get("email") or opp.get("phone_alt") or opp.get("email_alt"):
-        score += 15
-    if opp.get("decision_maker") or opp.get("company"):
-        score += 10
-    if opp.get("permit_number"):
-        score += 10
-    if opp.get("project_address"):
-        score += 5
-    if opp.get("estimated_value"):
-        score += 5
-    if opp.get("flag_verified"):
-        score += 5
-    if opp.get("flag_qualified"):
-        score += 5
-    if opp.get("flag_premium"):
-        score += 3
-    if opp.get("flag_partnership"):
-        score += 2
-    return score if score > 0 else None
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Lane classification — four parallel funnels the dashboard ranks across.
+#   market_capture   — permit-driven qualified project leads (the default)
+#   partner          — contractors/designers/architects/suppliers/referrers
+#   landlord         — rental-portfolio owners (recurring turnover work)
+#   non_permit       — public non-permit signals (website, social, referral…)
+# ---------------------------------------------------------------------------
+LANES = ("market_capture", "partner", "landlord", "non_permit")
+
+LANE_LABELS = {
+    "market_capture": "Market Capture",
+    "partner": "Partner Pipeline",
+    "landlord": "Landlord Pipeline",
+    "non_permit": "Non-Permit Signals",
+}
+
+_PARTNER_TYPE_TOKENS = (
+    "contractor", "remodel", "designer", "architect",
+    "supplier", "vendor", "referral", "partner",
+)
+_PARTNER_SOURCE_TOKENS = ("partner", "referral", "network", "trade")
+_LANDLORD_TYPE_TOKENS = (
+    "landlord", "rental", "property owner", "portfolio",
+    "multi-family", "multifamily", "duplex", "triplex", "fourplex",
+)
+
+
+def _derive_lane(opp: Dict[str, Any]) -> str:
+    # Landlord takes precedence — it's the most specific classification.
+    # Two ways to be tagged: the governed `Landlord signal` checkbox (set by
+    # Make) OR `Opportunity type` contains a landlord token.
+    if opp.get("flag_landlord") is True:
+        return "landlord"
+    otype = (opp.get("project_type") or "")
+    otype_l = otype.lower() if isinstance(otype, str) else ""
+    if any(tok in otype_l for tok in _LANDLORD_TYPE_TOKENS):
+        return "landlord"
+    if opp.get("flag_partnership") is True:
+        return "partner"
+    if any(tok in otype_l for tok in _PARTNER_TYPE_TOKENS):
+        return "partner"
+    src_cat = (opp.get("source_category") or "")
+    src_cat_l = src_cat.lower() if isinstance(src_cat, str) else ""
+    if any(tok in src_cat_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    src = (opp.get("source") or "")
+    src_l = src.lower() if isinstance(src, str) else ""
+    if any(tok in src_l for tok in _PARTNER_SOURCE_TOKENS):
+        return "partner"
+    if src_l and "permit" not in src_l and "permit" not in src_cat_l:
+        return "non_permit"
+    return "market_capture"
 
 
 def _derive_priority_band(opp: Dict[str, Any]) -> Optional[str]:
@@ -593,6 +796,29 @@ class AirtableOpportunityService:
             opp["status_raw_display"] = _strip_emoji_prefix(opp["status"])
             opp["status"] = _strip_emoji_prefix(opp["status"])
 
+        # Referral prompt window — after a lead hits Won we wait 5 days
+        # before nudging the operator to ask for a referral (long enough
+        # for the customer to see the work; short enough that the memory
+        # is fresh). "Won at" is inferred from the most recent timestamp
+        # Claude / Make could plausibly have touched when flipping the
+        # won flag: last_classified_at → date_replied → message_sent_date
+        # → created_time. All are already governed fields on the DTO.
+        if opp.get("status") == "Won":
+            won_at = (
+                opp.get("last_classified_at")
+                or opp.get("date_replied")
+                or opp.get("message_sent_date")
+                or opp.get("created_time")
+            )
+            days = _days_on_table(won_at)  # reuses the whole-days helper
+            opp["days_since_won"] = days
+            opp["referral_prompt_ready"] = bool(days is not None and days >= 5)
+            opp["referral_won_at"] = won_at
+        else:
+            opp["days_since_won"] = None
+            opp["referral_prompt_ready"] = False
+            opp["referral_won_at"] = None
+
         # Legacy "Ryans decision" field maps to Hunt status.
         opp["ryans_decision"] = opp.get("hunt_status")
 
@@ -610,6 +836,10 @@ class AirtableOpportunityService:
         opp["momentum"] = "High" if opp.get("flag_recent_activity") else (
             "Stalled" if opp.get("flag_won") or opp.get("outcome") else "Normal"
         )
+
+        # Lane classification (market_capture / partner / non_permit)
+        opp["lane"] = _derive_lane(opp)
+        opp["lane_label"] = LANE_LABELS.get(opp["lane"], opp["lane"])
 
         if opp.get("phone") or opp.get("email") or opp.get("phone_alt") or opp.get("email_alt"):
             opp["reachability"] = "Direct"
@@ -631,6 +861,8 @@ class AirtableOpportunityService:
 
         # Synthetic activity timeline (real timestamps only, no invented events)
         opp["activity_timeline"] = self._synthesize_activity(opp)
+        # Days on table — how long the record has lived in the queue.
+        opp["days_on_table"] = _days_on_table(opp.get("created_time"))
         return opp
 
     def _synthesize_activity(self, opp: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -806,16 +1038,44 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, include_duplicates: bool = False) -> List[Dict[str, Any]]:
-        return aggregations.filter_records(
-            self._all_cached(), source=source, status=status,
-            priority_band=priority_band, daily_mission=daily_mission,
-            project_type=project_type, min_score=min_score, q=q,
-            include_duplicates=include_duplicates,
-        )
+             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+        results = self._all_cached()
+        if source:
+            results = [o for o in results if o.get("source") == source]
+        if status:
+            results = [o for o in results if o.get("status") == status]
+        if priority_band:
+            results = [o for o in results if o.get("priority_band") == priority_band]
+        if daily_mission:
+            results = [o for o in results if o.get("daily_mission") == daily_mission]
+        if project_type:
+            results = [o for o in results if o.get("project_type") == project_type]
+        if lane:
+            results = [o for o in results if o.get("lane") == lane]
+        if min_score is not None:
+            # Only filter records that HAVE a score; unscored are dropped when
+            # a min-score threshold is set (we can't compare "Needs scoring").
+            results = [o for o in results
+                       if isinstance(o.get("priority_score"), (int, float))
+                       and o["priority_score"] >= float(min_score)]
+        if q:
+            ql = q.lower()
+            def match(o):
+                blob = " ".join([
+                    str(o.get("name", "")),
+                    str(o.get("opportunity_id", "")),
+                    str(o.get("project_address", "")),
+                    str(o.get("decision_maker", "")),
+                    str(o.get("permit_number", "")),
+                    str(o.get("project_type", "")),
+                ]).lower()
+                return ql in blob
+            results = [o for o in results if match(o)]
+        return sort_opportunities(results, mode=sort or "lead_score")
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:
-        return aggregations.top(self._all_cached(), limit=limit)
+        active = [o for o in self._all_cached() if o.get("status") not in CLOSED_STATUSES]
+        return sort_opportunities(active, mode="lead_score")[:limit]
 
     def recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         return aggregations.recent(self._all_cached(), limit=limit)
@@ -824,7 +1084,16 @@ class AirtableOpportunityService:
         return aggregations.summary(self._all_cached())
 
     def group_by_mission(self) -> Dict[str, List[Dict[str, Any]]]:
-        return aggregations.group_by_mission(self._all_cached())
+        groups: Dict[str, List[Dict[str, Any]]] = {m: [] for m in ACTIONABLE_MISSIONS}
+        for o in self._all_cached():
+            if o.get("status") in CLOSED_STATUSES:
+                continue
+            mission = o.get("daily_mission")
+            if mission in groups:
+                groups[mission].append(o)
+        for m in groups:
+            groups[m] = sort_opportunities(groups[m], mode="lead_score")
+        return groups
 
     def pipeline_counts(self) -> List[Dict[str, Any]]:
         return aggregations.pipeline_counts(self._all_cached())
@@ -874,11 +1143,31 @@ class AirtableOpportunityService:
         allowed = self._writable_airtable_fields(updates_by_snake)
         if not allowed:
             return self.get(opp_id)
+        # Coerce empty strings to None so the caller can CLEAR a date / select
+        # field instead of Airtable rejecting the empty value.
+        allowed = {k: (None if v == "" else v) for k, v in allowed.items()}
         try:
-            self._table.update(opp_id, allowed)
-        except Exception:
+            # typecast=True lets Airtable auto-add new single-select options when
+            # the PAT is base-editor. Falls back to normal 422 otherwise.
+            self._table.update(opp_id, allowed, typecast=True)
+        except Exception as e:
             log.exception("Airtable: update failed for %s", opp_id)
-            raise
+            status = 422
+            detail = str(e)
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                status = getattr(resp, "status_code", status) or status
+                try:
+                    body = resp.json()
+                    if isinstance(body, dict) and "error" in body:
+                        err = body["error"]
+                        if isinstance(err, dict):
+                            detail = err.get("message") or err.get("type") or detail
+                        else:
+                            detail = str(err)
+                except Exception:
+                    pass
+            raise AirtableWriteError(detail, status_code=status) from e
         # Force cache refresh so subsequent reads pick up formula recomputation.
         self._refresh_cache(force=True)
         return self.get(opp_id)
@@ -912,15 +1201,50 @@ class AirtableOpportunityService:
             return deepcopy(cached)
 
 
+_last_build_error: Optional[str] = None
+
+
+def get_last_build_error() -> Optional[str]:
+    """Return the last Airtable-init exception message so /api/config can
+    surface it (e.g. '401 Unauthorized', 'table not found'). None until an
+    init has been attempted or if the last init succeeded."""
+    return _last_build_error
+
+
 def build_airtable_service_from_env() -> Optional[AirtableOpportunityService]:
+    global _last_build_error
     api_key = os.environ.get("AIRTABLE_API_KEY")
     base_id = os.environ.get("AIRTABLE_BASE_ID")
     table = os.environ.get("AIRTABLE_OPPORTUNITIES_TABLE")
     enabled = os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
     if not (enabled and api_key and base_id and table):
+        _last_build_error = None
         return None
     try:
-        return AirtableOpportunityService(api_key, base_id, table)
-    except Exception:
+        svc = AirtableOpportunityService(api_key, base_id, table)
+        _last_build_error = None
+        return svc
+    except Exception as e:  # noqa: BLE001
         log.exception("Airtable: initialization failed — falling back to sample data")
+        msg = str(e)
+        # Trim to the useful signal without leaking the PAT.
+        if "401" in msg or "Unauthorized" in msg:
+            _last_build_error = (
+                "401 Unauthorized — Airtable PAT is invalid or revoked. "
+                "Rotate the token in Airtable → Developer Hub → Personal "
+                "access tokens, then update AIRTABLE_API_KEY."
+            )
+        elif "403" in msg:
+            _last_build_error = (
+                "403 Forbidden — PAT lacks required scopes. Needs "
+                "data.records:read, data.records:write, schema.bases:read "
+                "and access to the Bloodhound base."
+            )
+        elif "404" in msg or "NOT_FOUND" in msg:
+            _last_build_error = (
+                "404 Not Found — AIRTABLE_BASE_ID or AIRTABLE_OPPORTUNITIES_TABLE "
+                "does not match a base/table this PAT can see."
+            )
+        else:
+            _last_build_error = f"{type(e).__name__}: {msg[:220]}"
         return None

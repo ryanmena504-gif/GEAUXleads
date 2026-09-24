@@ -9,7 +9,15 @@ import OpportunityDetail from "@/pages/OpportunityDetail";
 import Missions from "@/pages/Missions";
 import Relationships from "@/pages/Relationships";
 import Intelligence from "@/pages/Intelligence";
+import ReviewQueue from "@/pages/ReviewQueue";
 import Settings from "@/pages/Settings";
+import Lookup from "@/pages/Lookup";
+import DebugPanel from "@/pages/DebugPanel";
+import DiscoveryPropertyManagers from "@/pages/DiscoveryPropertyManagers";
+import DiscoveryRealEstateAgents from "@/pages/DiscoveryRealEstateAgents";
+import DiscoveryLandlords from "@/pages/DiscoveryLandlords";
+import LandlordLetterPrint from "@/pages/LandlordLetterPrint";
+import DiscoveryInvestors from "@/pages/DiscoveryInvestors";
 
 function App() {
   return (
@@ -23,12 +31,20 @@ function App() {
             <Route path="/missions" element={<Missions />} />
             <Route path="/relationships" element={<Relationships />} />
             <Route path="/intelligence" element={<Intelligence />} />
+            <Route path="/review-queue" element={<ReviewQueue />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/lookup" element={<Lookup />} />
+            <Route path="/debug" element={<DebugPanel />} />
+            <Route path="/discovery/property-managers" element={<DiscoveryPropertyManagers />} />
+            <Route path="/discovery/real-estate-agents" element={<DiscoveryRealEstateAgents />} />
+            <Route path="/discovery/landlords" element={<DiscoveryLandlords />} />
+            <Route path="/discovery/landlords/print" element={<LandlordLetterPrint />} />
+            <Route path="/discovery/investors" element={<DiscoveryInvestors />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>
-      <Toaster richColors position="top-right" theme="dark" />
+      <Toaster richColors position="top-right" theme="light" />
     </div>
   );
 }

@@ -2,28 +2,29 @@ import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Zap,
-  CheckCircle2,
-  Edit3,
   Pause,
   SkipForward,
   Ban,
   ExternalLink,
   Loader2,
-  MessageSquare,
   RefreshCw,
   Undo2,
 } from "lucide-react";
-import ApproveConfirmDialog from "@/components/ApproveConfirmDialog";
-import EligibilityPanel from "@/components/EligibilityPanel";
-import { api, outreachBlockedFrom } from "@/lib/api";
+import { api } from "@/lib/api";
+import LaneBadge from "@/components/LaneBadge";
+import ContactBadge from "@/components/ContactBadge";
+import DraftNoteDrawer from "@/components/DraftNoteDrawer";
+import OpenInMessages from "@/components/OpenInMessages";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
+import { priorityLevel, priorityReason } from "@/lib/priority";
+import { outreachAllowed } from "@/lib/queue";
 
 const Stat = ({ label, value }) => (
   <div>
-    <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
+    <div className="text-[10.5px] tracking-tight text-[var(--bh-ink-mute)]">
       {label}
     </div>
-    <div className="mt-0.5 text-neutral-100 font-medium truncate">
+    <div className="mt-0.5 text-[var(--bh-ink)] font-medium truncate">
       {value ?? "—"}
     </div>
   </div>
@@ -31,8 +32,6 @@ const Stat = ({ label, value }) => (
 
 export const NextBestAction = () => {
   const [state, setState] = useState({ loading: true, lead: null, note: null, queue: null });
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(null);
   const [confirmDNC, setConfirmDNC] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
@@ -109,11 +108,11 @@ export const NextBestAction = () => {
   if (state.loading) {
     return (
       <section
-        className="bh-surface rounded-lg p-6 border-t-2 border-t-amber-500/60 flex items-center gap-3 text-neutral-400"
+        className="bh-surface rounded-lg p-6 border-t-2 border-t-amber-500/60 flex items-center gap-3 text-[var(--bh-ink-mute)]"
         data-testid="nba-loading"
       >
         <Loader2 size={16} className="animate-spin text-amber-400" />
-        Finding your next best action…
+        Finding your best next step…
       </section>
     );
   }
@@ -126,22 +125,22 @@ export const NextBestAction = () => {
       >
         <div className="flex items-center gap-2 mb-2">
           <Zap size={13} className="text-amber-400" />
-          <div className="mono text-[10px] uppercase tracking-widest text-amber-400">
-            Next Best Action
+          <div className="text-[11px] tracking-tight text-amber-400">
+            Today&rsquo;s top action
           </div>
         </div>
-        <div className="font-display text-2xl sm:text-3xl text-neutral-100 font-bold">
-          Queue is clear.
+        <div className="font-display text-2xl sm:text-3xl text-[var(--bh-ink)] font-bold">
+          Nothing needs you right now.
         </div>
-        <div className="text-sm text-neutral-500 mt-2 max-w-md leading-relaxed">
-          {state.note || "No qualified leads waiting for action right now."}
+        <div className="text-sm text-[var(--bh-ink-mute)] mt-2 max-w-md leading-relaxed">
+          {state.note || "No leads are waiting on your attention today."}
         </div>
         <button
           onClick={load}
           data-testid="nba-reload-empty"
-          className="mt-4 mono text-[10px] uppercase tracking-widest text-amber-400 hover:text-amber-300 inline-flex items-center gap-1.5"
+          className="mt-4 text-[11px] tracking-tight text-amber-400 hover:text-[var(--bh-brass)] inline-flex items-center gap-1.5"
         >
-          <RefreshCw size={11} /> Reload queue
+          <RefreshCw size={11} /> Check again
         </button>
       </section>
     );
@@ -174,8 +173,8 @@ export const NextBestAction = () => {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Zap size={13} className="text-amber-400" />
-            <div className="mono text-[10px] uppercase tracking-widest text-amber-400">
-              Next Best Action
+            <div className="text-[11px] tracking-tight text-amber-400">
+              Today&rsquo;s top action
             </div>
             {state.queue && (
               <span className="mono text-[9px] text-neutral-500 uppercase tracking-widest">
@@ -185,11 +184,6 @@ export const NextBestAction = () => {
               </span>
             )}
           </div>
-          {l._selection_reason && (
-            <div className="mono text-[10px] text-neutral-500 mt-1 truncate">
-              Why this lead: {l._selection_reason}
-            </div>
-          )}
         </div>
         {l._airtable_url && (
           <a
@@ -197,9 +191,9 @@ export const NextBestAction = () => {
             target="_blank"
             rel="noopener noreferrer"
             data-testid="nba-open-full-lead"
-            className="mono text-[10px] uppercase tracking-widest text-neutral-500 hover:text-amber-400 inline-flex items-center gap-1 shrink-0"
+            className="text-[11px] tracking-tight text-[var(--bh-ink-mute)] hover:text-[var(--bh-brass)] inline-flex items-center gap-1 shrink-0"
           >
-            <ExternalLink size={11} /> <span className="hidden sm:inline">Open full lead</span>
+            <ExternalLink size={11} /> <span className="hidden sm:inline">More details</span>
           </a>
         )}
       </div>
@@ -207,127 +201,50 @@ export const NextBestAction = () => {
       {/* Recommended Action — visual center */}
       <div className="px-5 sm:px-7 pb-5">
         <div
-          className="font-display text-2xl sm:text-4xl lg:text-5xl font-bold text-neutral-100 leading-[1.08] tracking-tight"
+          className="font-display text-2xl sm:text-4xl lg:text-5xl font-bold text-[var(--bh-ink)] leading-[1.08] tracking-tight"
           data-testid="nba-recommended-action"
         >
-          {l.next_action || "Review this lead"}
+          {l.next_action || "Take a look at this one"}
         </div>
         <div className="mt-3 flex items-center gap-2 flex-wrap">
-          <span className="font-display text-base sm:text-lg text-neutral-200 font-medium truncate max-w-full">
+          <span className="font-display text-base sm:text-lg text-[var(--bh-ink-2)] font-medium truncate max-w-full">
             {l.name || "Unnamed lead"}
           </span>
+          <LaneBadge lane={l.lane} />
           {l.opportunity_type && (
-            <span className="mono text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border bh-hairline text-neutral-300">
+            <span className="text-[11px] tracking-tight px-2 py-0.5 rounded border bh-hairline text-[var(--bh-ink-3)]">
               {l.opportunity_type}
             </span>
           )}
-          {approved && (
-            <span
-              className="mono text-[10px] uppercase tracking-widest px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1"
-              data-testid="nba-approved-pill"
-            >
-              <CheckCircle2 size={10} /> Approved — awaiting messaging connection
-            </span>
-          )}
+          <ContactBadge opportunity={l} />
         </div>
       </div>
 
-      {/* Why + AI summary */}
-      {(l.why_lead_matters || l.ai_summary) && (
+      {/* Why this matters */}
+      {(reason || l.why_lead_matters) && (
         <div className="px-5 sm:px-7 pb-4 border-t bh-hairline pt-4 space-y-3">
-          {l.why_lead_matters && (
-            <div>
-              <div className="mono text-[9px] uppercase tracking-widest text-neutral-500 mb-1">
-                Why this matters now
-              </div>
-              <div className="text-sm text-neutral-200 leading-relaxed">
-                {l.why_lead_matters}
-              </div>
+          <div>
+            <div className="text-[10.5px] tracking-tight text-[var(--bh-ink-mute)] mb-1">
+              Why this matters
             </div>
-          )}
-          {(l.ai_summary) && (
-            <div>
-              <div className="mono text-[9px] uppercase tracking-widest text-neutral-500 mb-1">
-                AI summary
-              </div>
-              <div className="text-sm text-neutral-300 leading-relaxed">
-                {l.ai_summary}
-              </div>
+            <div className="text-sm text-[var(--bh-ink-2)] leading-relaxed">
+              {reason || l.why_lead_matters}
             </div>
-          )}
+          </div>
         </div>
       )}
 
       {/* Compact stats row */}
-      <div className="px-5 sm:px-7 pb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-3 text-sm">
-        <Stat label="Lead score" value={l.lead_score} />
-        <Stat label="Priority" value={l.priority} />
-        <Stat label="Est. value" value={l.estimated_job_value ? fmtMoney(l.estimated_job_value) : null} />
-        <Stat label="Contact conf." value={l.contact_confidence} />
-        <Stat label="Source" value={l.source} />
+      <div className="px-5 sm:px-7 pb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 text-sm">
+        <Stat label="Priority" value={level || "—"} />
+        <Stat label="Possible work value" value={l.estimated_job_value ? fmtMoney(l.estimated_job_value) : null} />
+        <Stat label="Found on" value={l.source} />
         <Stat label="Discovered" value={timeSince ? fmtRelative(timeSince) : null} />
       </div>
 
-      {/* Draft outbound message */}
-      <div className="px-5 sm:px-7 pb-4 border-t bh-hairline pt-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 inline-flex items-center gap-1.5">
-            <MessageSquare size={11} /> Draft outbound message
-          </div>
-          {!editing && l.first_message && (
-            <button
-              onClick={() => setEditing(true)}
-              data-testid="nba-edit-message"
-              className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1"
-            >
-              <Edit3 size={11} /> Edit
-            </button>
-          )}
-        </div>
-        {editing ? (
-          <div className="space-y-2">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={5}
-              data-testid="nba-message-textarea"
-              className="w-full bg-transparent border bh-hairline rounded px-3 py-2 text-sm text-neutral-100 focus:border-amber-500/50 outline-none font-mono leading-relaxed"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={saveMessage}
-                disabled={busy === "edit"}
-                data-testid="nba-save-message"
-                className="h-9 px-3 rounded bg-amber-500 text-neutral-950 hover:bg-amber-400 text-sm font-medium disabled:opacity-50 inline-flex items-center gap-1"
-              >
-                <CheckCircle2 size={13} /> Save message
-              </button>
-              <button
-                onClick={() => {
-                  setEditing(false);
-                  setDraft(l.first_message || "");
-                }}
-                className="h-9 px-3 rounded border bh-hairline text-neutral-300 hover:bg-white/[0.03] text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className="bh-surface-2 rounded p-3 text-sm text-neutral-200 whitespace-pre-wrap leading-relaxed min-h-[60px]"
-            data-testid="nba-message-view"
-          >
-            {l.first_message || (
-              <button
-                onClick={() => setEditing(true)}
-                className="text-neutral-500 italic hover:text-amber-300"
-              >
-                No draft message yet — click to compose one.
-              </button>
-            )}
-          </div>
-        )}
+      {/* Contact them — the ONLY outreach button. No approve, no send. */}
+      <div className="px-5 sm:px-7 pb-4 pt-4 border-t bh-hairline">
+        <OpenInMessages opportunity={l} variant="panel" />
       </div>
 
       {/* Server eligibility verdict */}
@@ -369,15 +286,15 @@ export const NextBestAction = () => {
           onClick={() => act("hold")}
           disabled={busy === "hold"}
           data-testid="nba-hold"
-          className="h-11 px-4 rounded border bh-hairline text-neutral-200 hover:bg-white/[0.03] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
+          className="h-11 px-4 rounded border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
         >
-          <Pause size={13} /> Hold
+          <Pause size={13} /> Save for later
         </button>
         <button
           onClick={() => act("skip")}
           disabled={busy === "skip"}
           data-testid="nba-skip"
-          className="h-11 px-4 rounded border bh-hairline text-neutral-200 hover:bg-white/[0.03] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
+          className="h-11 px-4 rounded border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
         >
           <SkipForward size={13} /> Skip
         </button>
@@ -387,11 +304,11 @@ export const NextBestAction = () => {
             data-testid="nba-dnc"
             className="h-11 px-4 rounded border border-red-500/30 text-red-300 hover:bg-red-500/10 text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
           >
-            <Ban size={13} /> Do Not Contact
+            <Ban size={13} /> Not a fit
           </button>
         ) : (
           <div className="flex items-center gap-1.5">
-            <span className="mono text-[10px] uppercase tracking-widest text-red-300 mr-1">
+            <span className="text-[11px] tracking-tight text-red-300 mr-1">
               Confirm?
             </span>
             <button
@@ -400,26 +317,24 @@ export const NextBestAction = () => {
               data-testid="nba-dnc-confirm"
               className="h-11 px-3 rounded bg-red-500 text-neutral-950 hover:bg-red-400 text-sm font-semibold disabled:opacity-50"
             >
-              Yes, block
+              Yes, remove
             </button>
             <button
               onClick={() => setConfirmDNC(false)}
-              className="h-11 px-3 rounded border bh-hairline text-sm text-neutral-300 hover:bg-white/[0.03]"
+              className="h-11 px-3 rounded border bh-hairline text-sm text-[var(--bh-ink-3)] hover:bg-[var(--bh-surface-2)]"
             >
               Cancel
             </button>
           </div>
         )}
       </div>
-
-      <ApproveConfirmDialog
-        open={approveOpen}
-        onOpenChange={setApproveOpen}
-        lead={l}
-        eligibility={eligibility}
-        busy={busy === "approve"}
-        onConfirm={confirmApprove}
-      />
+      {l.lane === "partner" && (
+        <DraftNoteDrawer
+          open={draftDrawerOpen}
+          onOpenChange={setDraftDrawerOpen}
+          opportunity={l}
+        />
+      )}
     </section>
   );
 };

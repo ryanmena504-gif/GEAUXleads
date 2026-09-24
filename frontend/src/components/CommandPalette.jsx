@@ -21,23 +21,24 @@ import {
   Phone,
   FileText,
 } from "lucide-react";
-import { fmtMoney, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 
 const PAGES = [
-  { to: "/", label: "Command Center", icon: LayoutDashboard, hint: "Dashboard" },
-  { to: "/opportunities", label: "Opportunities", icon: Crosshair, hint: "All records" },
-  { to: "/missions", label: "Today's Missions", icon: Target, hint: "Daily plan" },
-  { to: "/relationships", label: "Relationships", icon: Network, hint: "Preview — no live data" },
-  { to: "/intelligence", label: "Intelligence", icon: Radar, hint: "Preview — no live data" },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Configuration" },
+  { to: "/", label: "Today's Work", icon: LayoutDashboard, hint: "Dashboard" },
+  { to: "/opportunities", label: "Project List", icon: Crosshair, hint: "All projects" },
+  { to: "/missions", label: "Follow-Ups", icon: Target, hint: "Today's plan" },
+  { to: "/relationships", label: "People to Know", icon: Network, hint: "Builders & designers" },
+  { to: "/intelligence", label: "Projects to Watch", icon: Radar, hint: "Early signs" },
+  { to: "/review-queue", label: "Needs a Look", icon: FileText, hint: "Drafts awaiting review" },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Preferences" },
 ];
 
 const QUICK_FILTERS = [
-  { to: "/opportunities?priority_band=A", label: "Show Band A opportunities" },
-  { to: "/opportunities?status=Ready", label: "Show Ready-to-contact" },
-  { to: "/opportunities?daily_mission=Call%20Today", label: "Show Call-Today missions" },
-  { to: "/opportunities?status=Estimate%20sent", label: "Show Estimates sent" },
-  { to: "/opportunities?status=Needs%20research", label: "Show Needs-research" },
+  { to: "/opportunities?priority_band=A", label: "Show high-priority projects" },
+  { to: "/opportunities?status=Ready", label: "Show ready-to-contact" },
+  { to: "/opportunities?daily_mission=Call%20Today", label: "Show call-today follow-ups" },
+  { to: "/opportunities?status=Estimate%20sent", label: "Show estimates sent" },
+  { to: "/opportunities?status=Needs%20research", label: "Show get-more-info-first" },
 ];
 
 export const CommandPalette = ({ open, onOpenChange }) => {
@@ -86,14 +87,14 @@ export const CommandPalette = ({ open, onOpenChange }) => {
       <CommandInput
         value={q}
         onValueChange={setQ}
-        placeholder="Search opportunities, addresses, permits, or jump to a page…"
+        placeholder="Search projects, addresses, or jump to a page…"
         data-testid="palette-input"
       />
       <CommandList data-testid="palette-list">
         <CommandEmpty>No matches found.</CommandEmpty>
 
         {filtered.length > 0 && (
-          <CommandGroup heading="Opportunities">
+          <CommandGroup heading="Projects">
             {filtered.map((o) => (
               <CommandItem
                 key={o.id}
@@ -102,14 +103,14 @@ export const CommandPalette = ({ open, onOpenChange }) => {
                 data-testid={`palette-opp-${o.id}`}
               >
                 <div className="flex items-center gap-3 w-full">
-                  <div className="mono text-[10px] text-neutral-500 min-w-[36px] tabular-nums">
+                  <div className="font-display text-[13px] text-[var(--bh-ink)] min-w-[36px] tabular-nums font-medium">
                     {o.priority_score ?? "—"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="truncate text-sm text-neutral-100">
+                    <div className="truncate text-[14px] text-[var(--bh-ink)] tracking-tight">
                       {o.name}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-neutral-500">
+                    <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-[var(--bh-ink-mute)]">
                       {o.project_address && (
                         <span className="inline-flex items-center gap-1 truncate">
                           <MapPin size={10} /> {o.project_address}
@@ -117,11 +118,11 @@ export const CommandPalette = ({ open, onOpenChange }) => {
                       )}
                     </div>
                   </div>
-                  <div className="mono text-[10px] text-neutral-500 uppercase tracking-widest whitespace-nowrap">
+                  <div className="bh-eyebrow whitespace-nowrap">
                     {sourceLabel(o.source)}
                   </div>
-                  <div className="font-display text-sm text-neutral-200 whitespace-nowrap">
-                    {fmtMoney(o.estimated_value)}
+                  <div className="font-display text-[14px] text-[var(--bh-ink)] whitespace-nowrap tabular-nums">
+                    {moneyDisplay(o) || "—"}
                   </div>
                 </div>
               </CommandItem>
@@ -139,8 +140,8 @@ export const CommandPalette = ({ open, onOpenChange }) => {
               onSelect={() => go(f.to)}
               data-testid={`palette-filter-${f.label}`}
             >
-              <FileText size={13} className="text-amber-400 mr-2" />
-              <span className="text-sm">{f.label}</span>
+              <FileText size={13} className="text-[var(--bh-brass)] mr-2" />
+              <span className="text-[14px] text-[var(--bh-ink-2)]">{f.label}</span>
             </CommandItem>
           ))}
         </CommandGroup>
@@ -155,9 +156,9 @@ export const CommandPalette = ({ open, onOpenChange }) => {
               onSelect={() => go(p.to)}
               data-testid={`palette-page-${p.label}`}
             >
-              <p.icon size={13} className="text-neutral-400 mr-2" />
-              <span className="text-sm flex-1">{p.label}</span>
-              <span className="mono text-[10px] text-neutral-500 uppercase tracking-widest">
+              <p.icon size={13} className="text-[var(--bh-ink-mute)] mr-2" />
+              <span className="text-[14px] text-[var(--bh-ink-2)] flex-1">{p.label}</span>
+              <span className="bh-eyebrow">
                 {p.hint}
               </span>
             </CommandItem>

@@ -1,0 +1,23 @@
+{
+  "summary": "Strict 17-governed-field bucket enforcement verified end-to-end. Backend: 13/13 pytest tests pass — /api/opportunities returns exactly 15 records, every record contains all 17 governed KEYS (values may be null), bucket distribution is exactly 3 Ready to Contact / 4 Contacted / 8 All Projects. opp_005 has contact_readiness=='Paused' + current_queue=='All Projects'. opp_001/002/004 are Ready+Ready. opp_008/009/011/015 are Contacted+Contacted. opp_003 and opp_012 stay in All Projects despite phone/email + high priority_score (no legacy fallback). Ready ordering by governed_priority_score DESC is opp_004(96) → opp_001(94) → opp_002(88). Frontend: three section testids render with correct counts (3/4/8). All Ready/Contacted rows have the correct draft button testids. All Projects section contains ZERO outreach controls. opp_005 shows 'Paused' as its Reason chip (sourced strictly from contact_readiness, not the 'Paused by operator' contact_state string). Clicking open-email-draft-opp_001 and open-followup-draft-opp_008 triggered CDP-observed navigations to mailto: URLs and produced zero POST/PATCH requests to /api/opportunities. No console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_governed_buckets.py",
+    "/app/test_reports/pytest/governed_buckets_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "queue.js: strict-string matching is correctly enforced (READY/CONTACTED constants, no toLowerCase/fuzzy match). notReadyReason() reads contact_readiness only — no fallback to operator_activity or contact_state. Good.",
+    "opportunity_service.py: GOVERNED_KEYS tuple + setdefault(k, None) guarantees DTO key stability without inventing values. Good.",
+    "CommandCenter.jsx: AllProjectsRow renders no draft buttons; ReadyRow/ContactedRow gate on allowedAction() which itself gates on queueBucket(). Good.",
+    "Minor (not blocking): allowedAction() uses regex /@/.test on email — fine for gating draft visibility; not a governed-state override."
+  ],
+  "updated_files": ["/app/backend/tests/test_governed_buckets.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None — used the 15 SAMPLE_OPPORTUNITIES fixture as-is (Airtable disabled by design in preview).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/test_governed_buckets.py exercises all governed-bucket invariants (17 keys, 3/4/8 distribution, per-id current_queue+contact_readiness pairs, no-legacy-fallback for opp_003/opp_012, Ready ordering by governed_priority_score). Frontend flow verified via CDP Page.frameRequestedNavigation to capture mailto: URLs (Location.prototype.href is not configurable in Chromium so JS setter patching won't work — use CDP). No Airtable writes were attempted.",
+  "rca of the issue": "N/A — no issues found; the 'inferred-Paused' regression from iteration 7 (using operator_activity or contact_state) is no longer present. opp_005 correctly displays 'Paused' from contact_readiness verbatim."
+}
