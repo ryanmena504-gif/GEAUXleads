@@ -2,11 +2,12 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
-  Home,
-  FileText,
-  Sliders,
-  Bug,
-  Building2,
+  LayoutDashboard,
+  Crosshair,
+  Target,
+  Network,
+  Radar,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import BloodhoundLogo from "@/components/BloodhoundLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
