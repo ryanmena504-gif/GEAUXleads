@@ -6,7 +6,7 @@ import MissionBadge from "@/components/MissionBadge";
 import LaneBadge from "@/components/LaneBadge";
 import ContactBadge from "@/components/ContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
-import { moneyDisplay, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel, fmtMoneyOrStatus } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
 
 /**

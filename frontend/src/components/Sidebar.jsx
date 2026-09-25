@@ -17,7 +17,7 @@ import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 // triage), Debug (governance sanity check — one row per record showing
 // every governed field), Settings.
 const nav = [
-  { to: "/", label: "Command Center", icon: LayoutDashboard, code: "CC" },
+  { to: "/", label: "Home", icon: LayoutDashboard, code: "CC" },
   { to: "/opportunities", label: "Opportunities", icon: Crosshair, code: "OP" },
   { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
   { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },

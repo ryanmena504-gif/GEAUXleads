@@ -12,7 +12,7 @@ import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
 import { api } from "@/lib/api";
-import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, moneyDisplay, sourceLabel } from "@/lib/formatters";
+import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
 import { queueBucket, outreachAllowed } from "@/lib/queue";
 import {
