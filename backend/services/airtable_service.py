@@ -152,6 +152,14 @@ LIVE_FIELDS: Dict[str, str] = {
     "Portfolio Size": "portfolio_size",
     "Last Turnover Check": "last_turnover_check",
 
+    # Daily review agent — flags leads where the reviewer found new info
+    # since the last enhancement. Written by the Make daily-review scenario,
+    # read by GET /api/digest/fresh-intel, cleared when the user re-runs
+    # the portfolio check.
+    "New info flag": "flag_new_info",
+    "New info summary": "new_info_summary",
+    "New info date": "new_info_date",
+
     # Funnel checkboxes (drive derived Status)
     "Verified opportunity": "flag_verified",
     "Qualified opportunity": "flag_qualified",

@@ -1579,6 +1579,34 @@ def _make_webhook(name: str) -> Optional[str]:
     return url or None
 
 
+@api_router.get("/digest/fresh-intel")
+async def fresh_intel(limit: int = 20):
+    """Leads the daily review agent flagged with new info since last enhancement.
+
+    The Make daily-review scenario sets the flag + summary + date on the
+    record; this endpoint surfaces them newest-first for the Fresh Intel
+    section. The flag is cleared when the user re-runs the portfolio check.
+    """
+    svc = get_opportunity_service()
+    items = [
+        o for o in svc.list()
+        if o.get("flag_new_info") and o.get("status") not in ("dead", "do_not_contact")
+    ]
+    items.sort(key=lambda o: str(o.get("new_info_date") or ""), reverse=True)
+    out = []
+    for o in items[: max(1, min(limit, 50))]:
+        out.append({
+            "id": o.get("id"),
+            "name": o.get("name"),
+            "company": o.get("company"),
+            "lane": o.get("lane"),
+            "status": o.get("status"),
+            "new_info_summary": o.get("new_info_summary"),
+            "new_info_date": o.get("new_info_date"),
+        })
+    return {"items": out, "count": len(out)}
+
+
 @api_router.post("/opportunities/{opp_id}/portfolio-check")
 async def trigger_portfolio_check(opp_id: str):
     webhook = _make_webhook("PORTFOLIO_CHECK_WEBHOOK")
@@ -1630,6 +1658,18 @@ async def trigger_portfolio_check(opp_id: str):
         )
     except Exception:  # noqa: BLE001
         logger.exception("audit record failed — continuing anyway")
+
+    # Clear any daily-review "new info" flag — the user just acted on it, so
+    # the lead drops out of the Fresh Intel digest. Best effort: never fail
+    # the trigger because the flag clear failed.
+    try:
+        svc.update_fields(opp_id, {
+            "flag_new_info": False,
+            "new_info_summary": "",
+            "new_info_date": "",
+        })
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to clear new-info flag — continuing anyway")
 
     return {"ok": True, "status": "triggered",
             "message": "Portfolio check running — real web search takes 15-30 seconds."}

@@ -60,6 +60,10 @@ export const api = {
   outreachWrite: (id) =>
     client.post(`/opportunities/${id}/outreach-write`).then((r) => r.data),
 
+  // Fresh Intel digest — leads the daily review agent flagged with new info
+  freshIntel: (limit = 20) =>
+    client.get("/digest/fresh-intel", { params: { limit } }).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),
