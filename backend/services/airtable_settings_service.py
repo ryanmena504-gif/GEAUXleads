@@ -95,6 +95,28 @@ class AirtableSettingsService:
             self._ready = True
             log.info("Airtable settings store ready (table %s)", self._table_name)
 
+    def _token_scope_hint(self) -> str:
+        """Ask Airtable which scopes the configured token actually has right now.
+        Settles 'did the permission save / is this the right token' definitively."""
+        try:
+            r = httpx.get(
+                "https://api.airtable.com/v0/meta/whoami",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=10,
+            )
+            if r.status_code != 200:
+                return ""
+            scopes = (r.json() or {}).get("scopes")
+            if not scopes:
+                return ""
+            return (
+                "This token's live Airtable permissions: "
+                + ", ".join(sorted(scopes))
+                + ". "
+            )
+        except Exception:  # noqa: BLE001
+            return ""
+
     def _create_table(self, existing_names: list) -> str:
         seen = ", ".join(existing_names) if existing_names else "none visible"
         hint = (
@@ -126,8 +148,11 @@ class AirtableSettingsService:
         if r.status_code == 403:
             raise AirtableSettingsError(
                 f"The Airtable token cannot create the '{self._table_name}' table "
-                f"(403 — needs schema.bases:write). Create it manually in Airtable "
-                f"with fields 'Key' (single line text) and 'Value' (long text). {hint}"
+                f"(403 — needs schema.bases:write). {self._token_scope_hint()}"
+                f"If the scope was just added, it may need a minute to take effect, "
+                f"or it may have been added to a different token than the one the app uses. "
+                f"Alternative: create the table manually in Airtable with fields 'Key' "
+                f"(single line text) and 'Value' (long text). {hint}"
             )
         if r.status_code >= 300:
             raise AirtableSettingsError(
