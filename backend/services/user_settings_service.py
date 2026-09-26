@@ -88,36 +88,44 @@ class UserSettingsService:
             settings["email_provider"] = "apple"
         return settings
 
+def validate_patch(patch: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    """Whitelist + validate a settings patch. Shared by every settings backend.
+    Returns the cleaned {key: string-or-None} map. Raises ValueError on bad input."""
+    clean: Dict[str, Optional[str]] = {}
+    for k, v in (patch or {}).items():
+        if k not in EDITABLE_KEYS:
+            continue
+        if v is None:
+            clean[k] = None
+            continue
+        s = str(v).strip()
+        if k == "sender_email":
+            # Cheap guard — a real email has an @ and a dot. Anything else
+            # is either an accidental keystroke or an attack vector.
+            if s and ("@" not in s or "." not in s.split("@")[-1]):
+                raise ValueError("sender_email must look like an email address")
+        if k == "email_provider":
+            low = s.lower()
+            if low and low not in ALLOWED_EMAIL_PROVIDERS:
+                raise ValueError(
+                    f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
+                )
+            s = low
+        if k == "daily_outreach_target":
+            try:
+                n = int(s)
+            except (TypeError, ValueError):
+                raise ValueError("daily_outreach_target must be a whole number")
+            if not 1 <= n <= 50:
+                raise ValueError("daily_outreach_target must be between 1 and 50")
+            s = str(n)
+        clean[k] = s or None
+    return clean
+
+
+class UserSettingsService:
     async def update(self, patch: Dict[str, Any]) -> Dict[str, Any]:
-        clean: Dict[str, Any] = {}
-        for k, v in (patch or {}).items():
-            if k not in EDITABLE_KEYS:
-                continue
-            if v is None:
-                clean[k] = None
-                continue
-            s = str(v).strip()
-            if k == "sender_email":
-                # Cheap guard — a real email has an @ and a dot. Anything else
-                # is either an accidental keystroke or an attack vector.
-                if s and ("@" not in s or "." not in s.split("@")[-1]):
-                    raise ValueError("sender_email must look like an email address")
-            if k == "email_provider":
-                low = s.lower()
-                if low and low not in ALLOWED_EMAIL_PROVIDERS:
-                    raise ValueError(
-                        f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
-                    )
-                s = low
-            if k == "daily_outreach_target":
-                try:
-                    n = int(s)
-                except (TypeError, ValueError):
-                    raise ValueError("daily_outreach_target must be a whole number")
-                if not 1 <= n <= 50:
-                    raise ValueError("daily_outreach_target must be between 1 and 50")
-                s = str(n)
-            clean[k] = s or None
+        clean = validate_patch(patch)
         if not clean:
             return await self.get()
         clean["updated_at"] = _now()
@@ -129,17 +137,37 @@ class UserSettingsService:
         return await self.get()
 
 
-_singleton: Optional[UserSettingsService] = None
+_singleton: Optional[Any] = None
 
 
-def get_user_settings_service() -> Optional[UserSettingsService]:
+def get_user_settings_service() -> Optional[Any]:
+    """Return the active settings store.
+
+    Prefers Airtable — the app's primary store, already proven reachable —
+    so there is no dependency on MongoDB Atlas. Falls back to Mongo when
+    Airtable is not configured, else None (defaults only).
+    """
     global _singleton
     if _singleton is not None:
         return _singleton
+    if (
+        os.environ.get("AIRTABLE_ENABLED", "").lower() == "true"
+        and os.environ.get("AIRTABLE_API_KEY")
+        and os.environ.get("AIRTABLE_BASE_ID")
+    ):
+        from services.airtable_settings_service import AirtableSettingsService
+
+        table = os.environ.get("AIRTABLE_SETTINGS_TABLE", "App Settings")
+        _singleton = AirtableSettingsService(
+            os.environ["AIRTABLE_API_KEY"], os.environ["AIRTABLE_BASE_ID"], table
+        )
+        log.info("User settings service: using Airtable-backed store")
+        return _singleton
     mongo_url = os.environ.get("MONGO_URL")
     db_name = os.environ.get("DB_NAME")
-    if not (mongo_url and db_name):
-        log.warning("User settings service: MONGO_URL/DB_NAME missing — using defaults only")
-        return None
-    _singleton = UserSettingsService(mongo_url, db_name)
-    return _singleton
+    if mongo_url and db_name:
+        _singleton = UserSettingsService(mongo_url, db_name)
+        log.info("User settings service: using MongoDB-backed store")
+        return _singleton
+    log.warning("User settings service: no store available — using defaults only")
+    return None

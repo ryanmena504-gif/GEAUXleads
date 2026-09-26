@@ -22,6 +22,7 @@ from services.user_settings_service import (
     _daily_target,
     DEFAULTS as USER_SETTINGS_DEFAULTS,
 )
+from services.airtable_settings_service import AirtableSettingsError
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1500,7 +1501,13 @@ async def get_user_settings():
     svc = get_user_settings_service()
     if not svc:
         return {"settings": dict(USER_SETTINGS_DEFAULTS), "persisted": False}
-    return {"settings": await svc.get(), "persisted": True}
+    try:
+        settings = await svc.get()
+    except Exception:  # noqa: BLE001
+        logger.exception("user settings read failed — returning defaults")
+        return {"settings": dict(USER_SETTINGS_DEFAULTS), "persisted": False}
+    persisted = getattr(svc, "store_available", True)
+    return {"settings": settings, "persisted": persisted}
 
 
 @api_router.patch("/settings/user")
@@ -1512,6 +1519,8 @@ async def update_user_settings(patch: UserSettingsPatch):
         settings = await svc.update(patch.model_dump(exclude_unset=True))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except AirtableSettingsError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"settings": settings, "persisted": True}
 
 
