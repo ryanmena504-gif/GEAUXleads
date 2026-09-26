@@ -1,13 +1,13 @@
 {
-  "name": "Bloodhound",
-  "short_name": "Bloodhound",
-  "description": "Owner-operated project book for The Shirtless Handyman",
+  "name": "GEAUXleads",
+  "short_name": "GEAUXleads",
+  "description": "Louisiana opportunity intelligence for The Shirtless Handyman",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#1c1915",
-  "theme_color": "#1c1915",
+  "background_color": "#F5F0EB",
+  "theme_color": "#FAF7F2",
   "icons": [
     {
       "src": "/icon-192.png",

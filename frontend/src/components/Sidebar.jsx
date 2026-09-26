@@ -7,9 +7,10 @@ import {
   Target,
   Network,
   Radar,
+  Building2,
   Settings as SettingsIcon,
 } from "lucide-react";
-import BloodhoundLogo from "@/components/BloodhoundLogo";
+import GeauxLogo from "@/components/GeauxLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
 
 // Sidebar shows ONLY the governed operating structure: Home (the 3-queue
@@ -22,6 +23,7 @@ const nav = [
   { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
   { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },
   { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN", preview: true },
+  { to: "/discovery/property-managers", label: "Discovery", icon: Building2, code: "DI" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, code: "SE" },
 ];
 
@@ -33,7 +35,7 @@ export const Sidebar = () => {
       style={{ background: "var(--bh-surface)" }}
     >
       <div className="px-6 pt-7 pb-5 border-b bh-hairline">
-        <BloodhoundLogo />
+        <GeauxLogo />
       </div>
 
       <nav className="flex-1 px-3 py-6 space-y-0.5">

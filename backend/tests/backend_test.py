@@ -1,4 +1,4 @@
-"""Bloodhound Intelligence API tests."""
+"""GEAUXleads Intelligence API tests."""
 import os
 import pytest
 import requests

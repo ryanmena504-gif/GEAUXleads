@@ -16,6 +16,17 @@ from datetime import datetime, timezone
 from services.audit import get_audit_log
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import OutreachBlocked, get_leads_service, reset_leads_service
+from services.airtable_service import AirtableWriteError
+from services.slack_service import get_slack_alerter, is_configured as slack_is_configured
+from services.playbook_service import get_playbook_service
+from services.draft_service import get_draft_service, REVIEW_STATUSES
+from services.handoff_service import get_handoff_service
+from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
+from services.webhook_service import (
+    init_webhook_manager,
+    shutdown_webhook_manager,
+    get_webhook_manager,
+)
 
 
 ROOT_DIR = Path(__file__).parent
@@ -42,7 +53,7 @@ async def lifespan(_app: FastAPI):
         pass
 
 
-app = FastAPI(title="Bloodhound Intelligence API", lifespan=lifespan)
+app = FastAPI(title="GEAUXleads Intelligence API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO,
@@ -79,7 +90,7 @@ class ResultUpdate(BaseModel):
 
 @api_router.get("/")
 async def root():
-    return {"service": "Bloodhound Intelligence API", "status": "online"}
+    return {"service": "GEAUXleads Intelligence API", "status": "online"}
 
 
 @api_router.get("/health")
@@ -99,6 +110,7 @@ async def list_opportunities(
     q: Optional[str] = None,
     lane: Optional[str] = None,
     sort: Optional[str] = "lead_score",
+    view: Optional[str] = None,
 ):
     svc = get_opportunity_service()
     return svc.list(
@@ -111,6 +123,7 @@ async def list_opportunities(
         q=q,
         lane=lane,
         sort=sort,
+        view=view,
     )
 
 
@@ -334,6 +347,12 @@ async def config():
         # Reason the Airtable init failed (401, missing table, etc.) — null
         # when Airtable is live or was never attempted.
         "airtable_init_error": get_last_init_error(),
+        # Airtable identifiers used only to construct DEEPLINKS in the UI
+        # (e.g. "Open in Airtable" jump-links from locked-outreach notices).
+        # Not secrets — base + table IDs are visible to any authenticated
+        # Airtable user on the base. API key stays server-side.
+        "airtable_base_id": os.environ.get("AIRTABLE_BASE_ID") or None,
+        "airtable_leads_table_id": os.environ.get("AIRTABLE_LEADS_TABLE_ID") or None,
     }
 
 
@@ -360,7 +379,7 @@ async def cache_refresh():
 # ---------- Leads / Next Best Action ----------
 
 class LeadAction(BaseModel):
-    action: str  # approve | revert_approval | hold | skip | do_not_contact
+    action: str  # approve | revert_approval | hold | release_hold | skip | do_not_contact
     confirm: Optional[bool] = False
     # Supplied by the client so a double-click or a retried request approves
     # once. Derived server-side (action + lead + UTC day) when omitted.
@@ -469,6 +488,10 @@ async def leads_action(lead_id: str, body: LeadAction):
         return svc.revert_approval(lead_id, actor=body.actor, reason=body.reason)
     if action == "hold":
         return svc.hold(lead_id, actor=body.actor)
+    if action == "release_hold":
+        if (svc.get(lead_id) or {}).get("hunt_status") != "Paused":
+            raise HTTPException(status_code=409, detail="Lead is not on hold (Hunt status is not Paused)")
+        return svc.release_hold(lead_id, actor=body.actor)
     if action == "skip":
         return svc.skip(lead_id, actor=body.actor)
     if action == "do_not_contact":
@@ -1198,7 +1221,7 @@ async def landlord_portfolio(opp_id: str):
 # Discovery — Property Manager Discovery Queue
 # ----------------------------------------------------------------------------
 # The Airtable base has a separate "Property Manager Discovery Queue" table
-# (owned by Claude + Make). Bloodhound is a strictly-read viewer of this
+# (owned by Claude + Make). GEAUXleads is a strictly-read viewer of this
 # table. Ryan uses the Discovery UI to triage "Worth a look" candidates and
 # do native call/website handoff — any promote-to-Leads write happens on the
 # Airtable side (Claude owns that flow).
@@ -1345,20 +1368,40 @@ async def morning_brief_preview():
     return await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
 
 
-async def _deliver_morning_brief() -> Dict[str, Any]:
+async def _deliver_morning_brief(force: bool = False) -> Dict[str, Any]:
     """Compose + send the brief. Isolated so both the cron worker and the
     on-demand /send-now endpoint can call it. Never raises — logs and
     returns a status dict instead so a transient failure doesn't crash
-    the cron worker or the manual test button."""
+    the cron worker or the manual test button.
+
+    The cron fires hourly (America/Chicago); this function no-ops unless
+    the current Chicago hour matches settings.brief_hour and delivery is
+    enabled. `force=True` bypasses those checks — used by the manual
+    Settings "Send now" button so Ryan can test-fire outside his window.
+    """
     from services.morning_brief_service import compose_brief, render_brief_html
     from services.email_service import send_outreach_email, EmailSendError
 
     osvc = get_opportunity_service()
     hsvc = get_handoff_service()
     usvc = get_user_settings_service()
-    brief = await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
 
     settings = await usvc.get() if usvc else USER_SETTINGS_DEFAULTS
+    if not force:
+        if not settings.get("brief_enabled", True):
+            return {"sent": False, "reason": "brief disabled in settings"}
+        # America/Chicago local hour gate. Zoneinfo is stdlib; a bad env or
+        # missing tzdata falls back to UTC hour so we never crash the cron.
+        try:
+            from zoneinfo import ZoneInfo
+            now_local = datetime.now(ZoneInfo("America/Chicago"))
+        except Exception:
+            now_local = datetime.now(timezone.utc)
+        want_hour = int(settings.get("brief_hour", 7))
+        if now_local.hour != want_hour:
+            return {"sent": False, "reason": f"hour {now_local.hour} != brief_hour {want_hour}"}
+
+    brief = await compose_brief(opportunity_service=osvc, handoff_service=hsvc)
     recipient = (settings.get("sender_email") or "").strip()
     if not recipient:
         return {"sent": False, "reason": "no recipient in user_settings"}
@@ -1387,7 +1430,9 @@ async def morning_brief_send_now(authorization: Optional[str] = Header(None)):
     """
     if not _bearer_matches(authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return await _deliver_morning_brief()
+    # Manual test-fire bypasses the hour gate so Ryan can preview delivery
+    # regardless of what time it is.
+    return await _deliver_morning_brief(force=True)
 
 
 def _bearer_matches(auth_header: Optional[str]) -> bool:
@@ -1512,6 +1557,315 @@ async def update_user_settings(patch: UserSettingsPatch):
 app.include_router(api_router)
 
 
+# ─── Twilio Lookup (Number Intelligence) ─────────────────────────────────
+# Read-only. Never sends messages. Feature-flagged: when
+# TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are absent, the routes return
+# 503 cleanly and the frontend hides the enrichment card.
+from services.twilio_lookup_service import (
+    lookup_async as _twilio_lookup_async,
+    TwilioLookupError as _TwilioLookupError,
+    get_twilio_lookup_service as _get_twilio_lookup_service,
+    twilio_lookup_config_error as _twilio_lookup_config_error,
+)
+
+
+@app.get("/api/lookup/twilio/status")
+async def twilio_lookup_status():
+    """Report whether Twilio Lookup is configured, without leaking creds."""
+    svc = _get_twilio_lookup_service()
+    return {
+        "enabled": svc is not None,
+        "error": _twilio_lookup_config_error() if svc is None else None,
+    }
+
+
+@app.get("/api/lookup/twilio/{number}")
+async def twilio_lookup(number: str):
+    try:
+        return await _twilio_lookup_async(number)
+    except _TwilioLookupError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+# ─── Auto-fill Contact — write email/phone onto a Real Estate Agent row.
+# The ONLY write route GEAUXleads has into any Discovery table. Never
+# touches governed fields (Outreach Gate, Contact Enrichment Status,
+# etc.) — Claude/Make still own those. Cache is invalidated on success
+# so the next agent-list fetch reflects the new contact immediately.
+class AgentEnrichRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@app.post("/api/discovery/real-estate-agents/{record_id}/enrich")
+async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
+    from services.discovery_service import enrich_real_estate_agent, MissingAirtableColumn
+    try:
+        return await asyncio.to_thread(
+            enrich_real_estate_agent,
+            record_id,
+            req.email,
+            req.phone,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except MissingAirtableColumn as e:
+        # Never auto-create the column — report it so the schema owner fixes it.
+        raise HTTPException(status_code=409, detail=str(e))
+    except RuntimeError as e:
+        msg = str(e)
+        # Any other Airtable-side failure.
+        raise HTTPException(status_code=502, detail=msg[:280])
+
+
+# ─── Local archive + CSV export + telemetry ─────────────────────────────
+from services import local_state_service as _local_state
+from services import csv_export_service as _csv_export
+from fastapi.responses import Response
+
+
+_ARCHIVE_UNAVAILABLE = ("Archive is unavailable: this server has no MongoDB connection "
+                        "(MONGO_URL / DB_NAME not set).")
+
+
+class LocalArchiveRequest(BaseModel):
+    record_ids: List[str]
+
+
+@app.get("/api/local-state/{feed}/archived")
+async def get_archived(feed: str):
+    # Without MongoDB nothing can be archived, so nothing is hidden.
+    if not _local_state.is_configured():
+        return {"feed": feed, "archived_ids": [], "available": False}
+    try:
+        ids = await _local_state.list_archived(feed)
+        return {"feed": feed, "archived_ids": ids}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/local-state/{feed}/archive")
+async def archive_local(feed: str, req: LocalArchiveRequest):
+    if not _local_state.is_configured():
+        raise HTTPException(status_code=503, detail=_ARCHIVE_UNAVAILABLE)
+    try:
+        n = await _local_state.archive_many(feed, req.record_ids)
+        return {"feed": feed, "archived": n}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/local-state/{feed}/unarchive")
+async def unarchive_local(feed: str, req: LocalArchiveRequest):
+    if not _local_state.is_configured():
+        raise HTTPException(status_code=503, detail=_ARCHIVE_UNAVAILABLE)
+    try:
+        n = await _local_state.unarchive_many(feed, req.record_ids)
+        return {"feed": feed, "unarchived": n}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class TelemetryEvent(BaseModel):
+    event: str
+    payload: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/telemetry/event")
+async def telemetry_event(evt: TelemetryEvent):
+    if os.environ.get("BLOODHOUND_TELEMETRY_ENABLED", "").lower() != "true":
+        return {"stored": False}
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        c = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]["bloodhound_events"]
+        await c.insert_one({
+            "event": evt.event[:80],
+            "payload": evt.payload or {},
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"stored": True}
+    except Exception:
+        return {"stored": False}
+
+
+def _csv_response(feed: str, rows):
+    body = _csv_export.build_csv(feed, rows)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_csv_export.filename_for(feed)}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/exports/opportunities.csv")
+async def export_opportunities_csv(
+    source: Optional[str] = None,
+    status: Optional[str] = None,
+    priority_band: Optional[str] = None,
+    daily_mission: Optional[str] = None,
+    project_type: Optional[str] = None,
+    min_score: Optional[float] = None,
+    q: Optional[str] = None,
+    lane: Optional[str] = None,
+    sort: Optional[str] = "lead_score",
+    view: Optional[str] = None,
+):
+    """Export the CURRENTLY-FILTERED opportunities view. Accepts the same
+    query params as GET /api/opportunities so the CSV always matches what
+    the operator sees on-screen."""
+    svc = get_opportunity_service()
+    rows = svc.list(
+        source=source, status=status, priority_band=priority_band,
+        daily_mission=daily_mission, project_type=project_type,
+        min_score=min_score, q=q, lane=lane, sort=sort, view=view,
+    ) if svc else []
+    return _csv_response("leads", rows)
+
+
+@app.get("/api/exports/discovery/{feed}.csv")
+async def export_discovery_csv(feed: str):
+    from services.discovery_service import (
+        list_property_managers, list_real_estate_agents,
+        list_landlords, list_investors,
+    )
+    mapping = {
+        "property-managers": ("property_managers", list_property_managers),
+        "real-estate-agents": ("re_agents", list_real_estate_agents),
+        "landlords": ("landlords", list_landlords),
+        "investors": ("investors", list_investors),
+    }
+    if feed not in mapping:
+        raise HTTPException(status_code=404, detail="unknown feed")
+    key, fn = mapping[feed]
+    result = fn(status="all") if fn.__code__.co_argcount else fn()
+    items = result.get("items", []) if isinstance(result, dict) else (result or [])
+    return _csv_response(key, items)
+
+
+# ─── Portfolio Check proxy ─────────────────────────────────────────────
+# Fire-and-forget POST to the Make.com webhook Claude/Make owns. Real web
+# search runs behind it (~15-30 sec); Make writes results into 12
+# `Portfolio *` fields on the same Airtable record. GEAUXleads polls
+# opportunity data after the fact — no direct reply is expected here.
+# GEAUXleads never crawls or scores; this endpoint is a thin proxy so the
+# webhook URL doesn't get exposed in the browser and CORS is handled
+# server-side.
+# ============================================================================
+import re as _re_portfolio
+import httpx as _httpx_portfolio
+
+_RECORD_ID_RE = _re_portfolio.compile(r"^rec[A-Za-z0-9]{14,}$")
+
+
+@app.post("/api/leads/{record_id}/portfolio-check", status_code=202)
+async def portfolio_check(record_id: str):
+    """Trigger Claude/Make's Portfolio Check webhook for a single lead.
+    Returns 202 immediately — results land in Airtable after ~15-30 sec
+    and the frontend re-fetches the opportunity to display them."""
+    if not _RECORD_ID_RE.match(record_id):
+        raise HTTPException(status_code=400, detail="invalid record_id format")
+    webhook = (os.environ.get("PORTFOLIO_CHECK_WEBHOOK")
+               or os.environ.get("MAKE_PORTFOLIO_CHECK_WEBHOOK", "")).strip()
+    if not webhook:
+        raise HTTPException(status_code=503, detail="portfolio check webhook not configured")
+    try:
+        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook, json={"record_id": record_id})
+            if resp.status_code >= 400:
+                logger.warning("Portfolio webhook returned %s: %s", resp.status_code, resp.text[:200])
+                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
+    except _httpx_portfolio.RequestError as e:
+        logger.error("Portfolio webhook request error: %s", e)
+        raise HTTPException(status_code=502, detail="could not reach portfolio webhook")
+    return {"accepted": True, "record_id": record_id,
+            "hint": "results land in ~15-30 seconds; refetch the opportunity"}
+
+
+# ─── Write Outreach Draft proxy ───────────────────────────────────────────
+# Same shape as Portfolio Check: POST the record id to Claude/Make's
+# Outreach Writer webhook, which writes `Draft Outreach Subject` / `Body`
+# back onto the lead. Nothing is sent — the draft is for Ryan to review.
+@app.post("/api/leads/{record_id}/outreach-draft", status_code=202)
+async def outreach_draft(record_id: str):
+    if not _RECORD_ID_RE.match(record_id):
+        raise HTTPException(status_code=400, detail="invalid record_id format")
+    webhook = os.environ.get("OUTREACH_WRITER_WEBHOOK", "").strip()
+    if not webhook:
+        raise HTTPException(status_code=503, detail="outreach writer webhook not configured")
+    try:
+        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook, json={"record_id": record_id})
+            if resp.status_code >= 400:
+                logger.warning("Outreach writer webhook returned %s: %s", resp.status_code, resp.text[:200])
+                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
+    except _httpx_portfolio.RequestError as e:
+        logger.error("Outreach writer webhook request error: %s", e)
+        raise HTTPException(status_code=502, detail="could not reach outreach writer webhook")
+    return {"accepted": True, "record_id": record_id,
+            "hint": "draft lands in Airtable shortly; refetch the opportunity"}
+
+
+# ─── Draft safety audit ────────────────────────────────────────────────
+# Scans every opportunity for message-shaped fields that would fail the
+# frontend `looksLikeAIPrompt` guard — meaning: if Ryan had tapped
+# Email Now on that record, an unrendered AI prompt or template stub
+# would have flowed into the mailto body. Read-only; touches nothing.
+# ============================================================================
+@app.get("/api/audit/draft-safety")
+async def audit_draft_safety():
+    from services.draft_safety import looks_like_ai_prompt
+    svc = get_opportunity_service()
+    all_ops = svc.all() if (svc and hasattr(svc, "all")) else []
+    # Every Airtable field the composer trusts as part of a mailto: draft.
+    # Body sources — piped straight into the email body:
+    BODY_FIELDS = ("first_message", "first_contact_message", "current_recommendation")
+    # Subject sources — piped into the subject line:
+    SUBJECT_FIELDS = ("first_message_subject",)
+    # Salutation sources — piped into "Hi X," at the top of the body. A bad
+    # value here becomes literally "Hi You are a Claude assistant,".
+    NAME_FIELDS = ("decision_maker", "contact_name")
+    ALL_FIELDS = BODY_FIELDS + SUBJECT_FIELDS + NAME_FIELDS
+    offenders = []
+    reason_counts: Dict[str, int] = {}
+    field_counts: Dict[str, int] = {}
+    for o in all_ops:
+        for field in ALL_FIELDS:
+            val = o.get(field)
+            if not val:
+                continue
+            trip, reason = looks_like_ai_prompt(val)
+            if not trip:
+                continue
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            field_counts[field] = field_counts.get(field, 0) + 1
+            offenders.append({
+                "id": o.get("id"),
+                "name": o.get("name"),
+                "field": field,
+                "reason": reason,
+                "sample": (str(val).strip()[:220]),
+                "current_queue": o.get("current_queue"),
+                "outreach_status": o.get("outreach_status"),
+                "outreach_sent": bool(o.get("flag_outreach_sent") or o.get("outreach_sent")),
+                "message_sent_date": o.get("message_sent_date"),
+            })
+    sent_offenders = [x for x in offenders if x["outreach_sent"]]
+    return {
+        "scanned": len(all_ops),
+        "fields_checked": list(ALL_FIELDS),
+        "offender_count": len(offenders),
+        "reason_counts": reason_counts,
+        "field_counts": field_counts,
+        "sent_with_bad_body_count": len(sent_offenders),
+        "sent_with_bad_body": sent_offenders,
+        "offenders": offenders,
+    }
+
+
+
 # ─── Perplexity research routes ─────────────────────────────────────────
 # Feature-flagged: when PERPLEXITY_API_KEY is not set, /api/research
 # returns 503 cleanly and the frontend hides the research buttons.
@@ -1543,7 +1897,12 @@ async def research_status():
 
 @app.post("/api/research")
 async def create_research(req: ResearchRequest):
-    if req.research_type not in ("decision_maker", "permit_explainer", "landlord_background"):
+    if req.research_type not in (
+        "decision_maker",
+        "permit_explainer",
+        "landlord_background",
+        "re_agent_background",
+    ):
         raise HTTPException(status_code=400, detail="unknown research_type")
 
     # Serve from Mongo cache unless the caller asked for a fresh call.

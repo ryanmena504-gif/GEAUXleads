@@ -112,30 +112,14 @@ def test_hold_removes_from_queue(client):
     assert after["queue"]["on_hold"] >= 1
 
 
-# -------- approve (writes Airtable — one mutation per run) --------
-def test_approve_writes_flags_and_returns_timestamp(client):
-    # Skip past held/skipped leads by refetching current top
+# -------- approve is retired: direct delivery is disabled by design --------
+def test_approve_is_rejected_with_410(client):
     top = _nba(client)["lead"]
     assert top is not None
-    lead_id = top["id"]
-    # If somehow already approved, skip mutation
-    if isinstance(top.get("approval_status"), str) and "approved" in top["approval_status"].lower():
-        pytest.skip("Top lead already approved — nothing to mutate")
-
-    r = client.post(f"{API}/leads/{lead_id}/action",
+    r = client.post(f"{API}/leads/{top['id']}/action",
                     json={"action": "approve"}, timeout=30)
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["state"] == "approved"
-    # ISO timestamp
-    ts = body.get("approved_at", "")
-    assert isinstance(ts, str) and "T" in ts and ts.endswith(("Z", "+00:00")) or "+" in ts
-    # persisted map present
-    assert "persisted" in body
-    assert "Approval status" in body["persisted"]
-    assert "Outreach status" in body["persisted"]
-    assert body["persisted"]["Approval status"] is True, \
-        "Approval status write must succeed against Airtable"
+    assert r.status_code == 410, r.text
+    assert "disabled" in r.json()["detail"].lower()
 
 
 # -------- DNC (requires confirm) --------

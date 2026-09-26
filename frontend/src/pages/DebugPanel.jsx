@@ -141,7 +141,7 @@ const DebugPanel = () => {
         Every governed field on every record
       </h1>
       <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] max-w-3xl">
-        Bloodhound never invents governed values — this panel shows exactly what
+        GEAUXleads never invents governed values — this panel shows exactly what
         Airtable + Make have written. Red cells are unset. If a record has red
         cells in the <strong>Queue</strong>, <strong>Readiness</strong>, or{" "}
         <strong>Score</strong> columns, Make hasn&apos;t finished classifying it yet.
@@ -286,7 +286,7 @@ const DebugPanel = () => {
           <span className="text-[var(--bh-brass)]">*</span> Critical — controls the 3-bucket dashboard
         </span>
         <span>·</span>
-        <span>Governance is owned by Airtable + Make. Bloodhound reads only.</span>
+        <span>Governance is owned by Airtable + Make. GEAUXleads reads only.</span>
       </div>
     </div>
   );

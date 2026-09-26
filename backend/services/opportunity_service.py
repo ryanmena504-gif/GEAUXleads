@@ -129,8 +129,12 @@ class SampleOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None, view=None) -> List[Dict[str, Any]]:
         results = self.all()
+        if view:
+            # Same saved-view predicates as the Airtable backend.
+            from services.airtable_service import _apply_view
+            results = _apply_view(results, view)
         if source:
             results = [o for o in results if o.get("source") == source]
         if status:

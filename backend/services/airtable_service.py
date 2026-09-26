@@ -110,7 +110,12 @@ LIVE_FIELDS: Dict[str, str] = {
     "Why lead matters": "recommendation_reason",
     "Missing information": "missing_information",
     "Risk flags": "risk_flags",
-    "Next action": "next_best_action",
+    # `next_best_action` used to mirror Airtable's "Next action" field, but
+    # Ryan stopped the duplicate write on 2026-02-19 — "Next action" is now
+    # frozen at whatever value it last had. We no longer read that field.
+    # `next_best_action` is derived from `recommended_action` in the DTO
+    # post-processing step below so every downstream consumer keeps working
+    # against fresh data.
     "recommended action": "recommended_action",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
@@ -186,6 +191,37 @@ LIVE_FIELDS: Dict[str, str] = {
     "Project Fit Reason": "project_fit_reason",
     "Last Classified At": "last_classified_at",
     "Classification Version": "classification_version",
+
+    # === Completed Project Proof — Round 1 Slice 1 (2026-02-19) =============
+    # Written by Claude/Make via the "Portfolio Check" enrichment webhook.
+    # Read-only from Bloodhound; no PATCH endpoint may touch these. See
+    # `/app/memory/airtable_schema_round1.md` for the full contract.
+    "Portfolio Found": "portfolio_found",
+    "Portfolio Best Project Title": "portfolio_best_project_title",
+    "Portfolio Best Project URL": "portfolio_best_project_url",
+    "Portfolio Project Type": "portfolio_project_type",
+    "Portfolio Project Status": "portfolio_project_status",
+    "Portfolio Business Role": "portfolio_business_role",
+    "Portfolio Evidence Summary": "portfolio_evidence_summary",
+    "Portfolio Safe Observation": "portfolio_safe_observation",
+    "Portfolio Compliment Line": "portfolio_compliment_line",
+    "Portfolio Partnership Angle": "portfolio_partnership_angle",
+    "Portfolio Check Confidence": "portfolio_check_confidence",
+    "Portfolio Outreach Recommendation": "portfolio_outreach_recommendation",
+    # Added 2026-02-19 after Ryan's Slice 1 fix pass — restores the
+    # "last checked" timestamp, explainability line, and lifecycle
+    # status. Failed runs surface `portfolio_error_reason` in the card.
+    "Portfolio Check Status": "portfolio_check_status",
+    "Portfolio Checked At": "portfolio_checked_at",
+    "Portfolio Evidence Basis": "portfolio_evidence_basis",
+    "Portfolio Why This Was Chosen": "portfolio_why_this_was_chosen",
+    "Portfolio Error Reason": "portfolio_error_reason",
+
+    # Written by Claude/Make's "Write Outreach Draft" agent. Read-only here;
+    # a draft is never sent — Ryan reviews it and sends it himself.
+    "Draft Outreach Subject": "draft_outreach_subject",
+    "Draft Outreach Body": "draft_outreach_body",
+    "Draft Outreach Generated At": "draft_outreach_generated_at",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.
@@ -214,7 +250,6 @@ EXPLICIT_READONLY: set = {
     "Why lead matters",
     "Missing information",
     "Risk flags",
-    "Next action",
     "recommended action",
     "Recommended offer",
     "Outreach angle",
@@ -375,6 +410,69 @@ def sort_opportunities(items: List[Dict[str, Any]], mode: str = "lead_score") ->
     return scored + unscored
 
 
+# ---------------------------------------------------------------------------
+# Saved-view chip filters — strict read of governed fields only. Each view
+# maps to an exact predicate on values Claude/Make already emitted. Nothing
+# is invented, no scoring is recomputed.
+#   hot              → priority_band == "A"
+#   fresh            → freshness == "Current"
+#   stale            → freshness == "Stale"
+#   needs-enrichment → not classified into Ready/Contacted, AND either the
+#                      classifier explicitly says so OR there's no score and
+#                      no reachable channel (mirrors frontend queue.js)
+#   recently-added   → no filter (caller sorts by created_time desc)
+# ---------------------------------------------------------------------------
+_ENRICHMENT_HINTS = (
+    "needs enrichment", "enrichment needed",
+    "needs research", "awaiting enrichment",
+)
+
+
+def _says_needs_enrichment(v: Any) -> bool:
+    if not isinstance(v, str):
+        return False
+    s = v.strip().lower()
+    if not s:
+        return False
+    return any(h in s for h in _ENRICHMENT_HINTS)
+
+
+def _has_channel(o: Dict[str, Any]) -> bool:
+    for k in ("email", "email_alt", "phone", "phone_alt"):
+        v = o.get(k)
+        if isinstance(v, str) and v.strip():
+            return True
+    return False
+
+
+def _apply_view(items: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    v = (view or "").strip().lower()
+    if v == "hot":
+        return [o for o in items if o.get("priority_band") == "A"]
+    if v == "fresh":
+        return [o for o in items if o.get("freshness") == "Current"]
+    if v == "stale":
+        return [o for o in items if o.get("freshness") == "Stale"]
+    if v == "needs-enrichment":
+        out = []
+        for o in items:
+            queue = o.get("current_queue")
+            if queue in ("Ready to Contact", "Contacted"):
+                continue
+            tagged = (
+                _says_needs_enrichment(o.get("contact_readiness"))
+                or _says_needs_enrichment(o.get("enrichment_status"))
+                or _says_needs_enrichment(o.get("ai_status"))
+            )
+            no_score = not isinstance(o.get("governed_priority_score"), (int, float))
+            if tagged or (no_score and not _has_channel(o)):
+                out.append(o)
+        return out
+    if v == "recently-added":
+        return list(items)
+    return items
+
+
 PIPELINE_STATUSES = [
     "New",
     "Needs research",
@@ -523,8 +621,10 @@ def _derive_priority_band(opp: Dict[str, Any]) -> Optional[str]:
 
 
 def _derive_daily_mission(opp: Dict[str, Any]) -> str:
-    # Prefer the recommended action / next best action free text.
-    for source in ("next_best_action", "recommended_action", "recommended_offer",
+    # Prefer the recommended action free text. `next_best_action` is kept
+    # as a fallback for records populated before the 2026-02-19 field-write
+    # switch — Airtable's "Next action" is now frozen and no longer read.
+    for source in ("recommended_action", "next_best_action", "recommended_offer",
                    "outreach_angle"):
         v = opp.get(source)
         if v:
@@ -779,15 +879,18 @@ class AirtableOpportunityService:
         opp["priority_band_raw"] = opp.get("priority_raw")
         opp["priority_band"] = _derive_priority_band(opp)
 
-        # Daily mission — synthesise from Next action + channel hints.
-        opp["daily_mission_raw"] = opp.get("next_best_action")
+        # Daily mission — synthesise from the fresh recommended action.
+        opp["daily_mission_raw"] = opp.get("recommended_action")
         opp["daily_mission"] = _derive_daily_mission(opp)
         opp["daily_mission_code"] = None
 
-        # Recommended action fallback — prefer AI's "recommended action" over
-        # the shorter "Next action", but expose both.
-        if not opp.get("recommended_action"):
-            opp["recommended_action"] = opp.get("next_best_action")
+        # `next_best_action` legacy DTO key — mirror fresh `recommended_action`
+        # so downstream consumers (Slack blocks, Intelligence page, Relationships
+        # page, morning-brief helpers) keep working against fresh data. The
+        # underlying Airtable "Next action" field was deprecated 2026-02-19 —
+        # Ryan stopped its duplicate write and we no longer read it.
+        if not opp.get("next_best_action"):
+            opp["next_best_action"] = opp.get("recommended_action")
         opp["recommended_action_code"] = None
 
         # Dashboard pipeline status — collapse Leads workflow onto the 9 stages.
@@ -1038,7 +1141,7 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None, view=None) -> List[Dict[str, Any]]:
         results = self._all_cached()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -1071,6 +1174,17 @@ class AirtableOpportunityService:
                 ]).lower()
                 return ql in blob
             results = [o for o in results if match(o)]
+        # Saved-view chip filters — strict read of governed fields only.
+        # Each view maps to an exact governed-field predicate. Never invents
+        # data; unclassified records are excluded from every view.
+        if view:
+            results = _apply_view(results, view)
+        # `recently-added` implies a created-time sort regardless of `sort`.
+        if view == "recently-added":
+            results = sorted(results,
+                             key=lambda o: o.get("created_time") or "",
+                             reverse=True)
+            return results
         return sort_opportunities(results, mode=sort or "lead_score")
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:

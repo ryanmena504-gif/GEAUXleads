@@ -17,6 +17,7 @@ import {
 } from "@/lib/queue";
 import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
+import CommandCenterStats from "@/components/CommandCenterStats";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import {
   Mail,
@@ -578,7 +579,7 @@ const ENRICHMENT_STALE_DAYS = 30;
  */
 const buildClaudeNudgePrompt = (opp) => {
   const lines = [
-    "Please enrich this Bloodhound lead — it has been on the table with no score and no reachable channel:",
+    "Please enrich this GEAUXleads lead — it has been on the table with no score and no reachable channel:",
     "",
     `• Name: ${opp.name || "Unnamed record"}`,
   ];
@@ -613,7 +614,7 @@ const EnrichmentRow = ({ opp }) => {
     e.preventDefault();
     e.stopPropagation();
     const prompt = buildClaudeNudgePrompt(opp);
-    const title = `Nudge Claude · ${opp.name || "Bloodhound lead"}`;
+    const title = `Nudge Claude · ${opp.name || "GEAUXleads lead"}`;
     // Prefer the native share sheet on iOS PWA — Ryan can pick Claude,
     // Messages, Notes, etc. Fall back to clipboard everywhere else.
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -784,6 +785,7 @@ const CommandCenter = () => {
         subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
       />
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
+        <CommandCenterStats items={items} />
         <MorningBrief />
         <LearningStrip />
         <SectionShell

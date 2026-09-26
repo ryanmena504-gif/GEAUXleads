@@ -90,6 +90,16 @@ const CheckboxRow = ({ item, checked, onToggle, researchOpen, onToggleResearch }
               {item.neighborhood}
             </span>
           )}
+          {item.portfolio_size != null && item.portfolio_size !== "" && (
+            <span className="text-[var(--bh-ink-3)]" data-testid={`landlord-portfolio-size-${item.id}`}>
+              Portfolio: {item.portfolio_size} {Number(item.portfolio_size) === 1 ? "property" : "properties"}
+            </span>
+          )}
+          {item.turnover_cadence && (
+            <span className="text-[var(--bh-ink-3)]" data-testid={`landlord-turnover-${item.id}`}>
+              · Turnover: {item.turnover_cadence}
+            </span>
+          )}
           {item.license_number && <span>{item.license_number}</span>}
           {item.license_expiration && <span>· expires {item.license_expiration}</span>}
           {item.outreach_status && normalize(item.outreach_status) !== "not contacted" && (
@@ -286,7 +296,7 @@ const DiscoveryLandlords = () => {
       <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] max-w-3xl">
         {state.counts.all || 63} property owners from the New Orleans
         Commercial Short-Term Rental license registry. No phone or email yet
-        — pick a batch and Bloodhound prints them as USPS-ready letters.
+        — pick a batch and GEAUXleads prints them as USPS-ready letters.
         Every letter is a page break, so Cmd+P produces one letter per page.
       </p>
 

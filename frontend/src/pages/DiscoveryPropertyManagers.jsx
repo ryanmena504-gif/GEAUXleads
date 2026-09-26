@@ -19,7 +19,7 @@ import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggl
  * DiscoveryPropertyManagers — triage view for the Property Manager
  * Discovery Queue table.
  *
- * Claude + Make own the Review Status field. Bloodhound is a read-only
+ * Claude + Make own the Review Status field. GEAUXleads is a read-only
  * viewer: I see "Worth a look" candidates and tap to call / visit their
  * website. Promotion to the Leads pipeline happens on the data side.
  *
