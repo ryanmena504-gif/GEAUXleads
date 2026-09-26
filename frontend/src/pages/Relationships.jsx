@@ -5,6 +5,7 @@ import ContactBadge from "@/components/ContactBadge";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
 import { PriorityBand } from "@/components/PriorityBadge";
+import { contactState } from "@/lib/priority";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { outreachAllowed } from "@/lib/queue";
@@ -68,7 +69,10 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
     >
       <div className="flex items-start gap-4">
         <div className="hidden sm:flex w-[110px] shrink-0 flex-col gap-2 pt-0.5">
-          <PriorityBand band={person.priority_band} score={person.priority_score} />
+          {/* A "Not a fit" record gets no priority badge — the two contradict. */}
+          {contactState(person).key !== "not_fit" && (
+            <PriorityBand band={person.priority_band} score={person.priority_score} />
+          )}
           <ContactBadge opportunity={person} />
         </div>
 

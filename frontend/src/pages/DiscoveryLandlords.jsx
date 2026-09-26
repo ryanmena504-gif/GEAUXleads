@@ -90,6 +90,16 @@ const CheckboxRow = ({ item, checked, onToggle, researchOpen, onToggleResearch }
               {item.neighborhood}
             </span>
           )}
+          {item.portfolio_size != null && item.portfolio_size !== "" && (
+            <span className="text-[var(--bh-ink-3)]" data-testid={`landlord-portfolio-size-${item.id}`}>
+              Portfolio: {item.portfolio_size} {Number(item.portfolio_size) === 1 ? "property" : "properties"}
+            </span>
+          )}
+          {item.turnover_cadence && (
+            <span className="text-[var(--bh-ink-3)]" data-testid={`landlord-turnover-${item.id}`}>
+              · Turnover: {item.turnover_cadence}
+            </span>
+          )}
           {item.license_number && <span>{item.license_number}</span>}
           {item.license_expiration && <span>· expires {item.license_expiration}</span>}
           {item.outreach_status && normalize(item.outreach_status) !== "not contacted" && (

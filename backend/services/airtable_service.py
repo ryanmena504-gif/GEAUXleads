@@ -216,6 +216,12 @@ LIVE_FIELDS: Dict[str, str] = {
     "Portfolio Evidence Basis": "portfolio_evidence_basis",
     "Portfolio Why This Was Chosen": "portfolio_why_this_was_chosen",
     "Portfolio Error Reason": "portfolio_error_reason",
+
+    # Written by Claude/Make's "Write Outreach Draft" agent. Read-only here;
+    # a draft is never sent — Ryan reviews it and sends it himself.
+    "Draft Outreach Subject": "draft_outreach_subject",
+    "Draft Outreach Body": "draft_outreach_body",
+    "Draft Outreach Generated At": "draft_outreach_generated_at",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.

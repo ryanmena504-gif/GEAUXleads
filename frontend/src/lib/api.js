@@ -180,6 +180,12 @@ export const api = {
   checkPortfolio: (recordId) =>
     client.post(`/leads/${encodeURIComponent(recordId)}/portfolio-check`).then((r) => r.data),
 
+  // Write Outreach Draft — fires Claude/Make's Outreach Writer webhook for a
+  // single lead. The draft lands in `Draft Outreach Subject` / `Body`; the
+  // caller refetches the opportunity. Nothing is ever sent.
+  writeOutreachDraft: (recordId) =>
+    client.post(`/leads/${encodeURIComponent(recordId)}/outreach-draft`).then((r) => r.data),
+
   // Investor Intelligence — real estate investors / LLC entities tracking
   // multi-property portfolios. GEAUXleads is a read-only viewer.
   discoveryInvestors: (status = "all") =>

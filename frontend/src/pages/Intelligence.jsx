@@ -5,6 +5,7 @@ import LaneBadge from "@/components/LaneBadge";
 import OpenInMessages, { resolveContacts } from "@/components/OpenInMessages";
 import ContactBadge from "@/components/ContactBadge";
 import { PriorityBand } from "@/components/PriorityBadge";
+import { contactState } from "@/lib/priority";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import {
@@ -26,6 +27,9 @@ const SignalRow = ({ s }) => {
   const fit = s.project_type || s.opportunity_fit;
   const contacts = resolveContacts(s);
   const hasPublicContact = !!(contacts.text || contacts.email);
+  // Public signals are watch-only ("not permission to contact"), so the
+  // green "Ready to contact" badge never renders on a signal card.
+  const watchOnlyHidesBadge = contactState(s).key === "ready";
   return (
     <div
       data-testid={`signal-row-${s.id}`}
@@ -34,7 +38,7 @@ const SignalRow = ({ s }) => {
       <div className="flex items-start gap-4">
         <div className="hidden sm:flex flex-col items-start pt-1 w-[110px] shrink-0 gap-2">
           <PriorityBand band={s.priority_band} score={s.priority_score} />
-          <ContactBadge opportunity={s} />
+          {!watchOnlyHidesBadge && <ContactBadge opportunity={s} />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -84,7 +88,7 @@ const SignalRow = ({ s }) => {
             </div>
           )}
           <div className="mt-3 flex items-center gap-2 flex-wrap sm:hidden">
-            <ContactBadge opportunity={s} />
+            {!watchOnlyHidesBadge && <ContactBadge opportunity={s} />}
           </div>
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             {url && (

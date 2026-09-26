@@ -8,6 +8,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import { MISSIONS } from "@/lib/constants";
 import { moneyDisplay } from "@/lib/formatters";
+import { queueBucket } from "@/lib/queue";
 import { CheckCircle2, Clock } from "lucide-react";
 
 const missionCopy = {
@@ -47,11 +48,23 @@ const Missions = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  // Same queue source as Home: a Contacted record only belongs on today's
+  // missions when Home's follow-ups-due list has it; otherwise it was
+  // already reached and there is nothing to do today.
   const load = () =>
-    api
-      .missions()
-      .then((g) => {
-        setGrouped(g);
+    Promise.all([
+      api.missions(),
+      api.dueFollowUps(500).catch(() => ({ items: [] })),
+    ])
+      .then(([g, due]) => {
+        const dueIds = new Set((due?.items || []).map((r) => r.id));
+        const filtered = {};
+        Object.entries(g || {}).forEach(([mission, items]) => {
+          filtered[mission] = (items || []).filter(
+            (o) => queueBucket(o) !== "contacted" || dueIds.has(o.id),
+          );
+        });
+        setGrouped(filtered);
         setLoadError(null);
       })
       .catch(() => setLoadError("Could not reach the intelligence API."))

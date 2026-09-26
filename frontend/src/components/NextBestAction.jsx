@@ -9,12 +9,14 @@ import {
   Loader2,
   RefreshCw,
   Undo2,
+  CheckCircle2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
 import ContactBadge from "@/components/ContactBadge";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
+import EligibilityPanel from "@/components/EligibilityPanel";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 import { priorityLevel, priorityReason } from "@/lib/priority";
 import { outreachAllowed } from "@/lib/queue";

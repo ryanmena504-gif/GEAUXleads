@@ -523,6 +523,8 @@ def list_landlords(status: str = "not_contacted", ids: Optional[List[str]] = Non
             "mailing_address": _pick_first(r, ["mailing_address", "owner_mailing_address", "correspondence_address"]),
             "license_number": _pick_first(r, ["license_number", "license", "str_license"]),
             "license_expiration": _pick_first(r, ["license_expiration", "expiration", "expires"]),
+            "portfolio_size": _pick_first(r, ["portfolio_size", "units", "property_count"]),
+            "turnover_cadence": _pick_first(r, ["turnover_cadence", "turnover"]),
             "outreach_gate": r.get("outreach_gate"),
             "outreach_status": r.get("outreach_status"),
             "source": r.get("source"),

@@ -1771,6 +1771,30 @@ async def portfolio_check(record_id: str):
             "hint": "results land in ~15-30 seconds; refetch the opportunity"}
 
 
+# ─── Write Outreach Draft proxy ───────────────────────────────────────────
+# Same shape as Portfolio Check: POST the record id to Claude/Make's
+# Outreach Writer webhook, which writes `Draft Outreach Subject` / `Body`
+# back onto the lead. Nothing is sent — the draft is for Ryan to review.
+@app.post("/api/leads/{record_id}/outreach-draft", status_code=202)
+async def outreach_draft(record_id: str):
+    if not _RECORD_ID_RE.match(record_id):
+        raise HTTPException(status_code=400, detail="invalid record_id format")
+    webhook = os.environ.get("OUTREACH_WRITER_WEBHOOK", "").strip()
+    if not webhook:
+        raise HTTPException(status_code=503, detail="outreach writer webhook not configured")
+    try:
+        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook, json={"record_id": record_id})
+            if resp.status_code >= 400:
+                logger.warning("Outreach writer webhook returned %s: %s", resp.status_code, resp.text[:200])
+                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
+    except _httpx_portfolio.RequestError as e:
+        logger.error("Outreach writer webhook request error: %s", e)
+        raise HTTPException(status_code=502, detail="could not reach outreach writer webhook")
+    return {"accepted": True, "record_id": record_id,
+            "hint": "draft lands in Airtable shortly; refetch the opportunity"}
+
+
 # ─── Draft safety audit ────────────────────────────────────────────────
 # Scans every opportunity for message-shaped fields that would fail the
 # frontend `looksLikeAIPrompt` guard — meaning: if Ryan had tapped

@@ -15,6 +15,8 @@ import ScoreExplanationCard from "@/components/ScoreExplanationCard";
 import ContactStatusChip from "@/components/ContactStatusChip";
 import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
 import CheckPortfolioButton from "@/components/CheckPortfolioButton";
+import PreviewNotice from "@/components/PreviewNotice";
+import WriteOutreachDraftButton, { OutreachDraftCard } from "@/components/WriteOutreachDraftButton";
 import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -37,6 +39,11 @@ import {
   XCircle,
   Gauge,
   Target,
+  User,
+  Network,
+  Building2,
+  Signal,
+  Hammer,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -492,9 +499,16 @@ const OpportunityDetail = () => {
                 completed work before you write to them. Real web search
                 — one-off, per-record. Nothing sends automatically.
               </div>
-              <CheckPortfolioButton opportunity={opp} onOpportunityUpdated={setOpp} />
+              <div className="flex items-center gap-2 flex-wrap">
+                <CheckPortfolioButton opportunity={opp} onOpportunityUpdated={setOpp} />
+                {/* Draft control → same global gate as every other outreach control. */}
+                {outreachAllowed(opp) !== "none" && (
+                  <WriteOutreachDraftButton opportunity={opp} onOpportunityUpdated={setOpp} />
+                )}
+              </div>
             </section>
             <CompletedProjectProofCard opportunity={opp} />
+            {outreachAllowed(opp) !== "none" && <OutreachDraftCard opportunity={opp} />}
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading
