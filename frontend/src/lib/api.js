@@ -64,6 +64,14 @@ export const api = {
   freshIntel: (limit = 20) =>
     client.get("/digest/fresh-intel", { params: { limit } }).then((r) => r.data),
 
+  // Daily outreach queue — top N ready leads not yet contacted today
+  outreachQueue: (target) =>
+    client.get("/outreach/queue", { params: target ? { target } : {} }).then((r) => r.data),
+
+  // Morning prep — fire outreach writer for queued leads missing a message
+  outreachPrepare: (target) =>
+    client.post("/outreach/prepare", null, { params: target ? { target } : {} }).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

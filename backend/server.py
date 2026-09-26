@@ -17,6 +17,11 @@ from datetime import datetime, timezone
 from services.audit import get_audit_log
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import OutreachBlocked, get_leads_service, reset_leads_service
+from services.user_settings_service import (
+    get_user_settings_service,
+    _daily_target,
+    DEFAULTS as USER_SETTINGS_DEFAULTS,
+)
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1577,6 +1582,146 @@ async def create_research(req: ResearchRequest):
 def _make_webhook(name: str) -> Optional[str]:
     url = (os.environ.get(name) or "").strip()
     return url or None
+
+
+async def _post_make_webhook(label: str, url: str, payload: Dict[str, Any]) -> Optional[str]:
+    """POST a payload to a Make webhook. Returns None on success, else an error string."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+        if r.status_code >= 300:
+            logger.warning("%s webhook non-2xx status=%s", label, r.status_code)
+            return f"{label} webhook returned {r.status_code}"
+    except Exception as e:  # noqa: BLE001
+        logger.exception("%s webhook POST failed", label)
+        return f"{label} trigger failed: {e}"
+    return None
+
+
+async def _resolve_daily_target_async(explicit: Optional[int] = None) -> int:
+    if explicit is not None:
+        try:
+            return max(1, min(50, int(explicit)))
+        except (TypeError, ValueError):
+            pass
+    try:
+        svc = get_user_settings_service()
+        settings = await svc.get() if svc else dict(USER_SETTINGS_DEFAULTS)
+        return _daily_target(settings)
+    except Exception:  # noqa: BLE001
+        return 10
+
+
+def _sent_today(opp: Dict[str, Any], today: str) -> bool:
+    val = (opp.get("message_sent_date") or opp.get("date_contacted") or "")[:10]
+    return bool(val) and val >= today
+
+
+def _outreach_queue(svc, target: int, today: str):
+    """Today's outreach queue: Ready-to-Contact leads not yet contacted today,
+    top `target` by governed priority score. Returns (items, sent_today_count)."""
+    all_opps = svc.list()
+    sent_today = sum(
+        1 for o in all_opps
+        if o.get("current_queue") == "Ready to Contact" and _sent_today(o, today)
+    )
+    candidates = [
+        o for o in all_opps
+        if o.get("current_queue") == "Ready to Contact" and not _sent_today(o, today)
+    ]
+
+    def _score(o):
+        s = o.get("governed_priority_score")
+        return s if isinstance(s, (int, float)) else -1
+
+    candidates.sort(key=lambda o: (_score(o), str(o.get("id") or "")), reverse=True)
+    return candidates[:target], sent_today
+
+
+def _outreach_write_payload(opp: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "decision_maker": opp.get("decision_maker"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_description": opp.get("permit_description"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "evidence_summary": opp.get("evidence_summary"),
+        "outreach_angle": opp.get("outreach_angle"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+
+
+@api_router.get("/outreach/queue")
+async def outreach_queue(target: Optional[int] = None):
+    """Today's outreach queue: top `target` Ready-to-Contact leads not yet
+    contacted today, plus progress counts. Target comes from the query param,
+    else Ryan's persisted daily_outreach_target setting, else 10."""
+    svc = get_opportunity_service()
+    n = await _resolve_daily_target_async(target)
+    today = datetime.now(timezone.utc).date().isoformat()
+    items, sent_today = _outreach_queue(svc, n, today)
+    return {
+        "target": n,
+        "sent_today": sent_today,
+        "remaining": len(items),
+        "items": [
+            {**o, "has_first_message": bool(o.get("first_message") or o.get("first_contact_message"))}
+            for o in items
+        ],
+    }
+
+
+@api_router.post("/outreach/prepare")
+async def outreach_prepare(target: Optional[int] = None):
+    """Morning prep for the daily outreach queue. For each lead in today's
+    queue missing a first message, fires the outreach-writer Make webhook
+    (one tap per record, same as the in-app button). Never sends anything —
+    it only ensures drafts exist before Ryan works the queue."""
+    webhook = _make_webhook("OUTREACH_WRITER_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    n = await _resolve_daily_target_async(target)
+    today = datetime.now(timezone.utc).date().isoformat()
+    items, _ = _outreach_queue(svc, n, today)
+    triggered, already, errors = 0, 0, []
+    for opp in items:
+        if opp.get("first_message") or opp.get("first_contact_message"):
+            already += 1
+            continue
+        err = await _post_make_webhook(
+            "outreach-writer", webhook, _outreach_write_payload(opp)
+        )
+        if err:
+            errors.append({"id": opp.get("id"), "name": opp.get("name"), "error": err})
+        else:
+            triggered += 1
+    try:
+        get_audit_log().record(
+            event="outreach_prepare",
+            record_id="daily",
+            detail=f"Outreach prep: {triggered} writers triggered, {already} already had messages (target {n})",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+    return {
+        "ok": True,
+        "target": n,
+        "queued": len(items),
+        "writers_triggered": triggered,
+        "already_had_message": already,
+        "errors": errors,
+    }
 
 
 @api_router.get("/digest/fresh-intel")

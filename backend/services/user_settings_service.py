@@ -26,6 +26,7 @@ EDITABLE_KEYS = {
     "sender_phone",
     "sender_mailing_address",
     "email_provider",
+    "daily_outreach_target",
 }
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
@@ -42,7 +43,20 @@ DEFAULTS: Dict[str, Any] = {
     "sender_phone": "(504) 264-4919",
     "sender_mailing_address": "",
     "email_provider": "apple",
+    # Daily outreach target — how many leads Ryan wants to contact per day.
+    # Stored as a string because update() normalizes values to strings;
+    # readers parse it with _daily_target().
+    "daily_outreach_target": "10",
 }
+
+
+def _daily_target(settings: Dict[str, Any]) -> int:
+    """Parse the daily outreach target, clamped to 1..50. Never raises."""
+    try:
+        n = int(str(settings.get("daily_outreach_target") or "10").strip())
+    except (TypeError, ValueError):
+        return 10
+    return max(1, min(50, n))
 
 
 def _now() -> str:
@@ -95,6 +109,14 @@ class UserSettingsService:
                         f"email_provider must be one of {sorted(ALLOWED_EMAIL_PROVIDERS)}"
                     )
                 s = low
+            if k == "daily_outreach_target":
+                try:
+                    n = int(s)
+                except (TypeError, ValueError):
+                    raise ValueError("daily_outreach_target must be a whole number")
+                if not 1 <= n <= 50:
+                    raise ValueError("daily_outreach_target must be between 1 and 50")
+                s = str(n)
             clean[k] = s or None
         if not clean:
             return await self.get()
