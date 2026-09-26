@@ -84,14 +84,24 @@ class AirtableSettingsService:
                 None,
             )
             if table is None:
-                table_id = self._create_table()
+                try:
+                    visible = sorted(t.name for t in schema.tables)
+                except Exception:  # noqa: BLE001
+                    visible = []
+                table_id = self._create_table(existing_names=visible)
             else:
                 table_id = table.id
             self._table_id = table_id
             self._ready = True
             log.info("Airtable settings store ready (table %s)", self._table_name)
 
-    def _create_table(self) -> str:
+    def _create_table(self, existing_names: list) -> str:
+        seen = ", ".join(existing_names) if existing_names else "none visible"
+        hint = (
+            f"Tables visible in this base right now: {seen}. "
+            f"If you created it with a different name, rename it to exactly "
+            f"'{self._table_name}' (or set the AIRTABLE_SETTINGS_TABLE variable)."
+        )
         payload = {
             "name": self._table_name,
             "description": "App settings key-value store (managed by the GEAUXleads backend — do not delete).",
@@ -111,19 +121,19 @@ class AirtableSettingsService:
             raise AirtableSettingsError(
                 f"Could not create the '{self._table_name}' table: {e}. "
                 f"Create it manually in Airtable with fields 'Key' (single line text) "
-                f"and 'Value' (long text)."
+                f"and 'Value' (long text). {hint}"
             ) from e
         if r.status_code == 403:
             raise AirtableSettingsError(
                 f"The Airtable token cannot create the '{self._table_name}' table "
                 f"(403 — needs schema.bases:write). Create it manually in Airtable "
-                f"with fields 'Key' (single line text) and 'Value' (long text)."
+                f"with fields 'Key' (single line text) and 'Value' (long text). {hint}"
             )
         if r.status_code >= 300:
             raise AirtableSettingsError(
                 f"Could not create the '{self._table_name}' table "
                 f"(Airtable returned {r.status_code}). Create it manually in Airtable "
-                f"with fields 'Key' (single line text) and 'Value' (long text)."
+                f"with fields 'Key' (single line text) and 'Value' (long text). {hint}"
             )
         return r.json()["id"]
 
