@@ -56,6 +56,10 @@ export const api = {
   portfolioCheck: (id) =>
     client.post(`/opportunities/${id}/portfolio-check`).then((r) => r.data),
 
+  // On-demand outreach writer (Make webhook; returns 503 when not configured)
+  outreachWrite: (id) =>
+    client.post(`/opportunities/${id}/outreach-write`).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

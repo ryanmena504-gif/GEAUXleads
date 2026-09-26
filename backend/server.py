@@ -1635,6 +1635,64 @@ async def trigger_portfolio_check(opp_id: str):
             "message": "Portfolio check running — real web search takes 15-30 seconds."}
 
 
+@api_router.post("/opportunities/{opp_id}/outreach-write")
+async def trigger_outreach_write(opp_id: str):
+    webhook = _make_webhook("OUTREACH_WRITER_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    opp = svc.get(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    payload = {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "decision_maker": opp.get("decision_maker"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_description": opp.get("permit_description"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "evidence_summary": opp.get("evidence_summary"),
+        "outreach_angle": opp.get("outreach_angle"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(webhook, json=payload)
+        if r.status_code >= 300:
+            logger.warning("outreach-writer webhook non-2xx status=%s", r.status_code)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Outreach writer trigger failed (webhook returned {r.status_code})",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("outreach-writer webhook POST failed")
+        raise HTTPException(status_code=502, detail=f"Outreach writer trigger failed: {e}")
+
+    try:
+        get_audit_log().record(
+            event="outreach_write_triggered",
+            record_id=opp_id,
+            detail=f"Outreach writer triggered for {opp.get('name')}",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+
+    return {"ok": True, "status": "triggered",
+            "message": "Outreach writer running — writing your first message."}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

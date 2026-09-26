@@ -12,6 +12,7 @@ import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
+import OutreachWriterButton from "@/components/OutreachWriterButton";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -368,6 +369,7 @@ const OpportunityDetail = () => {
                   return (
                     <>
                       <OpenInMessages opportunity={opp} variant="panel" />
+                      <OutreachWriterButton opp={opp} />
                       <ContactResults opportunity={opp} onSaved={setOpp} />
                     </>
                   );
