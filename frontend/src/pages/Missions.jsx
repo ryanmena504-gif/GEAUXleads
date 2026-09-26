@@ -11,6 +11,9 @@ import { moneyDisplay } from "@/lib/formatters";
 import { queueBucket } from "@/lib/queue";
 import { CheckCircle2, Clock } from "lucide-react";
 
+// Same closed set the backend mission grouping skips.
+const CLOSED = new Set(["Won", "Lost", "Disqualified"]);
+
 const missionCopy = {
   "Call Today":
     "Direct voice conversations still convert best. Warm and short.",
@@ -48,23 +51,43 @@ const Missions = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
-  // Same queue source as Home: a Contacted record only belongs on today's
-  // missions when Home's follow-ups-due list has it; otherwise it was
-  // already reached and there is nothing to do today.
+  // Same data + queue rules as Home. Only two kinds of record belong on
+  // today's missions:
+  //   • Current Queue = "Ready to Contact"
+  //   • Current Queue = "Contacted" AND a follow-up is due — Airtable's
+  //     Next Follow Up is today or earlier, or Home's follow-ups-due list
+  //     (Today's brief) has it.
+  // All Projects, Cold / Needs Enrichment and everything else stay off.
   const load = () =>
     Promise.all([
-      api.missions(),
+      api.listOpportunities(),
       api.dueFollowUps(500).catch(() => ({ items: [] })),
     ])
-      .then(([g, due]) => {
-        const dueIds = new Set((due?.items || []).map((r) => r.id));
-        const filtered = {};
-        Object.entries(g || {}).forEach(([mission, items]) => {
-          filtered[mission] = (items || []).filter(
-            (o) => queueBucket(o) !== "contacted" || dueIds.has(o.id),
-          );
+      .then(([all, due]) => {
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+        const briefDue = new Set(
+          (due?.items || []).map((r) => r.opportunity_id || r.opportunity?.id),
+        );
+        const followUpDue = (o) =>
+          briefDue.has(o.id) ||
+          (!!o.next_follow_up && new Date(o.next_follow_up) <= endOfToday);
+        const groups = Object.fromEntries(MISSIONS.map((m) => [m, []]));
+        (all || []).forEach((o) => {
+          // Closed records and snoozed ones (mission = "Wait") never show.
+          if (CLOSED.has(o.status) || o.daily_mission === "Wait") return;
+          const bucket = queueBucket(o);
+          if (bucket === "ready") {
+            if (groups[o.daily_mission]) groups[o.daily_mission].push(o);
+          } else if (bucket === "contacted" && followUpDue(o)) {
+            // A due follow-up with no mission set still belongs under Follow Up.
+            groups[groups[o.daily_mission] ? o.daily_mission : "Follow Up"].push(o);
+          }
         });
-        setGrouped(filtered);
+        Object.values(groups).forEach((arr) =>
+          arr.sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0)),
+        );
+        setGrouped(groups);
         setLoadError(null);
       })
       .catch(() => setLoadError("Could not reach the intelligence API."))

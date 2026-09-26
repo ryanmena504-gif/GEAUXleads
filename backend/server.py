@@ -16,6 +16,17 @@ from datetime import datetime, timezone
 from services.audit import get_audit_log
 from services.opportunity_service import get_opportunity_service, reset_opportunity_service
 from services.leads_service import OutreachBlocked, get_leads_service, reset_leads_service
+from services.airtable_service import AirtableWriteError
+from services.slack_service import get_slack_alerter, is_configured as slack_is_configured
+from services.playbook_service import get_playbook_service
+from services.draft_service import get_draft_service, REVIEW_STATUSES
+from services.handoff_service import get_handoff_service
+from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
+from services.webhook_service import (
+    init_webhook_manager,
+    shutdown_webhook_manager,
+    get_webhook_manager,
+)
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1588,7 +1599,7 @@ class AgentEnrichRequest(BaseModel):
 
 @app.post("/api/discovery/real-estate-agents/{record_id}/enrich")
 async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
-    from services.discovery_service import enrich_real_estate_agent
+    from services.discovery_service import enrich_real_estate_agent, MissingAirtableColumn
     try:
         return await asyncio.to_thread(
             enrich_real_estate_agent,
@@ -1598,20 +1609,11 @@ async def enrich_agent_contact(record_id: str, req: AgentEnrichRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except MissingAirtableColumn as e:
+        # Never auto-create the column — report it so the schema owner fixes it.
+        raise HTTPException(status_code=409, detail=str(e))
     except RuntimeError as e:
         msg = str(e)
-        # Missing schema.bases:write PAT scope — surface with exact next step.
-        if "schema.bases:write" in msg or "INVALID_PERMISSIONS" in msg:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Airtable rejected the auto-column-create because your "
-                    "Personal Access Token is missing the "
-                    "'schema.bases:write' scope. Update the PAT at "
-                    "https://airtable.com/create/tokens and paste the new "
-                    "value into AIRTABLE_API_KEY. This is a one-time setup."
-                ),
-            )
         # Any other Airtable-side failure.
         raise HTTPException(status_code=502, detail=msg[:280])
 
@@ -1622,12 +1624,19 @@ from services import csv_export_service as _csv_export
 from fastapi.responses import Response
 
 
+_ARCHIVE_UNAVAILABLE = ("Archive is unavailable: this server has no MongoDB connection "
+                        "(MONGO_URL / DB_NAME not set).")
+
+
 class LocalArchiveRequest(BaseModel):
     record_ids: List[str]
 
 
 @app.get("/api/local-state/{feed}/archived")
 async def get_archived(feed: str):
+    # Without MongoDB nothing can be archived, so nothing is hidden.
+    if not _local_state.is_configured():
+        return {"feed": feed, "archived_ids": [], "available": False}
     try:
         ids = await _local_state.list_archived(feed)
         return {"feed": feed, "archived_ids": ids}
@@ -1637,6 +1646,8 @@ async def get_archived(feed: str):
 
 @app.post("/api/local-state/{feed}/archive")
 async def archive_local(feed: str, req: LocalArchiveRequest):
+    if not _local_state.is_configured():
+        raise HTTPException(status_code=503, detail=_ARCHIVE_UNAVAILABLE)
     try:
         n = await _local_state.archive_many(feed, req.record_ids)
         return {"feed": feed, "archived": n}
@@ -1646,6 +1657,8 @@ async def archive_local(feed: str, req: LocalArchiveRequest):
 
 @app.post("/api/local-state/{feed}/unarchive")
 async def unarchive_local(feed: str, req: LocalArchiveRequest):
+    if not _local_state.is_configured():
+        raise HTTPException(status_code=503, detail=_ARCHIVE_UNAVAILABLE)
     try:
         n = await _local_state.unarchive_many(feed, req.record_ids)
         return {"feed": feed, "unarchived": n}

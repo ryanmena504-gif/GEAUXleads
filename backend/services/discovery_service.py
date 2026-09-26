@@ -411,9 +411,13 @@ def real_estate_agent_status_counts() -> Dict[str, int]:
 # governed by Claude/Make. The names below match the exact Airtable
 # columns already present on the table (verified 2026-02-18):
 #   'Public Business Email' and 'Public Business Phone'.
-# The `patch_fields` method has an auto-create safety net if those
-# columns get renamed or dropped — so this stays a one-tap flow no
-# matter what changes on the Airtable side.
+# The app never creates, renames, or deletes Airtable fields. If either
+# column is renamed or dropped, the write fails with a clear
+# "missing column" error; schema changes go through Ryan → lead Claude.
+class MissingAirtableColumn(RuntimeError):
+    """A column the app writes to is missing. Never auto-created."""
+
+
 _RE_AGENT_EMAIL_COL = "Public Business Email"
 _RE_AGENT_PHONE_COL = "Public Business Phone"
 
@@ -438,7 +442,17 @@ def enrich_real_estate_agent(
     if phone:
         updates[_RE_AGENT_PHONE_COL] = phone
 
-    patched = reader.patch_fields(record_id, updates)
+    try:
+        patched = reader.patch_fields(record_id, updates)
+    except RuntimeError as e:
+        if "UNKNOWN_FIELD_NAME" in str(e):
+            raise MissingAirtableColumn(
+                f"The Real Estate Agent Outreach table is missing the "
+                f"'{_RE_AGENT_EMAIL_COL}' or '{_RE_AGENT_PHONE_COL}' column. "
+                "GEAUXleads never creates Airtable fields — ask the lead Claude "
+                "to restore the column, then try again."
+            ) from e
+        raise
 
     # Return a DTO that matches list_real_estate_agents' shape so the
     # frontend can drop it into the row without another round-trip.

@@ -18,6 +18,11 @@ _ALLOWED_FEEDS = frozenset({
     "leads", "property_managers", "re_agents", "landlords", "investors",
 })
 
+def is_configured() -> bool:
+    """True when MongoDB is wired (MONGO_URL + DB_NAME). Archive is off otherwise."""
+    return bool(os.environ.get("MONGO_URL") and os.environ.get("DB_NAME"))
+
+
 def _db():
     global _client
     if _client is None:
