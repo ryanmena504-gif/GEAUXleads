@@ -11,6 +11,7 @@ import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
+import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -502,6 +503,12 @@ const OpportunityDetail = () => {
               <Meter label="Can I reach them?" level={opp.contact_confidence} />
               <Meter label="How solid is the info" level={opp.evidence_confidence} />
             </div>
+            </section>
+
+            {/* Completed project proof — on-demand portfolio check (Make) */}
+            <section className="bh-surface rounded-md p-5">
+              <SectionHeading title="Completed project proof" />
+              <PortfolioCheckPanel opp={opp} />
             </section>
 
             {/* Contact */}

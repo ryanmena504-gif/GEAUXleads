@@ -52,6 +52,10 @@ export const api = {
   researchStatus: () =>
     axios.get(`${BASE}/api/research/status`).then((r) => r.data),
 
+  // On-demand portfolio check (Make webhook; returns 503 when not configured)
+  portfolioCheck: (id) =>
+    client.post(`/opportunities/${id}/portfolio-check`).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

@@ -6,6 +6,7 @@ import os
 import json
 import asyncio
 import hmac
+import httpx
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -1567,6 +1568,71 @@ async def create_research(req: ResearchRequest):
         logger.exception("research cache write failed — returning result anyway")
 
     return result
+
+
+# ─── On-demand agent triggers (Make webhooks) ──────────────────────────────
+# These fire Make.com scenarios for a single record — no backlog, no fees
+# unless Ryan taps the button. The scenario writes results back to Airtable;
+# the backend returns 202 immediately and never blocks on the scenario.
+def _make_webhook(name: str) -> Optional[str]:
+    url = (os.environ.get(name) or "").strip()
+    return url or None
+
+
+@api_router.post("/opportunities/{opp_id}/portfolio-check")
+async def trigger_portfolio_check(opp_id: str):
+    webhook = _make_webhook("PORTFOLIO_CHECK_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Portfolio check is not configured (PORTFOLIO_CHECK_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    opp = svc.get(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    payload = {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "instagram": opp.get("instagram") or opp.get("instagram_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_number": opp.get("permit_number"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(webhook, json=payload)
+        if r.status_code >= 300:
+            logger.warning("portfolio-check webhook non-2xx status=%s", r.status_code)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Portfolio check trigger failed (webhook returned {r.status_code})",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("portfolio-check webhook POST failed")
+        raise HTTPException(status_code=502, detail=f"Portfolio check trigger failed: {e}")
+
+    try:
+        get_audit_log().record(
+            event="portfolio_check_triggered",
+            record_id=opp_id,
+            detail=f"Portfolio check triggered for {opp.get('name')}",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+
+    return {"ok": True, "status": "triggered",
+            "message": "Portfolio check running — real web search takes 15-30 seconds."}
 
 
 app.add_middleware(
