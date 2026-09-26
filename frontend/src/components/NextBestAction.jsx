@@ -286,6 +286,7 @@ export const NextBestAction = () => {
           onClick={() => act("hold")}
           disabled={busy === "hold"}
           data-testid="nba-hold"
+          title="Writes Hunt status = Paused in Airtable. The classifier skips paused records until you release the hold from the record page."
           className="h-11 px-4 rounded border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
         >
           <Pause size={13} /> Save for later

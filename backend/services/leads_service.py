@@ -51,7 +51,11 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Status": "status",
     "Ai summary": "ai_summary",
     "Why lead matters": "why_lead_matters",
-    "Next action": "next_action",
+    # DTO key `next_action` used to map Airtable's "Next action" field, but
+    # that field was deprecated 2026-02-19 — Ryan stopped its duplicate write
+    # and it now goes stale. Reading from "recommended action" keeps every
+    # downstream consumer (leads_service, NextBestAction.jsx) on fresh data.
+    "recommended action": "next_action",
     "First message": "first_message",
     "Approval status": "approval_status",
     "Outreach status": "outreach_status",
@@ -576,6 +580,15 @@ class LeadsAirtableService:
         self._audit.record(action="hold", entity_id=lead_id, outcome="accepted",
                            actor=actor, changes={"Outreach status": "Hold"} if wrote else {})
         return {"lead_id": lead_id, "state": "hold", "persisted": wrote}
+
+    def release_hold(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
+        # Reverses hold(): only touches the Hunt status we set ourselves.
+        self._held.discard(lead_id)
+        wrote = self._safe_update(lead_id, "Hunt status", "Investigating")
+        self._refresh_cache(force=True)
+        self._audit.record(action="release_hold", entity_id=lead_id, outcome="accepted",
+                           actor=actor, changes={"Hunt status": "Investigating"} if wrote else {})
+        return {"lead_id": lead_id, "state": "released", "persisted": wrote}
 
     def skip(self, lead_id: str, actor: Optional[str] = None) -> Dict[str, Any]:
         self._skipped.add(lead_id)

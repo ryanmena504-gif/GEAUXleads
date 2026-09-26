@@ -286,7 +286,7 @@ const DiscoveryLandlords = () => {
       <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] max-w-3xl">
         {state.counts.all || 63} property owners from the New Orleans
         Commercial Short-Term Rental license registry. No phone or email yet
-        — pick a batch and Bloodhound prints them as USPS-ready letters.
+        — pick a batch and GEAUXleads prints them as USPS-ready letters.
         Every letter is a page break, so Cmd+P produces one letter per page.
       </p>
 

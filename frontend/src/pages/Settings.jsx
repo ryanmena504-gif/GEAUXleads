@@ -69,7 +69,7 @@ const SenderIdentitySection = () => {
         <p className="text-[12px] text-neutral-500 leading-relaxed">
           Note: iPhone and Mac Mail always send from whichever account is set
           as default on your device, and text messages always come from your
-          iPhone&rsquo;s own number. Bloodhound cannot pick either one — this
+          iPhone&rsquo;s own number. GEAUXleads cannot pick either one — this
           value just makes sure the right info appears inside the draft
           before you press Send.
         </p>
@@ -254,7 +254,7 @@ const Settings = () => {
                   ? `Connected · reading from base ${schema?.base_id?.slice(0, 8) ?? ""}… / ${schema?.table_name ?? ""}`
                   : cfg?.airtable_configured
                     ? "Credentials present but AIRTABLE_ENABLED is not true"
-                    : "Not activated. Bloodhound is running on sample data."
+                    : "Not activated. GEAUXleads is running on sample data."
               }
               right={<Pill tone={tone} data-testid="airtable-pill">{label}</Pill>}
             />
@@ -281,11 +281,11 @@ const Settings = () => {
 
         <section>
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3">
-            How Bloodhound connects to Airtable
+            How GEAUXleads connects to Airtable
           </div>
           <div className="bh-surface rounded p-5 space-y-3">
             <p className="text-sm text-neutral-400 leading-relaxed">
-              Bloodhound reads opportunities from Airtable through a server-side
+              GEAUXleads reads opportunities from Airtable through a server-side
               data layer — no keys are ever shipped to the browser. To activate
               the live connection, set the following environment variables on
               the backend and click <span className="text-amber-300">Reload service</span>.
@@ -369,7 +369,7 @@ const Settings = () => {
                     ))}
                   </div>
                   <div className="text-xs text-neutral-500 mt-2 leading-relaxed">
-                    These fields exist in Bloodhound&rsquo;s spec but weren&rsquo;t present in your Airtable schema. Add them to the base to enable those UI sections, or ignore.
+                    These fields exist in GEAUXleads&rsquo;s spec but weren&rsquo;t present in your Airtable schema. Add them to the base to enable those UI sections, or ignore.
                   </div>
                 </div>
               )}

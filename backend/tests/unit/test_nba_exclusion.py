@@ -31,7 +31,7 @@ class FakeTable:
 
 BASE = {
     "Leads Name": "Ashby Residence",
-    "Next action": "Call about the Prytania roof permit",
+    "recommended action": "Call about the Prytania roof permit",
     "Status": "New",
     "Outreach status": "Not sent",
 }
