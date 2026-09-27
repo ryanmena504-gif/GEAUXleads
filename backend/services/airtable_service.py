@@ -116,7 +116,7 @@ LIVE_FIELDS: Dict[str, str] = {
     # `next_best_action` is derived from `recommended_action` in the DTO
     # post-processing step below so every downstream consumer keeps working
     # against fresh data.
-    # Ryan-owned overrides — real writable fields (auto-created if missing).
+    # Ryan-owned overrides — real writable fields (never auto-created).
     # Mission Override lets Ryan pin a daily mission per lead; Activity Log
     # is an append-only journal rendered into the activity timeline.
     "Mission Override": "mission_override",
@@ -297,10 +297,9 @@ EXPLICIT_READONLY: set = {
 }
 
 # Only these Airtable field names may ever be written from the app.
-# Ryan-owned fields the backend manages itself. Created automatically in the
-# Leads table when missing (requires the schema.bases:write scope); if
-# auto-creation fails the write paths raise a clear error instead of
-# silently pretending to save.
+# Ryan-owned fields the backend writes. The app never creates, renames, or
+# deletes Airtable fields: if one is missing the write paths raise a clear
+# error instead of silently pretending to save.
 CUSTOM_WRITABLE_FIELDS: Dict[str, str] = {
     "Mission Override": "singleLineText",
     "Activity Log": "multilineText",
@@ -790,7 +789,6 @@ class AirtableOpportunityService:
         self._reverse_map: Dict[str, str] = {}
         self._schema_field_names: List[str] = []
         self._table_id: Optional[str] = None
-        self._fields_ensured: bool = False
         self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
         self._ingestion = ingestion_diagnostics.IngestionRecorder()
         self._load_schema()
@@ -840,44 +838,6 @@ class AirtableOpportunityService:
         except Exception as e:
             log.exception("Airtable: failed to load schema")
             raise
-
-    def _ensure_custom_fields(self) -> None:
-        """Best-effort auto-creation of CUSTOM_WRITABLE_FIELDS.
-
-        Runs at most once per process. After creating fields the schema is
-        reloaded so the new columns are mapped and writable. Failures are
-        logged — callers check field presence and raise a clear error.
-        """
-        with self._lock:
-            if self._fields_ensured:
-                return
-            self._fields_ensured = True
-        missing = [n for n in CUSTOM_WRITABLE_FIELDS if n not in self._schema_field_names]
-        if not missing:
-            return
-        if not self._table_id:
-            log.warning("Airtable: cannot auto-create fields %s — no table id", missing)
-            return
-        try:
-            import requests
-
-            url = (
-                f"https://api.airtable.com/v0/meta/bases/{self._base_id}"
-                f"/tables/{self._table_id}/fields"
-            )
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            for name in missing:
-                r = requests.post(
-                    url,
-                    headers=headers,
-                    json={"name": name, "type": CUSTOM_WRITABLE_FIELDS[name]},
-                    timeout=15,
-                )
-                r.raise_for_status()
-            self._load_schema()
-            log.info("Airtable: auto-created custom fields: %s", ", ".join(missing))
-        except Exception as e:  # noqa: BLE001
-            log.warning("Airtable: could not auto-create fields %s: %s", missing, e)
 
     def schema_report(self) -> Dict[str, Any]:
         return {
@@ -1403,18 +1363,17 @@ class AirtableOpportunityService:
         return self.update_fields(opp_id, {"status": status})
 
     def _require_custom_field(self, snake: str, at_name: str, description: str) -> None:
-        """Ensure a CUSTOM_WRITABLE_FIELDS column exists and is mapped.
+        """Check a CUSTOM_WRITABLE_FIELDS column exists and is mapped.
 
         Raises AirtableWriteError with a human-actionable message when the
-        field is missing and could not be auto-created (e.g. the token lacks
-        schema.bases:write) — the caller must never silently pretend to save.
+        field is missing — the app never creates it, and the caller must
+        never silently pretend to save.
         """
-        self._ensure_custom_fields()
         if snake not in self._reverse_map:
             raise AirtableWriteError(
                 f"The '{at_name}' field ({description}) doesn't exist in the Airtable "
-                f"Leads table and couldn't be created automatically. Add a field named "
-                f"'{at_name}' manually, or grant the API token the schema.bases:write scope.",
+                f"Leads table. GEAUXleads never creates Airtable fields — add a field "
+                f"named '{at_name}' in Airtable, then try again.",
                 status_code=422,
             )
 

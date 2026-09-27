@@ -9,9 +9,9 @@ overridable via AIRTABLE_SETTINGS_TABLE) with one record per key:
     Key   (single line text, primary field) — e.g. "daily_outreach_target"
     Value (long text)                       — the string value
 
-The table is created automatically on first use when the API token has
-schema write scope. If creation is not permitted, the service reports a
-clear error and the settings endpoints fall back to defaults.
+The app never creates this table (or any Airtable field/table). If it is
+missing, reads fall back to defaults and saves fail with a clear error
+telling Ryan to create it in Airtable.
 """
 from __future__ import annotations
 
@@ -20,14 +20,12 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-import httpx
 from pyairtable import Api
 
 from services.user_settings_service import DEFAULTS, validate_patch
 
 log = logging.getLogger("bloodhound.airtable_settings")
 
-META_TABLES_URL = "https://api.airtable.com/v0/meta/bases/{base_id}/tables"
 CACHE_TTL = 60.0
 
 
@@ -88,79 +86,19 @@ class AirtableSettingsService:
                     visible = sorted(t.name for t in schema.tables)
                 except Exception:  # noqa: BLE001
                     visible = []
-                table_id = self._create_table(existing_names=visible)
+                seen = ", ".join(visible) if visible else "none visible"
+                raise AirtableSettingsError(
+                    f"The '{self._table_name}' table doesn't exist in Airtable. "
+                    f"GEAUXleads never creates Airtable tables — create it in Airtable "
+                    f"with fields 'Key' (single line text) and 'Value' (long text), "
+                    f"or set AIRTABLE_SETTINGS_TABLE to an existing table's name. "
+                    f"Tables visible right now: {seen}."
+                )
             else:
                 table_id = table.id
             self._table_id = table_id
             self._ready = True
             log.info("Airtable settings store ready (table %s)", self._table_name)
-
-    def _token_scope_hint(self) -> str:
-        """Ask Airtable which scopes the configured token actually has right now.
-        Settles 'did the permission save / is this the right token' definitively."""
-        try:
-            r = httpx.get(
-                "https://api.airtable.com/v0/meta/whoami",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=10,
-            )
-            if r.status_code != 200:
-                return ""
-            scopes = (r.json() or {}).get("scopes")
-            if not scopes:
-                return ""
-            return (
-                "This token's live Airtable permissions: "
-                + ", ".join(sorted(scopes))
-                + ". "
-            )
-        except Exception:  # noqa: BLE001
-            return ""
-
-    def _create_table(self, existing_names: list) -> str:
-        seen = ", ".join(existing_names) if existing_names else "none visible"
-        hint = (
-            f"Tables visible in this base right now: {seen}. "
-            f"If you created it with a different name, rename it to exactly "
-            f"'{self._table_name}' (or set the AIRTABLE_SETTINGS_TABLE variable)."
-        )
-        payload = {
-            "name": self._table_name,
-            "description": "App settings key-value store (managed by the GEAUXleads backend — do not delete).",
-            "fields": [
-                {"name": "Key", "type": "singleLineText"},
-                {"name": "Value", "type": "multilineText"},
-            ],
-        }
-        try:
-            r = httpx.post(
-                META_TABLES_URL.format(base_id=self._base_id),
-                json=payload,
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=20,
-            )
-        except Exception as e:  # noqa: BLE001
-            raise AirtableSettingsError(
-                f"Could not create the '{self._table_name}' table: {e}. "
-                f"Create it manually in Airtable with fields 'Key' (single line text) "
-                f"and 'Value' (long text). {hint}"
-            ) from e
-        if r.status_code == 403:
-            raise AirtableSettingsError(
-                f"The Airtable token cannot create the '{self._table_name}' table "
-                f"(403 — needs schema.bases:write). {self._token_scope_hint()}"
-                f"If the scope was just added, it may need a minute to take effect, "
-                f"or it may have been added to a different token than the one the app uses. "
-                f"Alternative: create the table manually in Airtable with fields 'Key' "
-                f"(single line text) and 'Value' (long text). {hint}"
-            )
-        if r.status_code >= 300:
-            raise AirtableSettingsError(
-                f"Could not create the '{self._table_name}' table "
-                f"(Airtable returned {r.status_code}). Create it manually in Airtable "
-                f"with fields 'Key' (single line text) and 'Value' (long text). {hint}"
-            )
-        return r.json()["id"]
 
     def _table(self):
         self._ensure_table()
@@ -179,8 +117,10 @@ class AirtableSettingsService:
             return merged
         try:
             records = self._table().all()
-        except AirtableSettingsError:
-            raise
+        except AirtableSettingsError as e:
+            # Missing table: never create it, never crash — use defaults.
+            log.warning("Airtable settings unavailable — returning defaults: %s", e)
+            return merged
         except Exception:  # noqa: BLE001
             log.exception("Airtable settings read failed — returning defaults")
             return merged
