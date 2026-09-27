@@ -111,6 +111,11 @@ LIVE_FIELDS: Dict[str, str] = {
     "Missing information": "missing_information",
     "Risk flags": "risk_flags",
     "Next action": "next_best_action",
+    # Ryan-owned overrides — real writable fields (auto-created if missing).
+    # Mission Override lets Ryan pin a daily mission per lead; Activity Log
+    # is an append-only journal rendered into the activity timeline.
+    "Mission Override": "mission_override",
+    "Activity Log": "activity_log_raw",
     "recommended action": "recommended_action",
     "Recommended offer": "recommended_offer",
     "Outreach angle": "outreach_angle",
@@ -257,6 +262,16 @@ EXPLICIT_READONLY: set = {
 }
 
 # Only these Airtable field names may ever be written from the app.
+# Ryan-owned fields the backend manages itself. Created automatically in the
+# Leads table when missing (requires the schema.bases:write scope); if
+# auto-creation fails the write paths raise a clear error instead of
+# silently pretending to save.
+CUSTOM_WRITABLE_FIELDS: Dict[str, str] = {
+    "Mission Override": "singleLineText",
+    "Activity Log": "multilineText",
+}
+
+
 # The dashboard's Decision Panel sends: status, ryans_decision,
 # next_follow_up, outcome. We project those onto Leads columns:
 #   status         -> Status
@@ -277,6 +292,9 @@ EDITABLE_FIELDS = {
     "Reply classification",
     "Reply summary",
     "Date replied",
+    # Ryan-owned override/journal fields (see LIVE_FIELDS).
+    "Mission Override",
+    "Activity Log",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -296,6 +314,8 @@ WRITE_ALIAS: Dict[str, str] = {
     "reply_classification": "Reply classification",
     "reply_summary": "Reply summary",
     "date_replied": "Date replied",
+    "mission_override": "Mission Override",
+    "activity_log": "Activity Log",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.
@@ -651,6 +671,7 @@ class AirtableOpportunityService:
     backend_name = "airtable"
 
     def __init__(self, api_key: str, base_id: str, table_name: str, cache_ttl: float = 45.0):
+        self._api_key = api_key
         self._api = Api(api_key)
         self._base_id = base_id
         self._table_name = table_name
@@ -668,6 +689,8 @@ class AirtableOpportunityService:
         self._field_map: Dict[str, str] = {}
         self._reverse_map: Dict[str, str] = {}
         self._schema_field_names: List[str] = []
+        self._table_id: Optional[str] = None
+        self._fields_ensured: bool = False
         self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
         self._ingestion = ingestion_diagnostics.IngestionRecorder()
         self._load_schema()
@@ -686,6 +709,7 @@ class AirtableOpportunityService:
                 raise RuntimeError(
                     f"Airtable table '{self._table_name}' not found in base '{self._base_id}'"
                 )
+            self._table_id = table.id
 
             available = {}
             for f in table.fields:
@@ -716,6 +740,44 @@ class AirtableOpportunityService:
         except Exception as e:
             log.exception("Airtable: failed to load schema")
             raise
+
+    def _ensure_custom_fields(self) -> None:
+        """Best-effort auto-creation of CUSTOM_WRITABLE_FIELDS.
+
+        Runs at most once per process. After creating fields the schema is
+        reloaded so the new columns are mapped and writable. Failures are
+        logged — callers check field presence and raise a clear error.
+        """
+        with self._lock:
+            if self._fields_ensured:
+                return
+            self._fields_ensured = True
+        missing = [n for n in CUSTOM_WRITABLE_FIELDS if n not in self._schema_field_names]
+        if not missing:
+            return
+        if not self._table_id:
+            log.warning("Airtable: cannot auto-create fields %s — no table id", missing)
+            return
+        try:
+            import requests
+
+            url = (
+                f"https://api.airtable.com/v0/meta/bases/{self._base_id}"
+                f"/tables/{self._table_id}/fields"
+            )
+            headers = {"Authorization": f"Bearer {self._api_key}"}
+            for name in missing:
+                r = requests.post(
+                    url,
+                    headers=headers,
+                    json={"name": name, "type": CUSTOM_WRITABLE_FIELDS[name]},
+                    timeout=15,
+                )
+                r.raise_for_status()
+            self._load_schema()
+            log.info("Airtable: auto-created custom fields: %s", ", ".join(missing))
+        except Exception as e:  # noqa: BLE001
+            log.warning("Airtable: could not auto-create fields %s: %s", missing, e)
 
     def schema_report(self) -> Dict[str, Any]:
         return {
@@ -787,9 +849,13 @@ class AirtableOpportunityService:
         opp["priority_band_raw"] = opp.get("priority_raw")
         opp["priority_band"] = _derive_priority_band(opp)
 
-        # Daily mission — synthesise from Next action + channel hints.
+        # Daily mission — Ryan's explicit override wins; otherwise synthesise
+        # from Next action + channel hints.
         opp["daily_mission_raw"] = opp.get("next_best_action")
-        opp["daily_mission"] = _derive_daily_mission(opp)
+        _override = (opp.get("mission_override") or "").strip()
+        opp["daily_mission"] = (
+            _normalize_daily_mission(_override) if _override else _derive_daily_mission(opp)
+        )
         opp["daily_mission_code"] = None
 
         # Recommended action fallback — prefer AI's "recommended action" over
@@ -912,6 +978,16 @@ class AirtableOpportunityService:
                 "note": f"Current status: {opp['status']}",
                 "timestamp": opp["last_reviewed"],
             })
+        # Ryan's journal — one "ISO_TIMESTAMP | type | note" entry per line.
+        # Malformed lines are skipped, never fatal.
+        for line in (opp.get("activity_log_raw") or "").splitlines():
+            parts = line.split("|", 2)
+            if len(parts) != 3:
+                continue
+            ts, type_, note = (p.strip() for p in parts)
+            if not ts:
+                continue
+            timeline.append({"type": type_ or "note", "note": note, "timestamp": ts})
         # newest first
         timeline.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
         return timeline
@@ -980,6 +1056,34 @@ class AirtableOpportunityService:
             return
         if last_exc is not None:
             raise last_exc
+
+    def _refresh_one(self, opp_id: str) -> None:
+        """Re-fetch a single record and update just its cache entry.
+
+        Used after writes: one cheap record fetch instead of a full table
+        re-scan. Formulas are recomputed server-side on read, so a single
+        GET still picks up formula changes from the write.
+        """
+        try:
+            record = self._table.get(opp_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Airtable: single-record refresh failed for %s: %s", opp_id, e)
+            return
+        try:
+            dto = self._record_to_opportunity(record)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Airtable: single-record refresh could not project %s: %s", opp_id, exc)
+            return
+        rid = dto.get("id")
+        if not rid:
+            return
+        with self._lock:
+            self._cache[rid] = dto
+            # Keep the duplicate index consistent with the updated record.
+            try:
+                self._duplicate_index = dedupe.annotate(list(self._cache.values()))
+            except Exception:  # noqa: BLE001
+                log.warning("Airtable: dedupe re-annotation failed after single refresh")
 
     def cache_status(self) -> Dict[str, Any]:
         now = time.time()
@@ -1176,37 +1280,51 @@ class AirtableOpportunityService:
                 except Exception:
                     pass
             raise AirtableWriteError(detail, status_code=status) from e
-        # Force cache refresh so subsequent reads pick up formula recomputation.
-        self._refresh_cache(force=True)
+        # Refresh just this record so subsequent reads pick up formula
+        # recomputation — one cheap fetch instead of a full table re-scan.
+        self._refresh_one(opp_id)
         return self.get(opp_id)
 
     def update_status(self, opp_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.update_fields(opp_id, {"status": status})
 
+    def _require_custom_field(self, snake: str, at_name: str, description: str) -> None:
+        """Ensure a CUSTOM_WRITABLE_FIELDS column exists and is mapped.
+
+        Raises AirtableWriteError with a human-actionable message when the
+        field is missing and could not be auto-created (e.g. the token lacks
+        schema.bases:write) — the caller must never silently pretend to save.
+        """
+        self._ensure_custom_fields()
+        if snake not in self._reverse_map:
+            raise AirtableWriteError(
+                f"The '{at_name}' field ({description}) doesn't exist in the Airtable "
+                f"Leads table and couldn't be created automatically. Add a field named "
+                f"'{at_name}' manually, or grant the API token the schema.bases:write scope.",
+                status_code=422,
+            )
+
     def update_mission(self, opp_id: str, mission: str) -> Optional[Dict[str, Any]]:
-        # Daily Mission is a formula field in the base — writes are rejected.
-        # Kept for API compatibility; the value is stored as a request-time
-        # override on the cached record only, never persisted.
-        with self._lock:
-            cached = self._cache.get(opp_id)
-            if cached:
-                cached["daily_mission"] = mission
-                return deepcopy(cached)
-        return self.get(opp_id)
+        # Persisted to the "Mission Override" column — it wins over the
+        # derived mission on read. An empty value clears the override.
+        self._require_custom_field("mission_override", "Mission Override",
+                                   "single-line text")
+        return self.update_fields(opp_id, {"mission_override": mission})
 
     def add_activity(self, opp_id: str, type_: str, note: Optional[str]) -> Optional[Dict[str, Any]]:
-        # No Interactions table yet — record in-memory only so the UI stays live.
-        with self._lock:
-            cached = self._cache.get(opp_id)
-            if not cached:
-                return None
-            timeline = cached.setdefault("activity_timeline", [])
-            timeline.insert(0, {
-                "type": type_,
-                "note": note or "",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            return deepcopy(cached)
+        # Appended to the "Activity Log" long-text column as
+        # "ISO_TIMESTAMP | type | note" and rendered into the timeline on read.
+        self._require_custom_field("activity_log", "Activity Log", "long text")
+        try:
+            record = self._table.get(opp_id)
+            fields = record.get("fields", {}) if isinstance(record, dict) else {}
+            current = (fields.get("Activity Log") or "").strip()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Airtable: could not read Activity Log for %s: %s", opp_id, e)
+            current = ""
+        entry = f"{datetime.now(timezone.utc).isoformat()} | {type_} | {note or ''}"
+        new_log = f"{current}\n{entry}" if current else entry
+        return self.update_fields(opp_id, {"activity_log": new_log})
 
 
 _last_build_error: Optional[str] = None

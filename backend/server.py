@@ -57,6 +57,17 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("bloodhound")
 
 
+async def _bg(fn, /, *args, **kwargs):
+    """Run a blocking (sync) service call in a worker thread.
+
+    The Airtable-backed services are synchronous, but the API layer is async.
+    Calling them directly would stall the event loop on every cache miss or
+    slow Airtable response, freezing all concurrent requests. Routing them
+    through asyncio.to_thread keeps the loop responsive.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 class StatusUpdate(BaseModel):
     status: str
 
@@ -92,7 +103,7 @@ async def root():
 @api_router.get("/health")
 async def health():
     svc = get_opportunity_service()
-    return {"ok": True, "backend": svc.backend_name, "count": svc.count()}
+    return {"ok": True, "backend": svc.backend_name, "count": await _bg(svc.count, )}
 
 
 @api_router.get("/opportunities")
@@ -108,7 +119,7 @@ async def list_opportunities(
     sort: Optional[str] = "lead_score",
 ):
     svc = get_opportunity_service()
-    return svc.list(
+    return await _bg(svc.list, 
         source=source,
         status=status,
         priority_band=priority_band,
@@ -128,7 +139,7 @@ async def lane_breakdown():
     LANES = ("market_capture", "partner", "non_permit")
     LABEL = {"market_capture": "Market Capture", "partner": "Partner Pipeline",
              "non_permit": "Non-Permit Signals"}
-    all_ops = svc.all() if hasattr(svc, "all") else []
+    all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = []
     for lane in LANES:
         rows = [o for o in all_ops if o.get("lane") == lane]
@@ -153,7 +164,7 @@ async def top_by_lane(limit: int = 4):
     from services.airtable_service import sort_opportunities as _sort_ops
     svc = get_opportunity_service()
     LANES = ("market_capture", "partner", "non_permit")
-    all_ops = svc.all() if hasattr(svc, "all") else []
+    all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = {}
     for lane in LANES:
         rows = [o for o in all_ops
@@ -166,31 +177,31 @@ async def top_by_lane(limit: int = 4):
 @api_router.get("/opportunities/summary")
 async def summary():
     svc = get_opportunity_service()
-    return svc.summary()
+    return await _bg(svc.summary, )
 
 
 @api_router.get("/opportunities/missions")
 async def missions_grouped():
     svc = get_opportunity_service()
-    return svc.group_by_mission()
+    return await _bg(svc.group_by_mission, )
 
 
 @api_router.get("/opportunities/pipeline")
 async def pipeline():
     svc = get_opportunity_service()
-    return svc.pipeline_counts()
+    return await _bg(svc.pipeline_counts, )
 
 
 @api_router.get("/opportunities/recent")
 async def recent(limit: int = 10):
     svc = get_opportunity_service()
-    return svc.recent(limit=limit)
+    return await _bg(svc.recent, limit=limit)
 
 
 @api_router.get("/opportunities/top")
 async def top(limit: int = 10):
     svc = get_opportunity_service()
-    return svc.top(limit=limit)
+    return await _bg(svc.top, limit=limit)
 
 
 @api_router.get("/opportunities/duplicates")
@@ -202,13 +213,13 @@ async def opportunity_duplicates():
     svc = get_opportunity_service()
     if not hasattr(svc, "duplicates_report"):
         return {"backend": svc.backend_name, "duplicate_groups": 0, "groups": []}
-    return svc.duplicates_report()
+    return await _bg(svc.duplicates_report, )
 
 
 @api_router.get("/opportunities/{opp_id}")
 async def get_opportunity(opp_id: str):
     svc = get_opportunity_service()
-    opp = svc.get(opp_id)
+    opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return opp
@@ -217,7 +228,7 @@ async def get_opportunity(opp_id: str):
 @api_router.patch("/opportunities/{opp_id}/status")
 async def update_status(opp_id: str, body: StatusUpdate):
     svc = get_opportunity_service()
-    updated = svc.update_status(opp_id, body.status)
+    updated = await _bg(svc.update_status, opp_id, body.status)
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -226,7 +237,10 @@ async def update_status(opp_id: str, body: StatusUpdate):
 @api_router.patch("/opportunities/{opp_id}/mission")
 async def update_mission(opp_id: str, body: MissionUpdate):
     svc = get_opportunity_service()
-    updated = svc.update_mission(opp_id, body.daily_mission)
+    try:
+        updated = await _bg(svc.update_mission, opp_id, body.daily_mission)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -235,7 +249,10 @@ async def update_mission(opp_id: str, body: MissionUpdate):
 @api_router.post("/opportunities/{opp_id}/activity")
 async def add_activity(opp_id: str, body: ActivityEntry):
     svc = get_opportunity_service()
-    updated = svc.add_activity(opp_id, body.type, body.note)
+    try:
+        updated = await _bg(svc.add_activity, opp_id, body.type, body.note)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -248,22 +265,22 @@ async def update_fields(opp_id: str, body: FieldUpdate):
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         # Silent-ignore: nothing to write, just return current DTO.
-        current = svc.get(opp_id)
+        current = await _bg(svc.get, opp_id)
         if not current:
             raise HTTPException(status_code=404, detail="Opportunity not found")
         return current
     if hasattr(svc, "update_fields"):
         try:
-            updated = svc.update_fields(opp_id, payload)
+            updated = await _bg(svc.update_fields, opp_id, payload)
         except AirtableWriteError as e:
             raise HTTPException(status_code=e.status_code, detail=str(e))
     else:
         # Sample backend: apply supported keys one-by-one
-        updated = svc.get(opp_id)
+        updated = await _bg(svc.get, opp_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Opportunity not found")
         if "status" in payload:
-            updated = svc.update_status(opp_id, payload["status"])
+            updated = await _bg(svc.update_status, opp_id, payload["status"])
         for k in ("ryans_decision", "next_follow_up", "outcome"):
             if k in payload and updated is not None:
                 updated[k] = payload[k]
@@ -318,7 +335,7 @@ async def record_result(opp_id: str, body: ResultUpdate):
 
     svc = get_opportunity_service()
     try:
-        updated = svc.update_fields(opp_id, updates) if hasattr(svc, "update_fields") else None
+        updated = await _bg(svc.update_fields, opp_id, updates) if hasattr(svc, "update_fields") else None
     except AirtableWriteError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
@@ -348,20 +365,20 @@ async def config():
 async def schema():
     svc = get_opportunity_service()
     if hasattr(svc, "schema_report"):
-        return svc.schema_report()
+        return await _bg(svc.schema_report, )
     return {"backend": svc.backend_name, "note": "No schema — running on sample data."}
 
 
 @api_router.get("/cache-status")
 async def cache_status():
     svc = get_opportunity_service()
-    return svc.cache_status()
+    return await _bg(svc.cache_status, )
 
 
 @api_router.post("/cache-refresh")
 async def cache_refresh():
     svc = get_opportunity_service()
-    return svc.force_refresh()
+    return await _bg(svc.force_refresh, )
 
 
 # ---------- Leads / Next Best Action ----------
@@ -414,20 +431,20 @@ async def leads_next_best_action():
             "queue": None,
             "note": "Leads service not available — set AIRTABLE_ENABLED=true and ensure the Leads table exists.",
         }
-    lead = svc.pick_next_best_action()
+    lead = await _bg(svc.pick_next_best_action, )
     if not lead:
         return {
             "lead": None,
-            "queue": svc.queue_stats(),
+            "queue": await _bg(svc.queue_stats, ),
             "note": "No qualified leads remaining in the queue.",
         }
-    return {"lead": lead, "queue": svc.queue_stats()}
+    return {"lead": lead, "queue": await _bg(svc.queue_stats, )}
 
 
 @api_router.get("/leads/duplicates")
 async def leads_duplicates():
     svc = _require_leads_service()
-    return svc.duplicates_report()
+    return await _bg(svc.duplicates_report, )
 
 
 @api_router.get("/leads/{lead_id}/eligibility")
@@ -435,7 +452,7 @@ async def leads_eligibility(lead_id: str):
     """Read-only policy verdict. The UI uses this to disable and explain the
     approve control; the server re-evaluates on write regardless."""
     svc = _require_leads_service()
-    result = svc.eligibility_for_id(lead_id)
+    result = await _bg(svc.eligibility_for_id, lead_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     return result.to_dict()
@@ -446,7 +463,7 @@ async def leads_readiness(lead_id: str):
     """Missing fields and risk derived from live field values. Any AI-generated
     prose is returned under `advisory_*` keys and never drives eligibility."""
     svc = _require_leads_service()
-    report = svc.readiness(lead_id)
+    report = await _bg(svc.readiness, lead_id)
     if report is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     return report
@@ -455,7 +472,7 @@ async def leads_readiness(lead_id: str):
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
     svc = _require_leads_service()
-    if svc.get(lead_id) is None:
+    if await _bg(svc.get, lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     action = (body.action or "").lower()
     if action == "approve":
@@ -466,30 +483,30 @@ async def leads_action(lead_id: str, body: LeadAction):
                        "acknowledge the recipient and any warnings.",
             )
         try:
-            return svc.approve(lead_id,
+            return await _bg(svc.approve, lead_id,
                                idempotency_key=body.idempotency_key,
                                actor=body.actor,
                                acknowledged_warnings=body.acknowledged_warnings)
         except OutreachBlocked as exc:
             return _blocked_response(exc)
     if action == "revert_approval":
-        return svc.revert_approval(lead_id, actor=body.actor, reason=body.reason)
+        return await _bg(svc.revert_approval, lead_id, actor=body.actor, reason=body.reason)
     if action == "hold":
-        return svc.hold(lead_id, actor=body.actor)
+        return await _bg(svc.hold, lead_id, actor=body.actor)
     if action == "skip":
-        return svc.skip(lead_id, actor=body.actor)
+        return await _bg(svc.skip, lead_id, actor=body.actor)
     if action == "do_not_contact":
         if not body.confirm:
             raise HTTPException(status_code=400,
                                 detail="Confirmation required for Do Not Contact")
-        return svc.do_not_contact(lead_id, actor=body.actor)
+        return await _bg(svc.do_not_contact, lead_id, actor=body.actor)
     raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
 
 
 @api_router.patch("/leads/{lead_id}/message")
 async def leads_update_message(lead_id: str, body: LeadMessageUpdate):
     svc = _require_leads_service()
-    updated = svc.update_message(lead_id, body.message, actor=body.actor)
+    updated = await _bg(svc.update_message, lead_id, body.message, actor=body.actor)
     if not updated:
         raise HTTPException(status_code=404, detail="Message update failed")
     return updated
@@ -517,7 +534,7 @@ async def ingestion_diagnostics_report():
             "backend": svc.backend_name,
             "note": "Ingestion diagnostics require the live Airtable backend.",
         }
-    return svc.ingestion_report()
+    return await _bg(svc.ingestion_report, )
 
 
 @api_router.post("/admin/reload")
@@ -577,7 +594,7 @@ async def _handle_ping_background():
         alerter = get_slack_alerter()
         if alerter and slack_is_configured():
             opps_svc = get_opportunity_service()
-            band_a = [o for o in opps_svc.all() if o.get("priority_band") == "A"]
+            band_a = [o for o in await _bg(opps_svc.all, ) if o.get("priority_band") == "A"]
             if band_a:
                 await alerter.evaluate_and_alert(band_a)
     except Exception:
@@ -708,7 +725,7 @@ async def list_message_playbooks():
     svc = get_playbook_service()
     if not svc:
         return {"available": False, "playbooks": []}
-    playbooks = svc.list()
+    playbooks = await _bg(svc.list, )
     safe = [
         {
             "id": p.get("id"),
@@ -745,7 +762,7 @@ async def update_message_playbook(playbook_id: str, payload: PlaybookUpdate):
     if not patch:
         raise HTTPException(status_code=422, detail="No editable fields provided")
     try:
-        updated = svc.update(playbook_id, patch)
+        updated = await _bg(svc.update, playbook_id, patch)
     except Exception:
         raise HTTPException(status_code=502, detail="Airtable update failed")
     if not updated:
@@ -956,7 +973,7 @@ async def follow_ups_due(limit: int = 20):
         return {"available": True, "items": []}
 
     # Index all opportunities so we can join without an N+1 pattern.
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     by_id = {o.get("id"): o for o in all_ops if o.get("id")}
 
     ACTIVE_CLOSED = {"Won", "Lost", "Disqualified"}
@@ -1057,7 +1074,7 @@ async def find_by_phone(number: str):
     tail = query[-10:]  # normalize to last 10 digits (drops +1 country code)
 
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
 
     matches = []
     for o in all_ops:
@@ -1109,7 +1126,7 @@ async def landlord_portfolio(opp_id: str):
         return n or None
 
     osvc = get_opportunity_service()
-    current = osvc.get(opp_id) if hasattr(osvc, "get") else None
+    current = await _bg(osvc.get, opp_id) if hasattr(osvc, "get") else None
     if not current:
         raise HTTPException(status_code=404, detail=f"No opportunity {opp_id}")
 
@@ -1148,7 +1165,7 @@ async def landlord_portfolio(opp_id: str):
             return "name"
         return None
 
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     siblings: List[Dict[str, Any]] = []
     match_key: Optional[str] = None
     for o in all_ops:
@@ -1333,7 +1350,7 @@ async def discovery_investors(status: str = "all"):
 async def learning_insights(limit: int = 3):
     from services.learning_service import compute_insights
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     return compute_insights(all_ops, limit=max(1, min(limit, 10)))
 
 
@@ -1423,7 +1440,7 @@ async def cron_morning_brief(
 async def monthly_kpis():
     from datetime import datetime, timezone as _tz
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
 
     now = datetime.now(_tz.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -1627,10 +1644,10 @@ def _sent_today(opp: Dict[str, Any], today: str) -> bool:
     return bool(val) and val >= today
 
 
-def _outreach_queue(svc, target: int, today: str):
+async def _outreach_queue(svc, target: int, today: str):
     """Today's outreach queue: Ready-to-Contact leads not yet contacted today,
     top `target` by governed priority score. Returns (items, sent_today_count)."""
-    all_opps = svc.list()
+    all_opps = await _bg(svc.list)
     sent_today = sum(
         1 for o in all_opps
         if o.get("current_queue") == "Ready to Contact" and _sent_today(o, today)
@@ -1676,7 +1693,7 @@ async def outreach_queue(target: Optional[int] = None):
     svc = get_opportunity_service()
     n = await _resolve_daily_target_async(target)
     today = datetime.now(timezone.utc).date().isoformat()
-    items, sent_today = _outreach_queue(svc, n, today)
+    items, sent_today = await _outreach_queue(svc, n, today)
     return {
         "target": n,
         "sent_today": sent_today,
@@ -1703,7 +1720,7 @@ async def outreach_prepare(target: Optional[int] = None):
     svc = get_opportunity_service()
     n = await _resolve_daily_target_async(target)
     today = datetime.now(timezone.utc).date().isoformat()
-    items, _ = _outreach_queue(svc, n, today)
+    items, _ = await _outreach_queue(svc, n, today)
     triggered, already, errors = 0, 0, []
     for opp in items:
         if opp.get("first_message") or opp.get("first_contact_message"):
@@ -1744,7 +1761,7 @@ async def fresh_intel(limit: int = 20):
     """
     svc = get_opportunity_service()
     items = [
-        o for o in svc.list()
+        o for o in await _bg(svc.list, )
         if o.get("flag_new_info") and o.get("status") not in ("dead", "do_not_contact")
     ]
     items.sort(key=lambda o: str(o.get("new_info_date") or ""), reverse=True)
@@ -1771,7 +1788,7 @@ async def trigger_portfolio_check(opp_id: str):
             detail="Portfolio check is not configured (PORTFOLIO_CHECK_WEBHOOK missing)",
         )
     svc = get_opportunity_service()
-    opp = svc.get(opp_id)
+    opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
@@ -1818,7 +1835,7 @@ async def trigger_portfolio_check(opp_id: str):
     # the lead drops out of the Fresh Intel digest. Best effort: never fail
     # the trigger because the flag clear failed.
     try:
-        svc.update_fields(opp_id, {
+        await _bg(svc.update_fields, opp_id, {
             "flag_new_info": False,
             "new_info_summary": "",
             "new_info_date": "",
@@ -1839,7 +1856,7 @@ async def trigger_outreach_write(opp_id: str):
             detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
         )
     svc = get_opportunity_service()
-    opp = svc.get(opp_id)
+    opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
