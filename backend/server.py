@@ -6,6 +6,7 @@ import os
 import json
 import asyncio
 import hmac
+import httpx
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,7 +22,12 @@ from services.slack_service import get_slack_alerter, is_configured as slack_is_
 from services.playbook_service import get_playbook_service
 from services.draft_service import get_draft_service, REVIEW_STATUSES
 from services.handoff_service import get_handoff_service
-from services.user_settings_service import get_user_settings_service, DEFAULTS as USER_SETTINGS_DEFAULTS
+from services.user_settings_service import (
+    get_user_settings_service,
+    _daily_target,
+    DEFAULTS as USER_SETTINGS_DEFAULTS,
+)
+from services.airtable_settings_service import AirtableSettingsError
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -61,6 +67,17 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("bloodhound")
 
 
+async def _bg(fn, /, *args, **kwargs):
+    """Run a blocking (sync) service call in a worker thread.
+
+    The Airtable-backed services are synchronous, but the API layer is async.
+    Calling them directly would stall the event loop on every cache miss or
+    slow Airtable response, freezing all concurrent requests. Routing them
+    through asyncio.to_thread keeps the loop responsive.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 class StatusUpdate(BaseModel):
     status: str
 
@@ -96,7 +113,7 @@ async def root():
 @api_router.get("/health")
 async def health():
     svc = get_opportunity_service()
-    return {"ok": True, "backend": svc.backend_name, "count": svc.count()}
+    return {"ok": True, "backend": svc.backend_name, "count": await _bg(svc.count, )}
 
 
 @api_router.get("/opportunities")
@@ -113,7 +130,7 @@ async def list_opportunities(
     view: Optional[str] = None,
 ):
     svc = get_opportunity_service()
-    return svc.list(
+    return await _bg(svc.list, 
         source=source,
         status=status,
         priority_band=priority_band,
@@ -134,7 +151,7 @@ async def lane_breakdown():
     LANES = ("market_capture", "partner", "non_permit")
     LABEL = {"market_capture": "Market Capture", "partner": "Partner Pipeline",
              "non_permit": "Non-Permit Signals"}
-    all_ops = svc.all() if hasattr(svc, "all") else []
+    all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = []
     for lane in LANES:
         rows = [o for o in all_ops if o.get("lane") == lane]
@@ -159,7 +176,7 @@ async def top_by_lane(limit: int = 4):
     from services.airtable_service import sort_opportunities as _sort_ops
     svc = get_opportunity_service()
     LANES = ("market_capture", "partner", "non_permit")
-    all_ops = svc.all() if hasattr(svc, "all") else []
+    all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = {}
     for lane in LANES:
         rows = [o for o in all_ops
@@ -172,31 +189,31 @@ async def top_by_lane(limit: int = 4):
 @api_router.get("/opportunities/summary")
 async def summary():
     svc = get_opportunity_service()
-    return svc.summary()
+    return await _bg(svc.summary, )
 
 
 @api_router.get("/opportunities/missions")
 async def missions_grouped():
     svc = get_opportunity_service()
-    return svc.group_by_mission()
+    return await _bg(svc.group_by_mission, )
 
 
 @api_router.get("/opportunities/pipeline")
 async def pipeline():
     svc = get_opportunity_service()
-    return svc.pipeline_counts()
+    return await _bg(svc.pipeline_counts, )
 
 
 @api_router.get("/opportunities/recent")
 async def recent(limit: int = 10):
     svc = get_opportunity_service()
-    return svc.recent(limit=limit)
+    return await _bg(svc.recent, limit=limit)
 
 
 @api_router.get("/opportunities/top")
 async def top(limit: int = 10):
     svc = get_opportunity_service()
-    return svc.top(limit=limit)
+    return await _bg(svc.top, limit=limit)
 
 
 @api_router.get("/opportunities/duplicates")
@@ -208,13 +225,13 @@ async def opportunity_duplicates():
     svc = get_opportunity_service()
     if not hasattr(svc, "duplicates_report"):
         return {"backend": svc.backend_name, "duplicate_groups": 0, "groups": []}
-    return svc.duplicates_report()
+    return await _bg(svc.duplicates_report, )
 
 
 @api_router.get("/opportunities/{opp_id}")
 async def get_opportunity(opp_id: str):
     svc = get_opportunity_service()
-    opp = svc.get(opp_id)
+    opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return opp
@@ -223,7 +240,7 @@ async def get_opportunity(opp_id: str):
 @api_router.patch("/opportunities/{opp_id}/status")
 async def update_status(opp_id: str, body: StatusUpdate):
     svc = get_opportunity_service()
-    updated = svc.update_status(opp_id, body.status)
+    updated = await _bg(svc.update_status, opp_id, body.status)
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -232,7 +249,10 @@ async def update_status(opp_id: str, body: StatusUpdate):
 @api_router.patch("/opportunities/{opp_id}/mission")
 async def update_mission(opp_id: str, body: MissionUpdate):
     svc = get_opportunity_service()
-    updated = svc.update_mission(opp_id, body.daily_mission)
+    try:
+        updated = await _bg(svc.update_mission, opp_id, body.daily_mission)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -241,7 +261,10 @@ async def update_mission(opp_id: str, body: MissionUpdate):
 @api_router.post("/opportunities/{opp_id}/activity")
 async def add_activity(opp_id: str, body: ActivityEntry):
     svc = get_opportunity_service()
-    updated = svc.add_activity(opp_id, body.type, body.note)
+    try:
+        updated = await _bg(svc.add_activity, opp_id, body.type, body.note)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return updated
@@ -254,22 +277,22 @@ async def update_fields(opp_id: str, body: FieldUpdate):
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         # Silent-ignore: nothing to write, just return current DTO.
-        current = svc.get(opp_id)
+        current = await _bg(svc.get, opp_id)
         if not current:
             raise HTTPException(status_code=404, detail="Opportunity not found")
         return current
     if hasattr(svc, "update_fields"):
         try:
-            updated = svc.update_fields(opp_id, payload)
+            updated = await _bg(svc.update_fields, opp_id, payload)
         except AirtableWriteError as e:
             raise HTTPException(status_code=e.status_code, detail=str(e))
     else:
         # Sample backend: apply supported keys one-by-one
-        updated = svc.get(opp_id)
+        updated = await _bg(svc.get, opp_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Opportunity not found")
         if "status" in payload:
-            updated = svc.update_status(opp_id, payload["status"])
+            updated = await _bg(svc.update_status, opp_id, payload["status"])
         for k in ("ryans_decision", "next_follow_up", "outcome"):
             if k in payload and updated is not None:
                 updated[k] = payload[k]
@@ -324,7 +347,7 @@ async def record_result(opp_id: str, body: ResultUpdate):
 
     svc = get_opportunity_service()
     try:
-        updated = svc.update_fields(opp_id, updates) if hasattr(svc, "update_fields") else None
+        updated = await _bg(svc.update_fields, opp_id, updates) if hasattr(svc, "update_fields") else None
     except AirtableWriteError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     if not updated:
@@ -360,20 +383,20 @@ async def config():
 async def schema():
     svc = get_opportunity_service()
     if hasattr(svc, "schema_report"):
-        return svc.schema_report()
+        return await _bg(svc.schema_report, )
     return {"backend": svc.backend_name, "note": "No schema — running on sample data."}
 
 
 @api_router.get("/cache-status")
 async def cache_status():
     svc = get_opportunity_service()
-    return svc.cache_status()
+    return await _bg(svc.cache_status, )
 
 
 @api_router.post("/cache-refresh")
 async def cache_refresh():
     svc = get_opportunity_service()
-    return svc.force_refresh()
+    return await _bg(svc.force_refresh, )
 
 
 # ---------- Leads / Next Best Action ----------
@@ -426,20 +449,20 @@ async def leads_next_best_action():
             "queue": None,
             "note": "Leads service not available — set AIRTABLE_ENABLED=true and ensure the Leads table exists.",
         }
-    lead = svc.pick_next_best_action()
+    lead = await _bg(svc.pick_next_best_action, )
     if not lead:
         return {
             "lead": None,
-            "queue": svc.queue_stats(),
+            "queue": await _bg(svc.queue_stats, ),
             "note": "No qualified leads remaining in the queue.",
         }
-    return {"lead": lead, "queue": svc.queue_stats()}
+    return {"lead": lead, "queue": await _bg(svc.queue_stats, )}
 
 
 @api_router.get("/leads/duplicates")
 async def leads_duplicates():
     svc = _require_leads_service()
-    return svc.duplicates_report()
+    return await _bg(svc.duplicates_report, )
 
 
 @api_router.get("/leads/{lead_id}/eligibility")
@@ -447,7 +470,7 @@ async def leads_eligibility(lead_id: str):
     """Read-only policy verdict. The UI uses this to disable and explain the
     approve control; the server re-evaluates on write regardless."""
     svc = _require_leads_service()
-    result = svc.eligibility_for_id(lead_id)
+    result = await _bg(svc.eligibility_for_id, lead_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     return result.to_dict()
@@ -458,7 +481,7 @@ async def leads_readiness(lead_id: str):
     """Missing fields and risk derived from live field values. Any AI-generated
     prose is returned under `advisory_*` keys and never drives eligibility."""
     svc = _require_leads_service()
-    report = svc.readiness(lead_id)
+    report = await _bg(svc.readiness, lead_id)
     if report is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     return report
@@ -467,7 +490,7 @@ async def leads_readiness(lead_id: str):
 @api_router.post("/leads/{lead_id}/action")
 async def leads_action(lead_id: str, body: LeadAction):
     svc = _require_leads_service()
-    if svc.get(lead_id) is None:
+    if await _bg(svc.get, lead_id) is None:
         raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found")
     action = (body.action or "").lower()
     if action == "approve":
@@ -478,34 +501,34 @@ async def leads_action(lead_id: str, body: LeadAction):
                        "acknowledge the recipient and any warnings.",
             )
         try:
-            return svc.approve(lead_id,
+            return await _bg(svc.approve, lead_id,
                                idempotency_key=body.idempotency_key,
                                actor=body.actor,
                                acknowledged_warnings=body.acknowledged_warnings)
         except OutreachBlocked as exc:
             return _blocked_response(exc)
     if action == "revert_approval":
-        return svc.revert_approval(lead_id, actor=body.actor, reason=body.reason)
+        return await _bg(svc.revert_approval, lead_id, actor=body.actor, reason=body.reason)
     if action == "hold":
-        return svc.hold(lead_id, actor=body.actor)
+        return await _bg(svc.hold, lead_id, actor=body.actor)
     if action == "release_hold":
         if (svc.get(lead_id) or {}).get("hunt_status") != "Paused":
             raise HTTPException(status_code=409, detail="Lead is not on hold (Hunt status is not Paused)")
-        return svc.release_hold(lead_id, actor=body.actor)
+        return await _bg(svc.release_hold, lead_id, actor=body.actor)
     if action == "skip":
-        return svc.skip(lead_id, actor=body.actor)
+        return await _bg(svc.skip, lead_id, actor=body.actor)
     if action == "do_not_contact":
         if not body.confirm:
             raise HTTPException(status_code=400,
                                 detail="Confirmation required for Do Not Contact")
-        return svc.do_not_contact(lead_id, actor=body.actor)
+        return await _bg(svc.do_not_contact, lead_id, actor=body.actor)
     raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
 
 
 @api_router.patch("/leads/{lead_id}/message")
 async def leads_update_message(lead_id: str, body: LeadMessageUpdate):
     svc = _require_leads_service()
-    updated = svc.update_message(lead_id, body.message, actor=body.actor)
+    updated = await _bg(svc.update_message, lead_id, body.message, actor=body.actor)
     if not updated:
         raise HTTPException(status_code=404, detail="Message update failed")
     return updated
@@ -533,7 +556,7 @@ async def ingestion_diagnostics_report():
             "backend": svc.backend_name,
             "note": "Ingestion diagnostics require the live Airtable backend.",
         }
-    return svc.ingestion_report()
+    return await _bg(svc.ingestion_report, )
 
 
 @api_router.post("/admin/reload")
@@ -593,7 +616,7 @@ async def _handle_ping_background():
         alerter = get_slack_alerter()
         if alerter and slack_is_configured():
             opps_svc = get_opportunity_service()
-            band_a = [o for o in opps_svc.all() if o.get("priority_band") == "A"]
+            band_a = [o for o in await _bg(opps_svc.all, ) if o.get("priority_band") == "A"]
             if band_a:
                 await alerter.evaluate_and_alert(band_a)
     except Exception:
@@ -724,7 +747,7 @@ async def list_message_playbooks():
     svc = get_playbook_service()
     if not svc:
         return {"available": False, "playbooks": []}
-    playbooks = svc.list()
+    playbooks = await _bg(svc.list, )
     safe = [
         {
             "id": p.get("id"),
@@ -761,7 +784,7 @@ async def update_message_playbook(playbook_id: str, payload: PlaybookUpdate):
     if not patch:
         raise HTTPException(status_code=422, detail="No editable fields provided")
     try:
-        updated = svc.update(playbook_id, patch)
+        updated = await _bg(svc.update, playbook_id, patch)
     except Exception:
         raise HTTPException(status_code=502, detail="Airtable update failed")
     if not updated:
@@ -972,7 +995,7 @@ async def follow_ups_due(limit: int = 20):
         return {"available": True, "items": []}
 
     # Index all opportunities so we can join without an N+1 pattern.
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     by_id = {o.get("id"): o for o in all_ops if o.get("id")}
 
     ACTIVE_CLOSED = {"Won", "Lost", "Disqualified"}
@@ -1073,7 +1096,7 @@ async def find_by_phone(number: str):
     tail = query[-10:]  # normalize to last 10 digits (drops +1 country code)
 
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
 
     matches = []
     for o in all_ops:
@@ -1125,7 +1148,7 @@ async def landlord_portfolio(opp_id: str):
         return n or None
 
     osvc = get_opportunity_service()
-    current = osvc.get(opp_id) if hasattr(osvc, "get") else None
+    current = await _bg(osvc.get, opp_id) if hasattr(osvc, "get") else None
     if not current:
         raise HTTPException(status_code=404, detail=f"No opportunity {opp_id}")
 
@@ -1164,7 +1187,7 @@ async def landlord_portfolio(opp_id: str):
             return "name"
         return None
 
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     siblings: List[Dict[str, Any]] = []
     match_key: Optional[str] = None
     for o in all_ops:
@@ -1349,7 +1372,7 @@ async def discovery_investors(status: str = "all"):
 async def learning_insights(limit: int = 3):
     from services.learning_service import compute_insights
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
     return compute_insights(all_ops, limit=max(1, min(limit, 10)))
 
 
@@ -1461,7 +1484,7 @@ async def cron_morning_brief(
 async def monthly_kpis():
     from datetime import datetime, timezone as _tz
     osvc = get_opportunity_service()
-    all_ops = osvc.all() if hasattr(osvc, "all") else []
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
 
     now = datetime.now(_tz.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -1532,6 +1555,7 @@ class UserSettingsPatch(BaseModel):
     sender_phone: Optional[str] = None
     sender_mailing_address: Optional[str] = None
     email_provider: Optional[str] = None
+    daily_outreach_target: Optional[int] = None
 
 
 @api_router.get("/settings/user")
@@ -1539,7 +1563,13 @@ async def get_user_settings():
     svc = get_user_settings_service()
     if not svc:
         return {"settings": dict(USER_SETTINGS_DEFAULTS), "persisted": False}
-    return {"settings": await svc.get(), "persisted": True}
+    try:
+        settings = await svc.get()
+    except Exception:  # noqa: BLE001
+        logger.exception("user settings read failed — returning defaults")
+        return {"settings": dict(USER_SETTINGS_DEFAULTS), "persisted": False}
+    persisted = getattr(svc, "store_available", True)
+    return {"settings": settings, "persisted": persisted}
 
 
 @api_router.patch("/settings/user")
@@ -1551,10 +1581,10 @@ async def update_user_settings(patch: UserSettingsPatch):
         settings = await svc.update(patch.model_dump(exclude_unset=True))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except AirtableSettingsError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"settings": settings, "persisted": True}
 
-
-app.include_router(api_router)
 
 
 # ─── Twilio Lookup (Number Intelligence) ─────────────────────────────────
@@ -1745,69 +1775,6 @@ async def export_discovery_csv(feed: str):
     return _csv_response(key, items)
 
 
-# ─── Portfolio Check proxy ─────────────────────────────────────────────
-# Fire-and-forget POST to the Make.com webhook Claude/Make owns. Real web
-# search runs behind it (~15-30 sec); Make writes results into 12
-# `Portfolio *` fields on the same Airtable record. GEAUXleads polls
-# opportunity data after the fact — no direct reply is expected here.
-# GEAUXleads never crawls or scores; this endpoint is a thin proxy so the
-# webhook URL doesn't get exposed in the browser and CORS is handled
-# server-side.
-# ============================================================================
-import re as _re_portfolio
-import httpx as _httpx_portfolio
-
-_RECORD_ID_RE = _re_portfolio.compile(r"^rec[A-Za-z0-9]{14,}$")
-
-
-@app.post("/api/leads/{record_id}/portfolio-check", status_code=202)
-async def portfolio_check(record_id: str):
-    """Trigger Claude/Make's Portfolio Check webhook for a single lead.
-    Returns 202 immediately — results land in Airtable after ~15-30 sec
-    and the frontend re-fetches the opportunity to display them."""
-    if not _RECORD_ID_RE.match(record_id):
-        raise HTTPException(status_code=400, detail="invalid record_id format")
-    webhook = (os.environ.get("PORTFOLIO_CHECK_WEBHOOK")
-               or os.environ.get("MAKE_PORTFOLIO_CHECK_WEBHOOK", "")).strip()
-    if not webhook:
-        raise HTTPException(status_code=503, detail="portfolio check webhook not configured")
-    try:
-        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(webhook, json={"record_id": record_id})
-            if resp.status_code >= 400:
-                logger.warning("Portfolio webhook returned %s: %s", resp.status_code, resp.text[:200])
-                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
-    except _httpx_portfolio.RequestError as e:
-        logger.error("Portfolio webhook request error: %s", e)
-        raise HTTPException(status_code=502, detail="could not reach portfolio webhook")
-    return {"accepted": True, "record_id": record_id,
-            "hint": "results land in ~15-30 seconds; refetch the opportunity"}
-
-
-# ─── Write Outreach Draft proxy ───────────────────────────────────────────
-# Same shape as Portfolio Check: POST the record id to Claude/Make's
-# Outreach Writer webhook, which writes `Draft Outreach Subject` / `Body`
-# back onto the lead. Nothing is sent — the draft is for Ryan to review.
-@app.post("/api/leads/{record_id}/outreach-draft", status_code=202)
-async def outreach_draft(record_id: str):
-    if not _RECORD_ID_RE.match(record_id):
-        raise HTTPException(status_code=400, detail="invalid record_id format")
-    webhook = os.environ.get("OUTREACH_WRITER_WEBHOOK", "").strip()
-    if not webhook:
-        raise HTTPException(status_code=503, detail="outreach writer webhook not configured")
-    try:
-        async with _httpx_portfolio.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(webhook, json={"record_id": record_id})
-            if resp.status_code >= 400:
-                logger.warning("Outreach writer webhook returned %s: %s", resp.status_code, resp.text[:200])
-                raise HTTPException(status_code=502, detail=f"webhook rejected: {resp.status_code}")
-    except _httpx_portfolio.RequestError as e:
-        logger.error("Outreach writer webhook request error: %s", e)
-        raise HTTPException(status_code=502, detail="could not reach outreach writer webhook")
-    return {"accepted": True, "record_id": record_id,
-            "hint": "draft lands in Airtable shortly; refetch the opportunity"}
-
-
 # ─── Draft safety audit ────────────────────────────────────────────────
 # Scans every opportunity for message-shaped fields that would fail the
 # frontend `looksLikeAIPrompt` guard — meaning: if Ryan had tapped
@@ -1927,6 +1894,314 @@ async def create_research(req: ResearchRequest):
 
     return result
 
+
+# ─── On-demand agent triggers (Make webhooks) ──────────────────────────────
+# These fire Make.com scenarios for a single record — no backlog, no fees
+# unless Ryan taps the button. The scenario writes results back to Airtable;
+# the backend returns 202 immediately and never blocks on the scenario.
+def _make_webhook(name: str) -> Optional[str]:
+    url = (os.environ.get(name) or "").strip()
+    return url or None
+
+
+async def _post_make_webhook(label: str, url: str, payload: Dict[str, Any]) -> Optional[str]:
+    """POST a payload to a Make webhook. Returns None on success, else an error string."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(url, json=payload)
+        if r.status_code >= 300:
+            logger.warning("%s webhook non-2xx status=%s", label, r.status_code)
+            return f"{label} webhook returned {r.status_code}"
+    except Exception as e:  # noqa: BLE001
+        logger.exception("%s webhook POST failed", label)
+        return f"{label} trigger failed: {e}"
+    return None
+
+
+async def _resolve_daily_target_async(explicit: Optional[int] = None) -> int:
+    if explicit is not None:
+        try:
+            return max(1, min(50, int(explicit)))
+        except (TypeError, ValueError):
+            pass
+    try:
+        svc = get_user_settings_service()
+        settings = await svc.get() if svc else dict(USER_SETTINGS_DEFAULTS)
+        return _daily_target(settings)
+    except Exception:  # noqa: BLE001
+        return 10
+
+
+def _sent_today(opp: Dict[str, Any], today: str) -> bool:
+    val = (opp.get("message_sent_date") or opp.get("date_contacted") or "")[:10]
+    return bool(val) and val >= today
+
+
+async def _outreach_queue(svc, target: int, today: str):
+    """Today's outreach queue: Ready-to-Contact leads not yet contacted today,
+    top `target` by governed priority score. Returns (items, sent_today_count)."""
+    all_opps = await _bg(svc.list)
+    sent_today = sum(
+        1 for o in all_opps
+        if o.get("current_queue") == "Ready to Contact" and _sent_today(o, today)
+    )
+    candidates = [
+        o for o in all_opps
+        if o.get("current_queue") == "Ready to Contact" and not _sent_today(o, today)
+    ]
+
+    def _score(o):
+        s = o.get("governed_priority_score")
+        return s if isinstance(s, (int, float)) else -1
+
+    candidates.sort(key=lambda o: (_score(o), str(o.get("id") or "")), reverse=True)
+    return candidates[:target], sent_today
+
+
+def _outreach_write_payload(opp: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "decision_maker": opp.get("decision_maker"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_description": opp.get("permit_description"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "evidence_summary": opp.get("evidence_summary"),
+        "outreach_angle": opp.get("outreach_angle"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+
+
+@api_router.get("/outreach/queue")
+async def outreach_queue(target: Optional[int] = None):
+    """Today's outreach queue: top `target` Ready-to-Contact leads not yet
+    contacted today, plus progress counts. Target comes from the query param,
+    else Ryan's persisted daily_outreach_target setting, else 10."""
+    svc = get_opportunity_service()
+    n = await _resolve_daily_target_async(target)
+    today = datetime.now(timezone.utc).date().isoformat()
+    items, sent_today = await _outreach_queue(svc, n, today)
+    return {
+        "target": n,
+        "sent_today": sent_today,
+        "remaining": len(items),
+        "items": [
+            {**o, "has_first_message": bool(o.get("first_message") or o.get("first_contact_message"))}
+            for o in items
+        ],
+    }
+
+
+@api_router.post("/outreach/prepare")
+async def outreach_prepare(target: Optional[int] = None):
+    """Morning prep for the daily outreach queue. For each lead in today's
+    queue missing a first message, fires the outreach-writer Make webhook
+    (one tap per record, same as the in-app button). Never sends anything —
+    it only ensures drafts exist before Ryan works the queue."""
+    webhook = _make_webhook("OUTREACH_WRITER_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    n = await _resolve_daily_target_async(target)
+    today = datetime.now(timezone.utc).date().isoformat()
+    items, _ = await _outreach_queue(svc, n, today)
+    triggered, already, errors = 0, 0, []
+    for opp in items:
+        if opp.get("first_message") or opp.get("first_contact_message"):
+            already += 1
+            continue
+        err = await _post_make_webhook(
+            "outreach-writer", webhook, _outreach_write_payload(opp)
+        )
+        if err:
+            errors.append({"id": opp.get("id"), "name": opp.get("name"), "error": err})
+        else:
+            triggered += 1
+    try:
+        get_audit_log().record(
+            event="outreach_prepare",
+            record_id="daily",
+            detail=f"Outreach prep: {triggered} writers triggered, {already} already had messages (target {n})",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+    return {
+        "ok": True,
+        "target": n,
+        "queued": len(items),
+        "writers_triggered": triggered,
+        "already_had_message": already,
+        "errors": errors,
+    }
+
+
+@api_router.get("/digest/fresh-intel")
+async def fresh_intel(limit: int = 20):
+    """Leads the daily review agent flagged with new info since last enhancement.
+
+    The Make daily-review scenario sets the flag + summary + date on the
+    record; this endpoint surfaces them newest-first for the Fresh Intel
+    section. The flag is cleared when the user re-runs the portfolio check.
+    """
+    svc = get_opportunity_service()
+    items = [
+        o for o in await _bg(svc.list, )
+        if o.get("flag_new_info") and o.get("status") not in ("dead", "do_not_contact")
+    ]
+    items.sort(key=lambda o: str(o.get("new_info_date") or ""), reverse=True)
+    out = []
+    for o in items[: max(1, min(limit, 50))]:
+        out.append({
+            "id": o.get("id"),
+            "name": o.get("name"),
+            "company": o.get("company"),
+            "lane": o.get("lane"),
+            "status": o.get("status"),
+            "new_info_summary": o.get("new_info_summary"),
+            "new_info_date": o.get("new_info_date"),
+        })
+    return {"items": out, "count": len(out)}
+
+
+@api_router.post("/opportunities/{opp_id}/portfolio-check")
+async def trigger_portfolio_check(opp_id: str):
+    webhook = _make_webhook("PORTFOLIO_CHECK_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Portfolio check is not configured (PORTFOLIO_CHECK_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    payload = {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "instagram": opp.get("instagram") or opp.get("instagram_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_number": opp.get("permit_number"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(webhook, json=payload)
+        if r.status_code >= 300:
+            logger.warning("portfolio-check webhook non-2xx status=%s", r.status_code)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Portfolio check trigger failed (webhook returned {r.status_code})",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("portfolio-check webhook POST failed")
+        raise HTTPException(status_code=502, detail=f"Portfolio check trigger failed: {e}")
+
+    try:
+        get_audit_log().record(
+            event="portfolio_check_triggered",
+            record_id=opp_id,
+            detail=f"Portfolio check triggered for {opp.get('name')}",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+
+    # Clear any daily-review "new info" flag — the user just acted on it, so
+    # the lead drops out of the Fresh Intel digest. Best effort: never fail
+    # the trigger because the flag clear failed.
+    try:
+        await _bg(svc.update_fields, opp_id, {
+            "flag_new_info": False,
+            "new_info_summary": "",
+            "new_info_date": "",
+        })
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to clear new-info flag — continuing anyway")
+
+    return {"ok": True, "status": "triggered",
+            "message": "Portfolio check running — real web search takes 15-30 seconds."}
+
+
+@api_router.post("/opportunities/{opp_id}/outreach-write")
+async def trigger_outreach_write(opp_id: str):
+    webhook = _make_webhook("OUTREACH_WRITER_WEBHOOK")
+    if not webhook:
+        raise HTTPException(
+            status_code=503,
+            detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
+        )
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    payload = {
+        "record_id": opp.get("id"),
+        "opportunity_id": opp.get("opportunity_id"),
+        "name": opp.get("name"),
+        "company": opp.get("company"),
+        "decision_maker": opp.get("decision_maker"),
+        "website": opp.get("website") or opp.get("website_alt"),
+        "project_address": opp.get("project_address"),
+        "project_type": opp.get("project_type"),
+        "permit_description": opp.get("permit_description"),
+        "phone": opp.get("phone"),
+        "email": opp.get("email"),
+        "evidence_summary": opp.get("evidence_summary"),
+        "outreach_angle": opp.get("outreach_angle"),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_by": "geauxleads-app",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(webhook, json=payload)
+        if r.status_code >= 300:
+            logger.warning("outreach-writer webhook non-2xx status=%s", r.status_code)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Outreach writer trigger failed (webhook returned {r.status_code})",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("outreach-writer webhook POST failed")
+        raise HTTPException(status_code=502, detail=f"Outreach writer trigger failed: {e}")
+
+    try:
+        get_audit_log().record(
+            event="outreach_write_triggered",
+            record_id=opp_id,
+            detail=f"Outreach writer triggered for {opp.get('name')}",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+
+    return {"ok": True, "status": "triggered",
+            "message": "Outreach writer running — writing your first message."}
+
+
+# Registered last: include_router copies api_router's routes at call time,
+# so any @api_router route defined below an earlier call was never served
+# (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).
+app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,

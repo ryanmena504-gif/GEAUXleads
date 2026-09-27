@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
 import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
 
@@ -150,6 +150,90 @@ const SenderIdentitySection = () => {
             {saving ? "Saving…" : "Save sender identity"}
           </button>
         </div>
+      </div>
+    </section>
+  );
+};
+
+/**
+ * Daily outreach target — how many leads Ryan wants to contact per day.
+ * Drives the "Today's outreach" queue on Home and the morning prep job.
+ * Needs the settings store (Mongo) attached to persist; otherwise the app
+ * runs on the default of 10 and the input saves nothing.
+ */
+const DailyOutreachSection = () => {
+  const [target, setTarget] = useState("10");
+  const [persisted, setPersisted] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.getUserSettings().then((r) => {
+      const s = r?.settings || {};
+      if (s.daily_outreach_target != null) setTarget(String(s.daily_outreach_target));
+      setPersisted(r?.persisted !== false);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    const n = parseInt(target, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 50) {
+      toast.error("Pick a number between 1 and 50");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveUserSettings({ daily_outreach_target: n });
+      toast.success("Daily outreach target saved");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Save failed";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section data-testid="section-daily-outreach">
+      <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">
+        <Phone size={11} /> Daily outreach
+      </div>
+      <div className="bh-surface rounded p-5 space-y-3">
+        <p className="text-[13px] text-[var(--bh-ink-2)]">
+          How many leads you want to contact each day. Every morning the app lines
+          up that many ready-to-contact leads on Home and makes sure each one has
+          a message written.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            disabled={!loaded}
+            data-testid="settings-daily-outreach-target"
+            className="bh-input w-24"
+          />
+          <span className="text-[13px] text-[var(--bh-ink-mute)]">leads per day</span>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || !loaded}
+            data-testid="settings-daily-outreach-save"
+            className="btn-gold inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+        {!persisted && (
+          <p className="text-[12px] text-amber-300/90" data-testid="settings-store-unavailable">
+            Settings store isn&apos;t connected right now, so this won&apos;t stick yet —
+            the app is running on 10 a day until it is.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -378,6 +462,8 @@ const Settings = () => {
         )}
 
         <SenderIdentitySection />
+
+        <DailyOutreachSection />
 
         <section data-testid="section-playbooks">
           <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-3 inline-flex items-center gap-1.5">

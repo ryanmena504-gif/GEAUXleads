@@ -61,6 +61,26 @@ export const api = {
   twilioLookupStatus: () =>
     axios.get(`${BASE}/api/lookup/twilio/status`).then((r) => r.data),
 
+  // On-demand portfolio check (Make webhook; returns 503 when not configured)
+  portfolioCheck: (id) =>
+    client.post(`/opportunities/${id}/portfolio-check`).then((r) => r.data),
+
+  // On-demand outreach writer (Make webhook; returns 503 when not configured)
+  outreachWrite: (id) =>
+    client.post(`/opportunities/${id}/outreach-write`).then((r) => r.data),
+
+  // Fresh Intel digest — leads the daily review agent flagged with new info
+  freshIntel: (limit = 20) =>
+    client.get("/digest/fresh-intel", { params: { limit } }).then((r) => r.data),
+
+  // Daily outreach queue — top N ready leads not yet contacted today
+  outreachQueue: (target) =>
+    client.get("/outreach/queue", { params: target ? { target } : {} }).then((r) => r.data),
+
+  // Morning prep — fire outreach writer for queued leads missing a message
+  outreachPrepare: (target) =>
+    client.post("/outreach/prepare", null, { params: target ? { target } : {} }).then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),
@@ -173,18 +193,7 @@ export const api = {
       params: { status, ids: ids ? ids.join(",") : undefined },
     }).then((r) => r.data),
 
-  // Portfolio Check — fires Claude/Make's evidence-extraction webhook for
-  // a single lead. Fire-and-forget: results land in Airtable ~15-30 sec
-  // later; caller should refetch the opportunity to render new
-  // Portfolio_* fields. Never bulk, never automatic.
-  checkPortfolio: (recordId) =>
-    client.post(`/leads/${encodeURIComponent(recordId)}/portfolio-check`).then((r) => r.data),
 
-  // Write Outreach Draft — fires Claude/Make's Outreach Writer webhook for a
-  // single lead. The draft lands in `Draft Outreach Subject` / `Body`; the
-  // caller refetches the opportunity. Nothing is ever sent.
-  writeOutreachDraft: (recordId) =>
-    client.post(`/leads/${encodeURIComponent(recordId)}/outreach-draft`).then((r) => r.data),
 
   // Investor Intelligence — real estate investors / LLC entities tracking
   // multi-property portfolios. GEAUXleads is a read-only viewer.

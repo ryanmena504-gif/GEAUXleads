@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import TopHeader from "@/components/TopHeader";
 import LearningStrip from "@/components/LearningStrip";
 import MorningBrief from "@/components/MorningBrief";
+import FreshIntel from "@/components/FreshIntel";
+import TodayOutreach from "@/components/TodayOutreach";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { fmtMoney, moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -787,6 +789,8 @@ const CommandCenter = () => {
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
         <CommandCenterStats items={items} />
         <MorningBrief />
+        <TodayOutreach />
+        <FreshIntel />
         <LearningStrip />
         <SectionShell
           testId="section-ready-to-contact"
