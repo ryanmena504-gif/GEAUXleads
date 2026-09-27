@@ -1,8 +1,9 @@
 import React from "react";
-import { Mail, Reply, ShieldCheck } from "lucide-react";
+import { Mail, Reply, ShieldCheck, AlertTriangle } from "lucide-react";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
+import { looksLikeAIPrompt } from "@/lib/draftSafety";
 
 /**
  * OpenInMessages — the single Email Now / Follow Up Email button.
@@ -32,7 +33,7 @@ const DEFAULT_SENDER_PHONE = "(504) 264-4919";
 
 const enc = encodeURIComponent;
 
-const withSignature = (body, senderName, senderPhone) => {
+export const withSignature = (body, senderName, senderPhone) => {
   const base = (body || "").trim();
   const name = (senderName || DEFAULT_SENDER_NAME).trim();
   const phone = (senderPhone || DEFAULT_SENDER_PHONE).trim();
@@ -78,14 +79,23 @@ const buildFirstDraft = (opp, sender) => {
       : isPartner
         ? `${senderName} at The Shirtless Handyman — quick intro`
         : `Quick note about your ${opp?.project_type || "project"}`);
-  // Strip any greeting Airtable's classifier already prefixed on
-  // `first_message` so the final draft never contains "Hi X, / Hi X,".
-  const rawBody = opp?.first_message || opp?.first_contact_message || fallbackBody;
+  // Trust ONLY safe strings from Airtable — a stored value that looks like
+  // a raw AI prompt / unfilled template / empty stub is REJECTED and we
+  // fall back to the hardcoded safe copy. Never send AI plumbing.
+  const airtableBody = opp?.first_message || opp?.first_contact_message || null;
+  const airtableCheck = airtableBody ? looksLikeAIPrompt(airtableBody) : { trip: true, reason: "empty" };
+  const usedFallback = airtableCheck.trip;
+  const rawBody = usedFallback ? fallbackBody : airtableBody;
   const cleanBody = stripLeadingGreeting(rawBody);
   const body = [salutation, "", cleanBody].filter(Boolean).join("\n");
   return {
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),
+    // Safety telemetry — surfaced to the UI so a rejected Airtable message
+    // never silently disappears. The panel renders a warning banner when
+    // reason is set to a non-empty trip reason (not just "empty").
+    airtable_rejected: airtableBody ? airtableCheck.trip : false,
+    airtable_reject_reason: airtableBody ? airtableCheck.reason : null,
   };
 };
 
@@ -102,16 +112,26 @@ const buildFollowUpDraft = (opp, sender) => {
     "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
   const projectDefault =
     "Just checking in to see if now is a better time to chat.";
-  const rec = opp?.current_recommendation || (isLandlord ? landlordDefault : projectDefault);
-  const cleanRec = stripLeadingGreeting(rec);
-  const body = [salutation, "", cleanRec].filter(Boolean).join("\n");
+  // CRITICAL: `current_recommendation` is Claude's ADVICE TO RYAN
+  // ("go build a memo", "wait for a reply", "map recurring scopes") — it
+  // is NOT customer-facing outreach copy. It was previously piped into
+  // the mailto body which caused directives to Ryan to be sent as
+  // messages to prospects (2026-02-19 bug). Follow-up drafts now use
+  // ONLY the hardcoded safe copy above. If we ever want a per-record
+  // follow-up line, it needs its own dedicated Airtable field owned by
+  // Claude with an explicit "customer-facing" contract — never a reused
+  // operator-directive field.
+  const rec = isLandlord ? landlordDefault : projectDefault;
+  const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),
+    airtable_rejected: false,
+    airtable_reject_reason: null,
   };
 };
 
-const pickEmail = (opp) => {
+export const pickEmail = (opp) => {
   const raw = (opp?.email || opp?.email_alt || opp?.contact_email || "").toString().trim();
   return raw && raw.includes("@") ? raw : null;
 };
@@ -155,7 +175,14 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const draft = isFollowup
     ? buildFollowUpDraft(opportunity, senderIdentity)
     : buildFirstDraft(opportunity, senderIdentity);
-  const href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
+  // Belt-and-braces: the composed body is the final source of truth for the
+  // mailto. If the composer somehow still produced garbage (e.g. a future
+  // Airtable field lands unguarded), refuse to render the send button.
+  const finalCheck = looksLikeAIPrompt(draft.body);
+  const composerBroken = finalCheck.trip;
+  const href = composerBroken
+    ? null
+    : `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
   const testid = isFollowup
     ? `follow-up-email-${opportunity?.id || "unknown"}`
     : `email-now-${opportunity?.id || "unknown"}`;
@@ -164,7 +191,30 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const styleOverride = variant === "pill" ? (isFollowup ? secondary : primary) : primary;
   const size = variant === "pill" ? "sm" : "md";
 
-  const buttonNode = (
+  // Show a visible warning when Airtable's stored message looked like an AI
+  // prompt / template / stub. The button STILL renders using the hardcoded
+  // fallback copy so Ryan can act — but he's told, on-screen, that the
+  // AI-generated body was rejected. Never a silent fallback.
+  const rejectedNote =
+    draft.airtable_rejected && draft.airtable_reject_reason !== "empty"
+      ? draft.airtable_reject_reason
+      : null;
+
+  const buttonNode = composerBroken ? (
+    <div
+      data-testid={`${testid}-blocked`}
+      className={`${btnBase} ${SIZE[size]}`}
+      style={{
+        background: "var(--bh-surface)",
+        border: "1px solid #b45309",
+        color: "#f59e0b",
+        cursor: "not-allowed",
+      }}
+      title={`Draft rejected: ${finalCheck.reason}`}
+    >
+      <AlertTriangle size={size === "sm" ? 13 : 14} /> Draft blocked
+    </div>
+  ) : (
     <a
       href={href}
       data-testid={testid}
@@ -213,6 +263,43 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
         {contextBadge}
       </div>
       <div>{buttonNode}</div>
+      {composerBroken && (
+        <div
+          data-testid="draft-safety-blocked"
+          className="text-[11.5px] leading-relaxed rounded px-2.5 py-2 flex items-start gap-2"
+          style={{
+            background: "rgba(180, 83, 9, 0.10)",
+            border: "1px solid rgba(180, 83, 9, 0.35)",
+            color: "#f59e0b",
+          }}
+        >
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>This draft was blocked before it could reach Send.</strong>{" "}
+            The message field looked like raw AI text ({finalCheck.reason.replace(/_/g, " ")}),
+            not real outreach copy. Have Claude/Make rewrite the message field
+            for this record before mailing.
+          </span>
+        </div>
+      )}
+      {!composerBroken && rejectedNote && (
+        <div
+          data-testid="draft-safety-warning"
+          className="text-[11.5px] leading-relaxed rounded px-2.5 py-2 flex items-start gap-2"
+          style={{
+            background: "rgba(180, 83, 9, 0.08)",
+            border: "1px solid rgba(180, 83, 9, 0.25)",
+            color: "#d97706",
+          }}
+        >
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <span>
+            The message stored on this record looked like AI plumbing
+            ({rejectedNote.replace(/_/g, " ")}) — the draft above uses the
+            hardcoded fallback copy instead. Read it before sending.
+          </span>
+        </div>
+      )}
       <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)]">
         Opens a draft in your default mail app. Nothing sends until you press
         Send yourself.

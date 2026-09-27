@@ -9,12 +9,14 @@ import {
   Loader2,
   RefreshCw,
   Undo2,
+  CheckCircle2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import LaneBadge from "@/components/LaneBadge";
 import ContactBadge from "@/components/ContactBadge";
 import DraftNoteDrawer from "@/components/DraftNoteDrawer";
 import OpenInMessages from "@/components/OpenInMessages";
+import EligibilityPanel from "@/components/EligibilityPanel";
 import { fmtMoney, fmtRelative } from "@/lib/formatters";
 import { priorityLevel, priorityReason } from "@/lib/priority";
 import { outreachAllowed } from "@/lib/queue";
@@ -286,6 +288,7 @@ export const NextBestAction = () => {
           onClick={() => act("hold")}
           disabled={busy === "hold"}
           data-testid="nba-hold"
+          title="Writes Hunt status = Paused in Airtable. The classifier skips paused records until you release the hold from the record page."
           className="h-11 px-4 rounded border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] text-sm inline-flex items-center gap-1.5 transition-colors duration-150"
         >
           <Pause size={13} /> Save for later

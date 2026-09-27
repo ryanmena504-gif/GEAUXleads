@@ -92,7 +92,11 @@ def _build_blocks(opp: Dict[str, Any], *, reason: str) -> List[Dict[str, Any]]:
     score = _fmt_score(opp.get("priority_score"))
     conf = _fmt_score(opp.get("confidence_score") or opp.get("evidence_confidence"))
     why = opp.get("recommendation_reason") or opp.get("evidence_summary") or "—"
-    next_action = opp.get("next_best_action") or opp.get("recommended_action") or "—"
+    # `recommended_action` first — Airtable's "Next action" was deprecated
+    # 2026-02-19 and its DTO key (`next_best_action`) is now derived from
+    # `recommended_action` upstream, so both should be equivalent. Keep the
+    # secondary read as a defensive fallback for records still in flight.
+    next_action = opp.get("recommended_action") or opp.get("next_best_action") or "—"
     location = _location(opp)
     link = _dashboard_link(opp.get("id") or opp.get("opportunity_id") or "")
 
@@ -131,7 +135,7 @@ def _build_blocks(opp: Dict[str, Any], *, reason: str) -> List[Dict[str, Any]]:
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "Open in Bloodhound"},
+                    "text": {"type": "plain_text", "text": "Open in GEAUXleads"},
                     "url": link,
                     "style": "primary",
                 }

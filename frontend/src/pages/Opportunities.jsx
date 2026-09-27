@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { LayoutGrid, Rows3, X } from "lucide-react";
+import SavedViewsBar from "@/components/SavedViewsBar";
 
 const FilterChip = ({ label, active, onClick, testId }) => (
   <button
@@ -38,6 +39,8 @@ const FilterGroup = ({ title, children }) => (
 const Opportunities = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [view, setView] = useState("list");
   const [minScore, setMinScore] = useState(
     Number(searchParams.get("min_score") || 0),
@@ -61,6 +64,7 @@ const Opportunities = () => {
     daily_mission: searchParams.get("daily_mission") || undefined,
     project_type: searchParams.get("project_type") || undefined,
     lane: searchParams.get("lane") || undefined,
+    view: searchParams.get("view") || undefined,
     min_score: minScore || undefined,
     q: q || undefined,
     sort,
@@ -80,7 +84,15 @@ const Opportunities = () => {
     // filters is derived from these three inputs; listing them directly is
     // equivalent to depending on `filters` itself without recreating the
     // object every render.
-    api.listOpportunities(filters).then(setItems);
+    setLoading(true);
+    api
+      .listOpportunities(filters)
+      .then((rows) => {
+        setItems(rows);
+        setLoadError(null);
+      })
+      .catch(() => setLoadError("Could not load projects — the GEAUXleads API didn't respond."))
+      .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, minScore, q]);
 
@@ -106,6 +118,7 @@ const Opportunities = () => {
       />
 
       <div className="px-4 lg:px-8 py-6 space-y-5">
+        <SavedViewsBar scope="opportunities" exportHref={api.csvOpportunitiesUrl(searchParams)} />
         {/* Toolbar */}
         <div className="bh-surface rounded p-4 space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -273,7 +286,22 @@ const Opportunities = () => {
         </div>
 
         {/* Results */}
-        {items.length === 0 ? (
+        {loadError ? (
+          <div
+            role="alert"
+            data-testid="opportunities-load-error"
+            className="bh-surface rounded-md border-t-2 border-t-red-500/60 p-6 text-sm text-red-200"
+          >
+            {loadError} Reload the page to try again.
+          </div>
+        ) : loading && items.length === 0 ? (
+          <div
+            data-testid="opportunities-loading"
+            className="bh-surface rounded p-12 text-center text-neutral-500 text-sm"
+          >
+            Loading projects…
+          </div>
+        ) : items.length === 0 ? (
           <div className="bh-surface rounded p-12 text-center text-neutral-500 text-sm">
             No opportunities match your filters.
           </div>

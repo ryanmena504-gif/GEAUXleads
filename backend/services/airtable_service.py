@@ -110,8 +110,13 @@ LIVE_FIELDS: Dict[str, str] = {
     "Why lead matters": "recommendation_reason",
     "Missing information": "missing_information",
     "Risk flags": "risk_flags",
-    "Next action": "next_best_action",
-    # Ryan-owned overrides — real writable fields (auto-created if missing).
+    # `next_best_action` used to mirror Airtable's "Next action" field, but
+    # Ryan stopped the duplicate write on 2026-02-19 — "Next action" is now
+    # frozen at whatever value it last had. We no longer read that field.
+    # `next_best_action` is derived from `recommended_action` in the DTO
+    # post-processing step below so every downstream consumer keeps working
+    # against fresh data.
+    # Ryan-owned overrides — real writable fields (never auto-created).
     # Mission Override lets Ryan pin a daily mission per lead; Activity Log
     # is an append-only journal rendered into the activity timeline.
     "Mission Override": "mission_override",
@@ -199,6 +204,37 @@ LIVE_FIELDS: Dict[str, str] = {
     "Project Fit Reason": "project_fit_reason",
     "Last Classified At": "last_classified_at",
     "Classification Version": "classification_version",
+
+    # === Completed Project Proof — Round 1 Slice 1 (2026-02-19) =============
+    # Written by Claude/Make via the "Portfolio Check" enrichment webhook.
+    # Read-only from Bloodhound; no PATCH endpoint may touch these. See
+    # `/app/memory/airtable_schema_round1.md` for the full contract.
+    "Portfolio Found": "portfolio_found",
+    "Portfolio Best Project Title": "portfolio_best_project_title",
+    "Portfolio Best Project URL": "portfolio_best_project_url",
+    "Portfolio Project Type": "portfolio_project_type",
+    "Portfolio Project Status": "portfolio_project_status",
+    "Portfolio Business Role": "portfolio_business_role",
+    "Portfolio Evidence Summary": "portfolio_evidence_summary",
+    "Portfolio Safe Observation": "portfolio_safe_observation",
+    "Portfolio Compliment Line": "portfolio_compliment_line",
+    "Portfolio Partnership Angle": "portfolio_partnership_angle",
+    "Portfolio Check Confidence": "portfolio_check_confidence",
+    "Portfolio Outreach Recommendation": "portfolio_outreach_recommendation",
+    # Added 2026-02-19 after Ryan's Slice 1 fix pass — restores the
+    # "last checked" timestamp, explainability line, and lifecycle
+    # status. Failed runs surface `portfolio_error_reason` in the card.
+    "Portfolio Check Status": "portfolio_check_status",
+    "Portfolio Checked At": "portfolio_checked_at",
+    "Portfolio Evidence Basis": "portfolio_evidence_basis",
+    "Portfolio Why This Was Chosen": "portfolio_why_this_was_chosen",
+    "Portfolio Error Reason": "portfolio_error_reason",
+
+    # Written by Claude/Make's "Write Outreach Draft" agent. Read-only here;
+    # a draft is never sent — Ryan reviews it and sends it himself.
+    "Draft Outreach Subject": "draft_outreach_subject",
+    "Draft Outreach Body": "draft_outreach_body",
+    "Draft Outreach Generated At": "draft_outreach_generated_at",
 }
 
 # Fields the app talks about but which are NOT on the Leads table.
@@ -227,7 +263,6 @@ EXPLICIT_READONLY: set = {
     "Why lead matters",
     "Missing information",
     "Risk flags",
-    "Next action",
     "recommended action",
     "Recommended offer",
     "Outreach angle",
@@ -262,10 +297,9 @@ EXPLICIT_READONLY: set = {
 }
 
 # Only these Airtable field names may ever be written from the app.
-# Ryan-owned fields the backend manages itself. Created automatically in the
-# Leads table when missing (requires the schema.bases:write scope); if
-# auto-creation fails the write paths raise a clear error instead of
-# silently pretending to save.
+# Ryan-owned fields the backend writes. The app never creates, renames, or
+# deletes Airtable fields: if one is missing the write paths raise a clear
+# error instead of silently pretending to save.
 CUSTOM_WRITABLE_FIELDS: Dict[str, str] = {
     "Mission Override": "singleLineText",
     "Activity Log": "multilineText",
@@ -401,6 +435,69 @@ def sort_opportunities(items: List[Dict[str, Any]], mode: str = "lead_score") ->
     scored.sort(key=lambda o: -_score_num(o))
     unscored.sort(key=lambda o: o.get("id") or "")
     return scored + unscored
+
+
+# ---------------------------------------------------------------------------
+# Saved-view chip filters — strict read of governed fields only. Each view
+# maps to an exact predicate on values Claude/Make already emitted. Nothing
+# is invented, no scoring is recomputed.
+#   hot              → priority_band == "A"
+#   fresh            → freshness == "Current"
+#   stale            → freshness == "Stale"
+#   needs-enrichment → not classified into Ready/Contacted, AND either the
+#                      classifier explicitly says so OR there's no score and
+#                      no reachable channel (mirrors frontend queue.js)
+#   recently-added   → no filter (caller sorts by created_time desc)
+# ---------------------------------------------------------------------------
+_ENRICHMENT_HINTS = (
+    "needs enrichment", "enrichment needed",
+    "needs research", "awaiting enrichment",
+)
+
+
+def _says_needs_enrichment(v: Any) -> bool:
+    if not isinstance(v, str):
+        return False
+    s = v.strip().lower()
+    if not s:
+        return False
+    return any(h in s for h in _ENRICHMENT_HINTS)
+
+
+def _has_channel(o: Dict[str, Any]) -> bool:
+    for k in ("email", "email_alt", "phone", "phone_alt"):
+        v = o.get(k)
+        if isinstance(v, str) and v.strip():
+            return True
+    return False
+
+
+def _apply_view(items: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    v = (view or "").strip().lower()
+    if v == "hot":
+        return [o for o in items if o.get("priority_band") == "A"]
+    if v == "fresh":
+        return [o for o in items if o.get("freshness") == "Current"]
+    if v == "stale":
+        return [o for o in items if o.get("freshness") == "Stale"]
+    if v == "needs-enrichment":
+        out = []
+        for o in items:
+            queue = o.get("current_queue")
+            if queue in ("Ready to Contact", "Contacted"):
+                continue
+            tagged = (
+                _says_needs_enrichment(o.get("contact_readiness"))
+                or _says_needs_enrichment(o.get("enrichment_status"))
+                or _says_needs_enrichment(o.get("ai_status"))
+            )
+            no_score = not isinstance(o.get("governed_priority_score"), (int, float))
+            if tagged or (no_score and not _has_channel(o)):
+                out.append(o)
+        return out
+    if v == "recently-added":
+        return list(items)
+    return items
 
 
 PIPELINE_STATUSES = [
@@ -551,8 +648,10 @@ def _derive_priority_band(opp: Dict[str, Any]) -> Optional[str]:
 
 
 def _derive_daily_mission(opp: Dict[str, Any]) -> str:
-    # Prefer the recommended action / next best action free text.
-    for source in ("next_best_action", "recommended_action", "recommended_offer",
+    # Prefer the recommended action free text. `next_best_action` is kept
+    # as a fallback for records populated before the 2026-02-19 field-write
+    # switch — Airtable's "Next action" is now frozen and no longer read.
+    for source in ("recommended_action", "next_best_action", "recommended_offer",
                    "outreach_angle"):
         v = opp.get(source)
         if v:
@@ -690,7 +789,6 @@ class AirtableOpportunityService:
         self._reverse_map: Dict[str, str] = {}
         self._schema_field_names: List[str] = []
         self._table_id: Optional[str] = None
-        self._fields_ensured: bool = False
         self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
         self._ingestion = ingestion_diagnostics.IngestionRecorder()
         self._load_schema()
@@ -740,44 +838,6 @@ class AirtableOpportunityService:
         except Exception as e:
             log.exception("Airtable: failed to load schema")
             raise
-
-    def _ensure_custom_fields(self) -> None:
-        """Best-effort auto-creation of CUSTOM_WRITABLE_FIELDS.
-
-        Runs at most once per process. After creating fields the schema is
-        reloaded so the new columns are mapped and writable. Failures are
-        logged — callers check field presence and raise a clear error.
-        """
-        with self._lock:
-            if self._fields_ensured:
-                return
-            self._fields_ensured = True
-        missing = [n for n in CUSTOM_WRITABLE_FIELDS if n not in self._schema_field_names]
-        if not missing:
-            return
-        if not self._table_id:
-            log.warning("Airtable: cannot auto-create fields %s — no table id", missing)
-            return
-        try:
-            import requests
-
-            url = (
-                f"https://api.airtable.com/v0/meta/bases/{self._base_id}"
-                f"/tables/{self._table_id}/fields"
-            )
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            for name in missing:
-                r = requests.post(
-                    url,
-                    headers=headers,
-                    json={"name": name, "type": CUSTOM_WRITABLE_FIELDS[name]},
-                    timeout=15,
-                )
-                r.raise_for_status()
-            self._load_schema()
-            log.info("Airtable: auto-created custom fields: %s", ", ".join(missing))
-        except Exception as e:  # noqa: BLE001
-            log.warning("Airtable: could not auto-create fields %s: %s", missing, e)
 
     def schema_report(self) -> Dict[str, Any]:
         return {
@@ -850,18 +910,21 @@ class AirtableOpportunityService:
         opp["priority_band"] = _derive_priority_band(opp)
 
         # Daily mission — Ryan's explicit override wins; otherwise synthesise
-        # from Next action + channel hints.
-        opp["daily_mission_raw"] = opp.get("next_best_action")
+        # from the fresh recommended action + channel hints.
+        opp["daily_mission_raw"] = opp.get("recommended_action")
         _override = (opp.get("mission_override") or "").strip()
         opp["daily_mission"] = (
             _normalize_daily_mission(_override) if _override else _derive_daily_mission(opp)
         )
         opp["daily_mission_code"] = None
 
-        # Recommended action fallback — prefer AI's "recommended action" over
-        # the shorter "Next action", but expose both.
-        if not opp.get("recommended_action"):
-            opp["recommended_action"] = opp.get("next_best_action")
+        # `next_best_action` legacy DTO key — mirror fresh `recommended_action`
+        # so downstream consumers (Slack blocks, Intelligence page, Relationships
+        # page, morning-brief helpers) keep working against fresh data. The
+        # underlying Airtable "Next action" field was deprecated 2026-02-19 —
+        # Ryan stopped its duplicate write and we no longer read it.
+        if not opp.get("next_best_action"):
+            opp["next_best_action"] = opp.get("recommended_action")
         opp["recommended_action_code"] = None
 
         # Dashboard pipeline status — collapse Leads workflow onto the 9 stages.
@@ -1150,7 +1213,7 @@ class AirtableOpportunityService:
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
-             q=None, lane=None, sort=None) -> List[Dict[str, Any]]:
+             q=None, lane=None, sort=None, view=None) -> List[Dict[str, Any]]:
         results = self._all_cached()
         if source:
             results = [o for o in results if o.get("source") == source]
@@ -1183,6 +1246,17 @@ class AirtableOpportunityService:
                 ]).lower()
                 return ql in blob
             results = [o for o in results if match(o)]
+        # Saved-view chip filters — strict read of governed fields only.
+        # Each view maps to an exact governed-field predicate. Never invents
+        # data; unclassified records are excluded from every view.
+        if view:
+            results = _apply_view(results, view)
+        # `recently-added` implies a created-time sort regardless of `sort`.
+        if view == "recently-added":
+            results = sorted(results,
+                             key=lambda o: o.get("created_time") or "",
+                             reverse=True)
+            return results
         return sort_opportunities(results, mode=sort or "lead_score")
 
     def top(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -1289,18 +1363,17 @@ class AirtableOpportunityService:
         return self.update_fields(opp_id, {"status": status})
 
     def _require_custom_field(self, snake: str, at_name: str, description: str) -> None:
-        """Ensure a CUSTOM_WRITABLE_FIELDS column exists and is mapped.
+        """Check a CUSTOM_WRITABLE_FIELDS column exists and is mapped.
 
         Raises AirtableWriteError with a human-actionable message when the
-        field is missing and could not be auto-created (e.g. the token lacks
-        schema.bases:write) — the caller must never silently pretend to save.
+        field is missing — the app never creates it, and the caller must
+        never silently pretend to save.
         """
-        self._ensure_custom_fields()
         if snake not in self._reverse_map:
             raise AirtableWriteError(
                 f"The '{at_name}' field ({description}) doesn't exist in the Airtable "
-                f"Leads table and couldn't be created automatically. Add a field named "
-                f"'{at_name}' manually, or grant the API token the schema.bases:write scope.",
+                f"Leads table. GEAUXleads never creates Airtable fields — add a field "
+                f"named '{at_name}' in Airtable, then try again.",
                 status_code=422,
             )
 

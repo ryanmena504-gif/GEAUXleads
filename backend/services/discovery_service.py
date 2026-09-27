@@ -162,6 +162,39 @@ class DiscoveryReader:
                 self._last_error = str(e)[:220]
                 return list(self._cache)  # stale beats nothing
 
+    def patch_fields(
+        self, record_id: str, updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Patch a small allowlist of fields on a discovery record.
+
+        Callers pass Airtable-column-named keys (e.g. `"Email"`,
+        `"Phone"`) — NOT snake-cased keys. Only used by the Auto-fill
+        Contact flow on the RE agents page. All other Discovery surfaces
+        remain strictly read-only.
+
+        Invalidates this reader's cache on success so the next `all()`
+        call fetches fresh data.
+        """
+        if not record_id:
+            raise ValueError("record_id is required")
+        if not updates:
+            raise ValueError("updates must not be empty")
+        try:
+            updated = self._table.update(record_id, updates)
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)[:280]
+            log.warning(
+                "Discovery '%s' patch failed for %s: %s",
+                self._table_name,
+                record_id,
+                msg,
+            )
+            raise RuntimeError(f"Airtable patch failed: {msg}") from e
+        with self._lock:
+            # Force refresh next .all()
+            self._last_refresh = 0.0
+        return self._record_to_dict(updated)
+
 
 # ---------------------------------------------------------------------------
 # Property Manager Discovery Queue
@@ -347,8 +380,8 @@ def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:
             "name": _pick_first(r, ["agent_name", "name", "full_name"]),
             "brokerage": _pick_first(r, ["brokerage", "firm", "agency", "company"]),
             "why_target": _pick_first(r, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
-            "phone": _pick_first(r, ["phone", "phone_number", "contact_phone"]),
-            "email": _pick_first(r, ["email", "contact_email"]),
+            "phone": _pick_first(r, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
+            "email": _pick_first(r, ["public_business_email", "email", "contact_email"]),
             "website": _pick_first(r, ["website", "url", "profile_url"]),
             "outreach_gate": gate,
             "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
@@ -370,6 +403,74 @@ def real_estate_agent_status_counts() -> Dict[str, int]:
         if _is_outreach_ready(r.get("outreach_gate")):
             ready += 1
     return {"all": total, "ready": ready, "locked": total - ready}
+
+
+# Column names on the Real Estate Agent Outreach table for the
+# Auto-fill Contact flow. Bloodhound writes ONLY to these two columns —
+# never to Outreach Gate, Contact Enrichment Status, or anything else
+# governed by Claude/Make. The names below match the exact Airtable
+# columns already present on the table (verified 2026-02-18):
+#   'Public Business Email' and 'Public Business Phone'.
+# The app never creates, renames, or deletes Airtable fields. If either
+# column is renamed or dropped, the write fails with a clear
+# "missing column" error; schema changes go through Ryan → lead Claude.
+class MissingAirtableColumn(RuntimeError):
+    """A column the app writes to is missing. Never auto-created."""
+
+
+_RE_AGENT_EMAIL_COL = "Public Business Email"
+_RE_AGENT_PHONE_COL = "Public Business Phone"
+
+
+def enrich_real_estate_agent(
+    record_id: str, email: Optional[str] = None, phone: Optional[str] = None
+) -> Dict[str, Any]:
+    """Write a verified email and/or phone onto an agent row. Returns
+    the refreshed DTO (same shape as `list_real_estate_agents` items).
+    Raises RuntimeError with a human-readable message on failure."""
+    reader = get_real_estate_agent_reader()
+    if reader is None:
+        raise RuntimeError("Real Estate Agent Outreach table is not configured")
+    email = (email or "").strip() or None
+    phone = (phone or "").strip() or None
+    if not email and not phone:
+        raise ValueError("At least one of email or phone is required")
+
+    updates: Dict[str, Any] = {}
+    if email:
+        updates[_RE_AGENT_EMAIL_COL] = email
+    if phone:
+        updates[_RE_AGENT_PHONE_COL] = phone
+
+    try:
+        patched = reader.patch_fields(record_id, updates)
+    except RuntimeError as e:
+        if "UNKNOWN_FIELD_NAME" in str(e):
+            raise MissingAirtableColumn(
+                f"The Real Estate Agent Outreach table is missing the "
+                f"'{_RE_AGENT_EMAIL_COL}' or '{_RE_AGENT_PHONE_COL}' column. "
+                "GEAUXleads never creates Airtable fields — ask the lead Claude "
+                "to restore the column, then try again."
+            ) from e
+        raise
+
+    # Return a DTO that matches list_real_estate_agents' shape so the
+    # frontend can drop it into the row without another round-trip.
+    gate = patched.get("outreach_gate")
+    return {
+        "id": patched.get("id"),
+        "name": _pick_first(patched, ["agent_name", "name", "full_name"]),
+        "brokerage": _pick_first(patched, ["brokerage", "firm", "agency", "company"]),
+        "why_target": _pick_first(patched, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
+        "phone": _pick_first(patched, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
+        "email": _pick_first(patched, ["public_business_email", "email", "contact_email"]),
+        "website": _pick_first(patched, ["website", "url", "profile_url"]),
+        "outreach_gate": gate,
+        "contact_enrichment_status": _pick_first(patched, ["contact_enrichment_status", "enrichment_status"]),
+        "outreach_ready": _is_outreach_ready(gate),
+        "created_time": patched.get("created_time"),
+        "days_on_table": days_on_table(patched.get("created_time")),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +537,8 @@ def list_landlords(status: str = "not_contacted", ids: Optional[List[str]] = Non
             "mailing_address": _pick_first(r, ["mailing_address", "owner_mailing_address", "correspondence_address"]),
             "license_number": _pick_first(r, ["license_number", "license", "str_license"]),
             "license_expiration": _pick_first(r, ["license_expiration", "expiration", "expires"]),
+            "portfolio_size": _pick_first(r, ["portfolio_size", "units", "property_count"]),
+            "turnover_cadence": _pick_first(r, ["turnover_cadence", "turnover"]),
             "outreach_gate": r.get("outreach_gate"),
             "outreach_status": r.get("outreach_status"),
             "source": r.get("source"),

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { moneyDisplay } from "@/lib/formatters";
 import { queueBucket } from "@/lib/queue";
 import OpenInMessages from "@/components/OpenInMessages";
+import TwilioIntel from "@/components/TwilioIntel";
 
 /**
  * Lookup — reverse-lookup card. Ryan's iOS Shortcut opens
@@ -90,6 +91,12 @@ const Lookup = () => {
         Who is {phone || "—"}?
       </h1>
 
+      {phone && (
+        <div className="mt-4">
+          <TwilioIntel phoneNumber={phone} />
+        </div>
+      )}
+
       {state.loading && (
         <div data-testid="lookup-loading" className="mt-6 rounded-md border bh-hairline p-4 text-[13px] text-[var(--bh-ink-3)]">
           Looking up {phone}…
@@ -106,7 +113,7 @@ const Lookup = () => {
             No match on file
           </div>
           <div className="text-[15px] font-semibold text-[var(--bh-ink)]">
-            {phone} isn&apos;t in Bloodhound.
+            {phone} isn&apos;t in GEAUXleads.
           </div>
           <div className="text-[12.5px] text-[var(--bh-ink-3)]">
             {state.error}. If this is a lead, add them in Airtable and the

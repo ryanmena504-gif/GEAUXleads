@@ -7,31 +7,31 @@
 
 :root {
     /* Material palette — bone, limestone, plaster, sand, graphite, aged brass, muted olive */
-    --bh-paper: #f4efe6;         /* app canvas — warm bone */
-    --bh-surface: #faf6ed;       /* raised paper */
-    --bh-surface-2: #eee7d8;     /* recessed limestone */
-    --bh-surface-3: #e6dcc7;     /* sand accent — quiet */
+    --bh-paper: #F5F0EB;         /* app canvas — warm bone */
+    --bh-surface: #FAF7F2;       /* raised paper */
+    --bh-surface-2: #ECE5DB;     /* recessed limestone */
+    --bh-surface-3: #E2D7C8;     /* sand accent — quiet */
     --bh-bg: var(--bh-paper);
 
-    --bh-ink: #1f1d18;           /* graphite deep */
-    --bh-ink-2: #3d3830;         /* graphite */
-    --bh-ink-3: #635b4e;         /* stone */
-    --bh-ink-mute: #8a8072;      /* muted stone */
+    --bh-ink: #1A1815;           /* graphite deep */
+    --bh-ink-2: #3B3630;         /* graphite */
+    --bh-ink-3: #5E564D;         /* stone */
+    --bh-ink-mute: #8C8275;      /* muted stone */
     --bh-ink-faint: #b8ad9b;
 
     --bh-hair: rgba(31, 29, 24, 0.09);         /* warm hairline */
     --bh-hair-strong: rgba(31, 29, 24, 0.15);
     --bh-hair-warm: rgba(138, 106, 59, 0.18);
 
-    --bh-brass: #8a6a3b;         /* aged brass — accent, not glow */
-    --bh-brass-2: #a08258;
-    --bh-brass-mute: rgba(138, 106, 59, 0.12);
+    --bh-brass: #B8860B;         /* Cajun brass — primary accent */
+    --bh-brass-2: #D4AF37;       /* bayou gold */
+    --bh-brass-mute: rgba(184, 134, 11, 0.12);
 
-    --bh-olive: #6b7a55;         /* muted olive — positive */
-    --bh-olive-mute: rgba(107, 122, 85, 0.12);
+    --bh-olive: #4A7C59;         /* bayou green — positive */
+    --bh-olive-mute: rgba(74, 124, 89, 0.12);
 
-    --bh-clay: #a55a3e;          /* restrained clay — for cautions, never alarm */
-    --bh-clay-mute: rgba(165, 90, 62, 0.10);
+    --bh-clay: #C05621;          /* clay — for cautions, never alarm */
+    --bh-clay-mute: rgba(192, 86, 33, 0.12);
 
     --bh-shadow-sm: 0 1px 1px rgba(31, 29, 24, 0.03);
     --bh-shadow-md:

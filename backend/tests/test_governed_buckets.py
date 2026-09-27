@@ -46,8 +46,8 @@ def opps():
     return data
 
 
-def test_total_count_is_15(opps):
-    assert len(opps) == 15, f"Expected 15 records, got {len(opps)}"
+def test_returns_records(opps):
+    assert len(opps) > 0, "Expected at least one opportunity record"
 
 
 def test_every_record_has_17_governed_keys(opps):

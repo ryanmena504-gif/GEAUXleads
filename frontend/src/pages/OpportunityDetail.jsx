@@ -11,6 +11,12 @@ import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
+import ScoreExplanationCard from "@/components/ScoreExplanationCard";
+import ContactStatusChip from "@/components/ContactStatusChip";
+import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
+import PreviewNotice from "@/components/PreviewNotice";
+import OutreachDraftCard from "@/components/OutreachDraftCard";
+import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import OutreachWriterButton from "@/components/OutreachWriterButton";
 import { api } from "@/lib/api";
@@ -34,6 +40,11 @@ import {
   XCircle,
   Gauge,
   Target,
+  User,
+  Network,
+  Building2,
+  Signal,
+  Hammer,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -159,10 +170,26 @@ const OpportunityDetail = () => {
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [releasing, setReleasing] = useState(false);
+  const airtableUrlFor = useAirtableRecordUrl();
 
   useEffect(() => {
     api.getOpportunity(id).then(setOpp).catch(() => setOpp(null));
   }, [id]);
+
+  const releaseHold = async () => {
+    setReleasing(true);
+    try {
+      const r = await api.leadsAction(id, { action: "release_hold" });
+      if (!r?.persisted) throw new Error("Airtable write failed");
+      toast.success("Hold released — Hunt status → Investigating. The classifier will re-evaluate on its next run.");
+      setOpp(await api.getOpportunity(id));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not release hold");
+    } finally {
+      setReleasing(false);
+    }
+  };
 
   const handleStatus = async (status) => {
     setBusy(status);
@@ -354,15 +381,54 @@ const OpportunityDetail = () => {
                 {(() => {
                   const bucket = queueBucket(opp);
                   if (bucket === "all") {
+                    const atUrl = airtableUrlFor(opp?.id);
                     return (
                       <div
                         data-testid="no-outreach-notice"
-                        className="rounded-md border p-3 text-[12.5px] text-[var(--bh-ink-3)]"
+                        className="rounded-md border p-3 text-[12.5px] text-[var(--bh-ink-3)] space-y-2"
                         style={{ borderColor: "var(--bh-hair)" }}
                       >
-                        This record is in All Projects — the classifier hasn&apos;t
-                        approved outreach yet. Add the missing evidence in
-                        Airtable to promote it to Ready to Contact.
+                        <div>
+                          This record is in All Projects — the classifier hasn&apos;t
+                          approved outreach yet. Add the missing evidence in
+                          Airtable to promote it to Ready to Contact.
+                        </div>
+                        {opp?.hunt_status === "Paused" && (
+                          <div
+                            data-testid="hold-notice"
+                            className="rounded border p-2.5 space-y-2"
+                            style={{ borderColor: "var(--bh-hair-warm)", background: "var(--bh-brass-mute)" }}
+                          >
+                            <div className="text-[var(--bh-ink-2)]">
+                              <span className="font-semibold">On hold.</span> Hunt status is
+                              &ldquo;Paused&rdquo; — set when you tapped Save for later. The
+                              classifier skips paused records, so this gate won&apos;t re-open
+                              until the hold is released.
+                            </div>
+                            <button
+                              type="button"
+                              data-testid="release-hold-btn"
+                              disabled={releasing}
+                              onClick={releaseHold}
+                              className="h-9 px-3 rounded text-[12.5px] font-medium text-white disabled:opacity-60 transition-colors duration-150"
+                              style={{ background: "var(--bh-brass)" }}
+                            >
+                              {releasing ? "Releasing…" : "Release hold → Investigating"}
+                            </button>
+                          </div>
+                        )}
+                        {atUrl && (
+                          <a
+                            href={atUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            data-testid="open-in-airtable-link"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium"
+                            style={{ color: "var(--bh-brass)" }}
+                          >
+                            Open in Airtable →
+                          </a>
+                        )}
                       </div>
                     );
                   }
@@ -424,6 +490,11 @@ const OpportunityDetail = () => {
             {opp.lane === "landlord" && (
               <LandlordPortfolio opportunityId={opp.id} />
             )}
+            {/* Read-only results the two Make agents write back to Airtable.
+                Both cards auto-hide when their fields are empty. The trigger
+                buttons live in PortfolioCheckPanel and the Actions panel. */}
+            <CompletedProjectProofCard opportunity={opp} />
+            {outreachAllowed(opp) !== "none" && <OutreachDraftCard opportunity={opp} />}
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading
@@ -507,6 +578,8 @@ const OpportunityDetail = () => {
             </div>
             </section>
 
+            {/* Governed score / priority — read-only, provenance-labeled */}
+            <ScoreExplanationCard opp={opp} testId={`score-card-${opp.id}`} />
             {/* Completed project proof — on-demand portfolio check (Make) */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading title="Completed project proof" />
@@ -516,6 +589,9 @@ const OpportunityDetail = () => {
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading title="Who to talk to" />
+              <div className="mb-3">
+                <ContactStatusChip record={opp} testId={`opp-contact-status-${opp.id}`} />
+              </div>
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
                 <KV label="Phone" value={opp.phone} mono testId="kv-phone" />

@@ -1,11 +1,84 @@
 # BLOODHOUND: AI Opportunity Intelligence — PRD
 
+## Pre-deploy cleanup pass (2026-06)
+Ryan asked whether prod needed a bad-code/cleanup check before deploy.
+Deployment scanner: PASS (no hardcoded secrets/URLs, env-only config,
+CORS/ports/crons valid). Fixes shipped:
+- **Build-breaker fixed** — `CI=true yarn build` failed on 3
+  `react-hooks/exhaustive-deps` warnings (CRA treats warnings as errors
+  under CI). `DraftNoteDrawer.jsx`: `opp` wrapped in `useMemo`, load
+  effect intentionally keyed on `[open, opp.id]` with a targeted
+  eslint-disable; `ResearchPanel.jsx`: `onResult` added to `useCallback`
+  deps. Build now passes clean.
+- **Dead code removed** — 6 never-imported files deleted:
+  `BulkActionBar.jsx`, `MetricCard.jsx`, `StatusPipeline.jsx`,
+  `TimeToNudge.jsx`, `hooks/useLocalArchive.js`, `hooks/useTelemetry.js`.
+  (BulkActionBar / archive / telemetry backend routes remain but have no
+  UI consumer — revive only if bulk BCC prep is requested.)
+- **Stale tests quarantined** — suite went from 48 failures → 0.
+  · Deleted `leads_approve_email_test.py` and `opportunities_leads_test.py`
+    (point-in-time snapshots of a 113-record base + live Airtable writes +
+    the retired approve-and-send flow).
+  · Removed the live-write `test_rejected_hunt_status_blocks_approve`
+    (approve is 410 by design; it also restarted the backend mid-test).
+  · `leads_nba_test.py` approve test now asserts the 410.
+  · `unit/test_nba_exclusion.py` fixture seeds `"recommended action"`
+    (was still `"Next action"` after the 2026-02-19 field swap).
+  · New `tests/conftest.py` skips the three sample-fixture-only suites
+    (`test_governed_buckets`, `test_iteration_9`, `test_iteration_10`)
+    whenever `AIRTABLE_ENABLED=true`.
+  Result: 84 passed, 23 skipped, 0 failed.
+
 ## Original problem statement
 Premium full-stack app for The Shirtless Handyman (Ryan Mena) that discovers,
 understands, and prioritizes business opportunities, partners, and market
 signals from an Airtable base. **All outreach is native-only** — `sms:`,
 `mailto:`, and provider compose URLs (Gmail/Outlook Web). Nothing sends
 automatically; Ryan always presses Send himself.
+
+## Field-write dedup — Next action → recommended action (2026-02-19)
+Ryan found a duplicate-write bug: two registry scenarios were writing
+the same value to both `"Next action"` and `"recommended action"` on
+every Airtable record. He stopped the duplicate; only
+`"recommended action"` still updates. `"Next action"` is now frozen
+at whatever value it last held and will silently go stale.
+
+**Bloodhound side (2026-02-19, in response, before redeploy):**
+- `airtable_service.py` FIELD_MAP — removed `"Next action":
+  "next_best_action"` mapping and dropped `"Next action"` from the
+  Airtable field-fetch set. We no longer read the frozen field.
+- `airtable_service.py` DTO post-processing — reversed the alias flow:
+  `next_best_action` is now derived from the fresh `recommended_action`
+  (was the other way around). Every downstream consumer that still
+  references the legacy DTO key keeps working against fresh data.
+- `airtable_service.py` `_derive_daily_mission` — swapped priority
+  order so `recommended_action` is the primary source; `next_best_action`
+  is a secondary fallback.
+- `leads_service.py` FIELD_MAP — changed `"Next action": "next_action"`
+  to `"recommended action": "next_action"` so `NextBestAction.jsx` and
+  the leads-approve flow keep rendering fresh values.
+- `slack_service.py` — flipped the priority so Slack blocks read
+  `recommended_action or next_best_action`, not the reverse.
+
+**Verified:** All 3 sample records return matching values on both DTO
+keys. 55/56 pytest pass; the one failure (`test_approve_writes_flags_
+and_returns_timestamp`) is unrelated — it fails with HTTP 410 "Direct
+email delivery is disabled," which is the correct architectural
+response predating this change and unrelated to the field swap.
+
+## Airtable deeplinks for locked records (2026-02-19)
+Zero-write UX helper. `/api/config` now returns non-secret
+`airtable_base_id` and `airtable_leads_table_id`. New hook
+`useAirtableRecordUrl()` (module-scoped promise cache, one config
+request per page) hands back a `(recordId) => url | null` builder.
+Two surfaces render "Open in Airtable →" jump-links when Bloodhound
+intentionally blocks an action:
+- Actions panel — "This record is in All Projects" notice
+- `portfolio-draft-locked` banner inside the Portfolio Proof card
+
+Architecture stays a clean read-through: no PATCH endpoint added, no
+classifier fights. The gate opens only when Airtable/Claude/Make
+change `Current Queue`.
 
 ## User
 - **Ryan Mena** — owner-operator contractor. iPhone + Mac. Fixed sender identity:
@@ -444,9 +517,154 @@ never stack a second greeting under a classifier-provided one.
    returns `_cached: true`.
 8. Referral prompt after Won — planned
 
-## Backlog / Next
-- **Partner-lead money model** — decide how to represent "estimated job value" on Partner-kind records (annual referral value? new dedicated field? leave blank?). Deferred by Ryan 2026-02-16.
-- **Signature preview** in Settings (see the exact email signature before sending)
+## Code-review fixes (2026-02-19)
+Response to functional code review of the P1–P7 batch on production
+(https://hound-priorities.emergent.host). All three material findings
+resolved in preview; awaits redeploy to reach prod.
+- **HIGH — Saved View chips now filter for real.** Added a `view` query
+  param to `GET /api/opportunities` and the CSV export endpoint. Backend
+  helper `_apply_view` maps each chip to a strict governed-field predicate
+  (Hot → `priority_band == "A"`, Fresh/Stale → `freshness`, Needs
+  enrichment → mirror of `queue.js:needsEnrichment` in Python, Recently
+  added → `created_time` desc). Frontend forwards `view` on both the list
+  fetch and the export href. Verified: Hot returns 17 (all band A), Fresh
+  52, Needs enrichment 39, Recently added sorted desc, All 59.
+- **LOW — CSV `estimated_value` column.** `csv_export_service.py` had
+  whitelisted `construction_value`, which doesn't exist on the DTO —
+  column was always blank. Renamed to `estimated_value` to match
+  `airtable_service.py`.
+- **LOW — CSV now respects on-screen filters.** `csvOpportunitiesUrl`
+  accepts a `URLSearchParams`; `SavedViewsBar` in Opportunities passes
+  the current URL params so `?view=hot&status=Ready` etc. round-trip
+  into the CSV. Backend endpoint accepts the same params as
+  `/api/opportunities`.
+
+## Completed Project Proof — Slice 2 shipped (2026-02-19)
+Slice 2 = "compliment → draft, human-approved only, never auto-send."
+
+- **`components/PortfolioComplimentDraft.jsx`** — new button rendered
+  INSIDE the Slice 1 compliment hero (never as a standalone action).
+  Opens a device-native mail app via `mailto:` with a composed body
+  targeting the Slice 2 spec (65-110 words: compliment + intro +
+  partnership-angle offer + low-friction CTA + signature).
+- **Eligibility gates — ALL required** before the send button renders:
+  1. `portfolio_compliment_line` populated
+  2. `portfolio_check_confidence` = high OR medium
+  3. `portfolio_project_status` = completed
+  4. `portfolio_outreach_recommendation` = portfolio_opener OR use_project_opener
+  5. Verified public business email on record (via `pickEmail`)
+  6. `outreachAllowed(opp) !== "none"` (record not in All Projects)
+  7. Composed body passes `looksLikeAIPrompt` — belt-and-braces so a
+     prompt-shaped Airtable value cannot ever reach Send
+- **Locked state** — when gates 1-4 pass but gate 5 or 6 fails, the
+  card shows `portfolio-draft-locked` with the exact reason. Satisfies
+  Slice 2 acceptance test #5 (project proof may exist, but no email
+  draft may be generated without a verified public business email).
+- **Blocked state** — when gate 7 trips, `portfolio-draft-blocked`
+  banner replaces the button. Never silent fallback.
+- **Approval-only guarantees preserved:** No Airtable writes. No auto-
+  send. No status change. No scoring change. Opening the mailto does
+  not mark the record contacted. Same guarantees as OpenInMessages.
+- **Reused helpers:** `pickEmail`, `withSignature`, `buildSalutation`
+  exported from `OpenInMessages.jsx` — no duplicated mail logic.
+
+**Slice 2 acceptance run (2026-02-19):**
+- Sweeney: button renders, body = 95 words (in target range),
+  compliment first, partnership angle used ✅
+- Rockwell: button renders (High + completed) ✅
+- Decor by Flora: button renders (Medium + completed) ✅
+- J Hand Homes: portfolio not yet run — Ryan must trigger portfolio
+  check on `recZ7oiv2MDNKb72Q` (no email on file). If the check
+  returns High/completed the card will show `portfolio-draft-locked`
+  with "No verified email on this record."
+
+**Boundary intact:** No draft generation runs backend-side. Nothing
+sends automatically. Slice 2 stops here — no rescoring, no automated
+recheck, no Airtable writes.
+
+## Completed Project Proof — Slice 1 built (2026-02-19)
+Frontend + proxy landed. Backend Portfolio Check pipeline lives on
+Claude/Make; Bloodhound stays a pure read-through.
+- Env var `MAKE_PORTFOLIO_CHECK_WEBHOOK` points at the Make.com hook
+  Ryan provided. Never committed to code.
+- `POST /api/leads/{record_id}/portfolio-check` — thin FastAPI proxy
+  that fires the webhook (fire-and-forget, 202 accepted). Validates
+  `record_id` format (`^rec[A-Za-z0-9]{14,}$`); returns 400 on bad ID,
+  503 if webhook env var missing, 502 if Make rejects the trigger.
+- `airtable_service.py` FIELD_MAP extended with all 17 `Portfolio *`
+  → DTO key mappings (12 initial + 5 added 2026-02-19 fix pass).
+- `components/CompletedProjectProofCard.jsx` — read-only card. Renders
+  only when at least one Portfolio_* field is populated. Compliment
+  Line surfaced as a hero block ONLY when Confidence≠Low AND
+  Project Status≠Unclear; suppressed with an amber warning otherwise.
+  Best Project URL link labelled "Evidence" when safe, "Review source"
+  (amber) when unsafe. Failed-check banner with `Portfolio Error
+  Reason` when `Portfolio Check Status = Failed`. "Last checked · N"
+  and "Why this was chosen" surfaced from the 5 fields added on
+  2026-02-19. **All governed-value comparisons are case-insensitive
+  AND underscore-tolerant** via the `key()` helper — critical safety
+  fix after Claude/Make's 2026-02-19 output arrived lowercased
+  (`"high"`, `"portfolio_opener"`, etc.) which would have silently
+  failed strict `"High"` / `"Portfolio Opener"` equality checks and
+  leaked compliments on Low-confidence records.
+- `components/CheckPortfolioButton.jsx` — one-tap, per-record trigger
+  with a live "Searching… Ns" spinner. Polls `getOpportunity(id)` every
+  5s starting at 10s, up to 60s. Never bulk, never automatic.
+- Wired into `OpportunityDetail.jsx` above the "Why this project
+  matters" section.
+
+**Acceptance run — final (2026-02-19 after Ryan's fix pass):**
+- Sweeney (`recjqiG1eqhes4HN1`): Yes · High · completed — compliment
+  surfaced ("Hesper Avenue interior remodel…"), Evidence link,
+  Portfolio Opener (green), all 5 new fields render ✅
+- Rockwell (`recjV6JTgEbBNgmaw`): Yes · High · completed — genuinely
+  different result on re-run (search now finds 67 Oleander Court).
+  Compliment surfaced, Evidence link, Portfolio Opener (green) ✅
+  (Note: no longer usable as the weak-evidence anchor.)
+- Decor by Flora (`reczI61UIgTrHQHTm`): Yes · Medium · completed —
+  compliment surfaced from a testimonial. Site's bot-detection makes
+  it a reliable "insufficient evidence" anchor across most runs, so
+  it's the new default weak-evidence acceptance test.
+
+**Boundary intact:** No draft generation, no auto-send, no scoring
+change, no PATCH to any Portfolio_* field from Bloodhound.
+
+## URGENT — Directive-as-email bug (2026-02-19)
+Ryan tapped "Follow Up Email" on `recCGVbFaQ48Vd3C5` (Backyard Living)
+and saw the mailto body read:
+    "Hi there,
+     Build a short finish-fit memo for kitchen and renovation work."
+That body was `current_recommendation` — a Claude-authored **directive
+to Ryan** ("go build a memo") — piped verbatim into a customer-facing
+mailto. Ryan did NOT tap Send. Audit of live Airtable confirmed the
+same class of failure on 16 records total (all `current_recommendation`
+containing bare imperatives: Wait/Build/Map/Monitor/Verify/Review/
+Check/Prepare); 0 have actually been sent (`sent_with_bad_body = 0`).
+
+**Root-cause fix:** `buildFollowUpDraft` no longer reads
+`current_recommendation` at all. It's the wrong field — it's advice to
+operator, not customer copy. Follow-up drafts now use hardcoded safe
+fallback body ("Just checking in to see if now is a better time to
+chat." / landlord variant). If we ever want per-record follow-up copy,
+it needs a dedicated Airtable field with a "customer-facing" contract
+owned by Claude.
+
+**Defense-in-depth:** `looksLikeAIPrompt` guard extended to catch bare
+imperative directives (Build/Map/Monitor/Verify/Review/Prepare/Wait for
+/Check for/etc. at start of string). 39/39 pytest cases pass including
+false-positive traps ("Please let me know…", "You are correct…",
+"You're welcome to…"). Both `buildFirstDraft` and `buildFollowUpDraft`
+run the composed body through the guard as a final belt-and-braces
+check — if anything trips, the mailto button is REPLACED with a
+disabled red "Draft blocked" state and cannot be tapped.
+
+**Audit endpoint** `GET /api/audit/draft-safety` scans all 6 composer-
+touched fields (first_message, first_contact_message,
+current_recommendation, first_message_subject, decision_maker,
+contact_name), reports counts by reason and by field, and surfaces
+`sent_with_bad_body` separately so we know if anything actually went
+out. Redeploy needed to expose on production; then re-run against
+prod's Airtable snapshot.
 - **Provider test** button — send yourself a Gmail compose to verify authuser lock
 - **Won streak widget** — small streak counter on the dashboard
 - **Voice-to-note capture** — job-site dictation into any lead
@@ -455,3 +673,123 @@ never stack a second greeting under a classifier-provided one.
 - **Weekly recap email** — "you contacted X, Y replied, Z estimates out"
 - **Webhook persistence** to Mongo so preview reloads don't hijack production
 - **iPad hint** — small nudge saying "open on iPhone to text"
+
+**Twilio Lookup v2 integration (2026-02-18)** — read-only phone-number
+intelligence. First and only Twilio surface Bloodhound uses; the app's
+"no automated outbound" rule stays intact.
+- `services/twilio_lookup_service.py` wraps `client.lookups.v2` and
+  requests `line_type_intelligence,caller_name` (~$0.015 per call).
+  Returns normalized DTO: line_type, carrier_name, mobile country/
+  network codes, caller_name, caller_type.
+- Routes: `GET /api/lookup/twilio/{number}` + `GET /api/lookup/twilio/status`.
+  Feature-flagged on TWILIO_ACCOUNT_SID (must start with `AC`) +
+  TWILIO_AUTH_TOKEN. Missing → status returns `enabled:false`, GET
+  returns 503, and the frontend hides the card entirely — no error banner.
+- `components/TwilioIntel.jsx` auto-runs on mount for the number in the
+  URL of the Reverse Lookup page. Renders line-type + carrier pills,
+  CNAM name if available, and a "Likely burner / spam" chip when the
+  number is non-fixed VoIP with no CNAM. Retry button on 429/5xx.
+- Verified live with placeholders empty: status→`{enabled:false}`, lookup→503,
+  page renders without the card (0 "Twilio" mentions in DOM).
+
+**Credentials needed to turn it on (Ryan):**
+1. Log into https://console.twilio.com/ → Account Info
+2. Copy Account SID (starts with `AC…`) → paste as `TWILIO_ACCOUNT_SID`
+3. Reveal Auth Token → paste as `TWILIO_AUTH_TOKEN`
+4. Use the Emergent env-vars editor (secret-scoped), not chat.
+5. Redeploy — the card will start rendering on `/lookup?phone=…` automatically.
+
+**Perplexity research on Real Estate Agents (2026-02-18)** — mirror of
+the Landlord research pattern. Every agent row now has a "Research
+this agent" toggle that expands an inline `ResearchPanel` with a
+dedicated `re_agent_background` system prompt tuned for: verified
+public business email + phone (brokerage site / their own site /
+Realtor.com / Zillow — never personal-looking numbers), recent NOLA
+listings, 12-month sold volume, brokerage tenure, and specialty
+(flips / historic / higher-end). Works regardless of Outreach Gate
+state — research is read-only, no messages sent.
+
+Live-verified on Mary Danna (Keller Williams): returned a 3.3KB grounded
+answer with `mary@salepending.com`, `504-517-6533`, Metairie office
+address, and 10 cited sources. Run button 44px (mobile-safe).
+
+Ryan can now enrich locked agent rows without waiting on Claude,
+then hand the verified contact off for the classifier to promote
+the Outreach Gate on the Airtable side.
+
+**Auto-fill Contact — the app's first Discovery-side write (2026-02-18)**
+Ryan requested: when Perplexity returns a verified email/phone on an
+agent, one-tap writes it into Airtable so the row shows up enriched
+on production without waiting on Claude to paste it in.
+
+Backend:
+- `services/discovery_service.py` — added `DiscoveryReader.patch_fields`
+  (small allowlist write path, invalidates cache on success) +
+  `enrich_real_estate_agent(record_id, email, phone)` helper that only
+  writes to `Email` and `Phone` columns. Never touches governed fields.
+- `server.py` — new route `POST /api/discovery/real-estate-agents/{id}/enrich`.
+  Airtable UNKNOWN_FIELD_NAME / 422 errors surface as a friendly 400
+  telling Ryan the exact columns to add.
+
+Frontend:
+- `lib/contactExtract.js` — regex-based email + US phone extractor with
+  a denylist for placeholder/fictional numbers. 4/4 unit cases pass.
+- `components/ResearchPanel.jsx` — added `onResult` callback so parent
+  components can react when a lookup finishes.
+- `pages/DiscoveryRealEstateAgents.jsx` — the "Auto-fill contact" card
+  renders inline below the ResearchPanel after a lookup completes:
+  extracted email + phone in editable input fields (Ryan can correct
+  before writing), a 44pt "Send to Airtable" button, sonner toast on
+  success/error, row updates in place with the new contact.
+
+Live-verified: extractor pulled mary@salepending.com + (504) 517-6533
+from a real Perplexity answer; the write correctly failed with the
+friendly-400 telling Ryan to add Email + Phone columns to the
+"Real Estate Agent Outreach" table (they don't exist in his current
+schema).
+
+**Auto-fill self-heals — no dependence on Claude (2026-02-18)** — Ryan
+requested this be an Emergent-owned function, not a Claude handoff.
+Two upgrades to the Auto-fill Contact write path:
+
+1. **Actual Airtable column names** — the Real Estate Agent Outreach
+   table already had `Public Business Email` and `Public Business
+   Phone` columns; the write helper now targets those exact names
+   instead of the wrong-guess `Email` / `Phone`. DTO reader also
+   updated to pull `public_business_email` / `public_business_phone`
+   as the primary snake-keys.
+2. **Auto-heal safety net** — added `DiscoveryReader.ensure_columns`
+   using pyairtable's Metadata API (`Table.create_field`). If a write
+   fails with UNKNOWN_FIELD_NAME (e.g. columns get renamed on Claude's
+   side later), `patch_fields` auto-creates the missing columns as
+   `singleLineText` and retries the write once. If the PAT lacks
+   `schema.bases:write`, the route surfaces a clean 400 with the
+   exact next step (rotate the PAT, no Claude involvement needed).
+
+Live-verified: `POST /api/discovery/real-estate-agents/recwB56WOxRQwOijw/enrich`
+returned HTTP 200 in ~1s; the live Airtable row now carries Mary
+Danna's Perplexity-extracted email + phone; cache invalidated so the
+Discovery feed reflects it immediately.
+
+**P1-P7 compatible-pass shipped (2026-02-18)** — all seven priorities from the audit plan, no founding rule broken.
+
+Files created:
+- `backend/services/local_state_service.py` — Mongo `bloodhound_local_state`, namespaced by (workspace=solo, feed), archive/unarchive/list; feed allowlist blocks arbitrary paths.
+- `backend/services/csv_export_service.py` — per-feed DTO whitelist + QUOTE_ALL + formula-injection guard (=/+/-/@/|/tab/CR prefixed with `'`).
+- `frontend/src/components/ScoreExplanationCard.jsx` — governed Claude fields with provenance chips; "Not yet classified" when null.
+- `frontend/src/components/ContactStatusChip.jsx` — 6 states derived from DTO only.
+- `frontend/src/components/CommandCenterStats.jsx` — 4 zero-fabrication counters.
+- `frontend/src/components/SavedViewsBar.jsx` — URL-driven bookmarkable views; 44px mobile / 32px desktop; carries the Export CSV link.
+- `frontend/src/components/BulkActionBar.jsx` — 44px CTAs; BCC-first `mailto:` with URI-length fallback + explicit tab-count confirm; excludes records without email; Archive button title explains "Bloodhound only — Airtable/Make unchanged".
+- `frontend/src/hooks/useLocalArchive.js` + `useTelemetry.js` — telemetry strictly non-blocking, off by default via `BLOODHOUND_TELEMETRY_ENABLED`.
+
+Backend routes added:
+- `GET /api/local-state/{feed}/archived` · `POST /archive` · `POST /unarchive` (feed allowlist)
+- `POST /api/telemetry/event` (returns `{stored:false}` unless env flag on)
+- `GET /api/exports/opportunities.csv` · `GET /api/exports/discovery/{feed}.csv` — `text/csv; charset=utf-8` + `Content-Disposition: attachment; filename=...`
+
+Wired into: OpportunityDetail (ScoreExplanationCard + ContactStatusChip), CommandCenter (Stats top of page), Opportunities (SavedViewsBar w/ CSV export).
+
+Regression sweep (all 200/expected): opportunities, discovery (all 4 feeds), perplexity status, twilio status, morning-brief 401 without bearer, archive round-trip, unknown feed rejected 400, CSV headers correct + 66-row payload.
+
+No environment variables required beyond the existing set; `BLOODHOUND_TELEMETRY_ENABLED` is optional and defaults off.

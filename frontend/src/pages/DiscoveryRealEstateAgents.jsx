@@ -9,13 +9,18 @@ import {
   ExternalLink,
   Sparkles,
   ChevronDown,
+  UploadCloud,
+  Check,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import DiscoveryNav from "@/components/DiscoveryNav";
 import FreshContactBadge from "@/components/FreshContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
 import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
+import ResearchPanel from "@/components/ResearchPanel";
 import { buildSalutation } from "@/lib/greeting";
+import { extractContact } from "@/lib/contactExtract";
+import { toast } from "sonner";
 
 /**
  * DiscoveryRealEstateAgents — pre-listing pitch queue for real estate
@@ -26,7 +31,7 @@ import { buildSalutation } from "@/lib/greeting";
  * plus a collapsible showing the pitch that WILL send when they're
  * unlocked.
  *
- * Bloodhound respects Claude's Outreach Gate absolutely — no locked
+ * GEAUXleads respects Claude's Outreach Gate absolutely — no locked
  * agent gets a callable button, even if their phone/email happens to
  * be enriched separately.
  */
@@ -122,7 +127,40 @@ const PitchPreview = ({ agent, senderName }) => {
   );
 };
 
-const Row = ({ agent, senderName }) => {
+const Row = ({ agent, senderName, researchOpen, onToggleResearch, onEnriched }) => {
+  const [extracted, setExtracted] = useState({ email: "", phone: "" });
+  const [autofill, setAutofill] = useState({ status: "idle", error: null });
+  const hasExisting = Boolean(agent.email || agent.phone);
+
+  const handleResearchResult = (result) => {
+    const c = extractContact(result?.answer || "");
+    setExtracted({
+      email: c.email || "",
+      phone: c.phone || "",
+    });
+  };
+
+  const sendToAirtable = async () => {
+    const email = (extracted.email || "").trim();
+    const phone = (extracted.phone || "").trim();
+    if (!email && !phone) {
+      toast.error("Nothing to send — need at least email or phone.");
+      return;
+    }
+    setAutofill({ status: "sending", error: null });
+    try {
+      const updated = await api.enrichRealEstateAgentContact(agent.id, { email, phone });
+      setAutofill({ status: "done", error: null });
+      toast.success("Sent to Airtable — Claude will see it on the next classifier pass.");
+      if (onEnriched) onEnriched(updated);
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail || err?.message || "Airtable write failed";
+      setAutofill({ status: "error", error: detail });
+      toast.error(detail);
+    }
+  };
+
   const pitchBody = useMemo(
     () => buildPitchBody({ agent_name: agent.name, brokerage: agent.brokerage, sender_name: senderName }),
     [agent.name, agent.brokerage, senderName],
@@ -161,6 +199,20 @@ const Row = ({ agent, senderName }) => {
           {agent.brokerage && (
             <div className="mt-0.5 text-[12px] text-[var(--bh-ink-3)] truncate">
               {agent.brokerage}
+            </div>
+          )}
+          {hasExisting && (
+            <div className="mt-1 flex items-center gap-3 text-[11px] text-[var(--bh-ink-2)] flex-wrap">
+              {agent.email && (
+                <span className="inline-flex items-center gap-1">
+                  <Mail size={10} strokeWidth={1.75} /> {agent.email}
+                </span>
+              )}
+              {agent.phone && (
+                <span className="inline-flex items-center gap-1">
+                  <Phone size={10} strokeWidth={1.75} /> {agent.phone}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -223,6 +275,109 @@ const Row = ({ agent, senderName }) => {
       )}
 
       <PitchPreview agent={agent} senderName={senderName} />
+
+      <div className="mt-3 pt-3 border-t bh-hairline flex items-center justify-end">
+        <button
+          type="button"
+          onClick={onToggleResearch}
+          data-testid={`agent-research-toggle-${agent.id}`}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--bh-ink-3)] hover:text-[var(--bh-brass)]"
+        >
+          <Sparkles size={11} strokeWidth={1.75} />
+          {researchOpen ? "Hide research" : "Research this agent"}
+        </button>
+      </div>
+      {researchOpen && (
+        <div className="mt-2 space-y-2" data-testid={`agent-research-panel-${agent.id}`}>
+          <ResearchPanel
+            researchType="re_agent_background"
+            recordId={agent.id}
+            query={`Real estate agent in New Orleans. Name: ${agent.name || "(unknown)"}. Brokerage: ${agent.brokerage || "(unknown)"}. Target notes: ${agent.why_target || "(none)"}. Find verified public business email + phone (brokerage site / their own site / Realtor.com / Zillow profile — no personal-looking numbers), recent NOLA listings, approximate 12-month sold volume, brokerage tenure, and whether they specialize in flips / historic renos / higher-end listings. Cite every source URL.`}
+            label="Look up this agent"
+            hint="Public listings + verified business contact + deal volume with citations."
+            testId={`research-agent-${agent.id}`}
+            onResult={handleResearchResult}
+          />
+
+          {(extracted.email || extracted.phone) && (
+            <div
+              className="rounded-md border bh-hairline p-3 space-y-2"
+              style={{ background: "var(--bh-surface-2)" }}
+              data-testid={`agent-autofill-${agent.id}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <UploadCloud size={12} className="text-[var(--bh-brass)]" />
+                <span className="bh-eyebrow" style={{ color: "var(--bh-brass)" }}>
+                  Auto-fill contact
+                </span>
+                <span className="ml-auto text-[10px] mono uppercase tracking-widest text-[var(--bh-ink-mute)]">
+                  writes to Airtable
+                </span>
+              </div>
+              <p className="text-[11.5px] text-[var(--bh-ink-3)] leading-relaxed">
+                Extracted from Perplexity's answer. Edit before sending —
+                nothing writes until you tap Send. GEAUXleads only touches
+                Email + Phone; the Outreach Gate stays Claude's.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="text-[11px] text-[var(--bh-ink-mute)]">
+                  Email
+                  <input
+                    type="email"
+                    value={extracted.email}
+                    onChange={(e) => setExtracted((v) => ({ ...v, email: e.target.value }))}
+                    placeholder="name@brokerage.com"
+                    data-testid={`agent-autofill-email-${agent.id}`}
+                    className="mt-1 w-full h-9 px-2 rounded-sm bg-[var(--bh-surface)] border bh-hairline text-[12.5px] text-[var(--bh-ink)]"
+                  />
+                </label>
+                <label className="text-[11px] text-[var(--bh-ink-mute)]">
+                  Phone
+                  <input
+                    type="tel"
+                    value={extracted.phone}
+                    onChange={(e) => setExtracted((v) => ({ ...v, phone: e.target.value }))}
+                    placeholder="(504) 555-1212"
+                    data-testid={`agent-autofill-phone-${agent.id}`}
+                    className="mt-1 w-full h-9 px-2 rounded-sm bg-[var(--bh-surface)] border bh-hairline text-[12.5px] text-[var(--bh-ink)]"
+                  />
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={sendToAirtable}
+                  disabled={autofill.status === "sending" || autofill.status === "done"}
+                  data-testid={`agent-autofill-send-${agent.id}`}
+                  className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold border disabled:opacity-60"
+                  style={{
+                    background: "var(--bh-brass)",
+                    color: "var(--bh-surface)",
+                    borderColor: "var(--bh-brass)",
+                  }}
+                >
+                  {autofill.status === "done" ? (
+                    <>
+                      <Check size={13} strokeWidth={2} /> Sent
+                    </>
+                  ) : autofill.status === "sending" ? (
+                    "Sending…"
+                  ) : (
+                    <>
+                      <UploadCloud size={13} strokeWidth={2} /> Send to Airtable
+                    </>
+                  )}
+                </button>
+                {autofill.status === "error" && (
+                  <span className="text-[11px]" style={{ color: "#a67055" }}>
+                    {autofill.error}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -238,6 +393,7 @@ const DiscoveryRealEstateAgents = () => {
   const [state, setState] = useState({ loading: true, items: [], counts: {} });
   const [senderName, setSenderName] = useState("Ryan");
   const [sortDir, setSortDir] = useState("fresh");
+  const [researchOpenId, setResearchOpenId] = useState(null);
 
   useEffect(() => {
     // Sender name comes from the user settings so the pitch signs off correctly.
@@ -333,14 +489,28 @@ const DiscoveryRealEstateAgents = () => {
       ) : (
         <div className="mt-5 space-y-3">
           {sortedItems.map((agent) => (
-            <Row key={agent.id} agent={agent} senderName={senderName} />
+            <Row
+              key={agent.id}
+              agent={agent}
+              senderName={senderName}
+              researchOpen={researchOpenId === agent.id}
+              onToggleResearch={() =>
+                setResearchOpenId((cur) => (cur === agent.id ? null : agent.id))
+              }
+              onEnriched={(updated) => {
+                setState((prev) => ({
+                  ...prev,
+                  items: prev.items.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+                }));
+              }}
+            />
           ))}
         </div>
       )}
 
       <div className="mt-5 text-[10.5px] text-[var(--bh-ink-mute)] leading-snug">
         <ExternalLink size={9} className="inline mr-1 -mt-0.5" />
-        Outreach Gate is owned by Airtable + Make. Bloodhound never sends
+        Outreach Gate is owned by Airtable + Make. GEAUXleads never sends
         without the gate cleared.
       </div>
     </div>

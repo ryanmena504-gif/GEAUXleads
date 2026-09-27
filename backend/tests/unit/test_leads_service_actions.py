@@ -39,7 +39,7 @@ class FakeTable:
 
 APPROVABLE_FIELDS = {
     "Leads Name": "Ashby Residence Roof Replacement",
-    "Next action": "Call Marie about the Prytania roof permit",
+    "recommended action": "Call Marie about the Prytania roof permit",
     "Contact name": "Marie Ashby",
     "Contact phone": "504-231-8890",
     "Contact email": "marie.ashby@ashbyhome.net",
@@ -96,7 +96,7 @@ def test_approve_does_not_claim_a_message_was_sent(service):
 
 def test_ineligible_lead_is_refused_with_structured_reasons():
     svc = make_service({"rec1": {"Leads Name": "Skeleton row",
-                                 "Next action": "Review"}})
+                                 "recommended action": "Review"}})
     with pytest.raises(OutreachBlocked) as exc:
         svc.approve("rec1")
     codes = {b["code"] for b in exc.value.result.to_dict()["blockers"]}
@@ -106,7 +106,7 @@ def test_ineligible_lead_is_refused_with_structured_reasons():
 
 def test_refusal_is_audited_as_rejected():
     log = audit.AuditLog()
-    svc = make_service({"rec1": {"Leads Name": "Skeleton", "Next action": "Review"}},
+    svc = make_service({"rec1": {"Leads Name": "Skeleton", "recommended action": "Review"}},
                        audit_log=log)
     with pytest.raises(OutreachBlocked):
         svc.approve("rec1", actor="ryan")
@@ -192,7 +192,7 @@ def test_revert_states_that_nothing_was_dispatched(service):
 # ------------------------------------------------------------ queue safety
 def test_suppressed_duplicate_never_becomes_the_next_best_action():
     thin = {k: v for k, v in APPROVABLE_FIELDS.items()
-            if k in ("Leads Name", "Next action", "Contact phone")}
+            if k in ("Leads Name", "recommended action", "Contact phone")}
     svc = make_service({"rec1": dict(APPROVABLE_FIELDS), "rec2": thin})
     pick = svc.pick_next_best_action()
     assert pick["id"] == "rec1"
@@ -202,7 +202,7 @@ def test_suppressed_duplicate_never_becomes_the_next_best_action():
 
 def test_duplicate_cannot_be_approved_independently():
     thin = {k: v for k, v in APPROVABLE_FIELDS.items()
-            if k in ("Leads Name", "Next action", "Contact phone")}
+            if k in ("Leads Name", "recommended action", "Contact phone")}
     svc = make_service({"rec1": dict(APPROVABLE_FIELDS), "rec2": thin})
     with pytest.raises(OutreachBlocked) as exc:
         svc.approve("rec2")
@@ -210,7 +210,7 @@ def test_duplicate_cannot_be_approved_independently():
 
 
 def test_skeleton_rows_are_excluded_from_the_queue():
-    svc = make_service({"recEmpty": {"Leads Name": None, "Next action": None}})
+    svc = make_service({"recEmpty": {"Leads Name": None, "recommended action": None}})
     assert svc.pick_next_best_action() is None
 
 
@@ -222,7 +222,7 @@ def test_next_best_action_carries_the_verdict_for_the_ui(service):
 
 
 def test_queue_stats_separate_approvable_from_merely_queued():
-    unreachable = {"Leads Name": "No contact", "Next action": "Research"}
+    unreachable = {"Leads Name": "No contact", "recommended action": "Research"}
     svc = make_service({"rec1": dict(APPROVABLE_FIELDS), "rec2": unreachable})
     stats = svc.queue_stats()
     assert stats["eligible"] == 2
