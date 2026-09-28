@@ -11,6 +11,7 @@ import OpenInMessages from "@/components/OpenInMessages";
 import ContactResults from "@/components/ContactResults";
 import LandlordPortfolio from "@/components/LandlordPortfolio";
 import ResearchPanel from "@/components/ResearchPanel";
+import OwnerContactResearch from "@/components/OwnerContactResearch";
 import ScoreExplanationCard from "@/components/ScoreExplanationCard";
 import ContactStatusChip from "@/components/ContactStatusChip";
 import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
@@ -611,6 +612,10 @@ const OpportunityDetail = () => {
                   testId={`research-dm-${opp.id}`}
                 />
               </div>
+              {/* Owner contact finder — research bot for permit/homeowner leads.
+                  Finds a public phone/email for the owner; Ryan taps Save to
+                  write it onto the lead. Nothing auto-writes. */}
+              <OwnerContactResearch opp={opp} onUpdated={setOpp} />
             </section>
 
             {/* Property / Project */}
