@@ -1282,8 +1282,13 @@ async def discovery_property_managers(status: str = "worth_a_look"):
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
     if handoff:
-        actionable_ids = [i["id"] for i in items if is_actionable_property_manager(i)]
-        fresh_ids = await handoff.mark_fresh(FEED_PROPERTY_MANAGERS, actionable_ids)
+        try:
+            actionable_ids = [i["id"] for i in items if is_actionable_property_manager(i)]
+            fresh_ids = await handoff.mark_fresh(FEED_PROPERTY_MANAGERS, actionable_ids)
+        except Exception:
+            # Mongo unreachable (Atlas never fixed) — degrade gracefully:
+            # the lists still work, just without 'freshly actionable' badges.
+            logger.exception("discovery handoff mark_fresh failed (property managers)")
     for item in items:
         item["is_freshly_actionable"] = item["id"] in fresh_ids
     # Float freshly-actionable rows to the top so operator sees the newest
@@ -1318,8 +1323,13 @@ async def discovery_real_estate_agents(status: str = "all"):
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
     if handoff:
-        actionable_ids = [i["id"] for i in items if is_actionable_agent(i)]
-        fresh_ids = await handoff.mark_fresh(FEED_REAL_ESTATE_AGENTS, actionable_ids)
+        try:
+            actionable_ids = [i["id"] for i in items if is_actionable_agent(i)]
+            fresh_ids = await handoff.mark_fresh(FEED_REAL_ESTATE_AGENTS, actionable_ids)
+        except Exception:
+            # Mongo unreachable (Atlas never fixed) — degrade gracefully:
+            # the lists still work, just without 'freshly actionable' badges.
+            logger.exception("discovery handoff mark_fresh failed (real-estate agents)")
     for item in items:
         item["is_freshly_actionable"] = item["id"] in fresh_ids
     items.sort(key=lambda i: (not i.get("is_freshly_actionable"),))
@@ -1365,8 +1375,13 @@ async def discovery_investors(status: str = "all"):
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
     if handoff:
-        actionable_ids = [i["id"] for i in items if is_actionable_investor(i)]
-        fresh_ids = await handoff.mark_fresh(FEED_INVESTORS, actionable_ids)
+        try:
+            actionable_ids = [i["id"] for i in items if is_actionable_investor(i)]
+            fresh_ids = await handoff.mark_fresh(FEED_INVESTORS, actionable_ids)
+        except Exception:
+            # Mongo unreachable (Atlas never fixed) — degrade gracefully:
+            # the lists still work, just without 'freshly actionable' badges.
+            logger.exception("discovery handoff mark_fresh failed (investors)")
     for item in items:
         item["is_freshly_actionable"] = item["id"] in fresh_ids
     items.sort(key=lambda i: (not i.get("is_freshly_actionable"),))
