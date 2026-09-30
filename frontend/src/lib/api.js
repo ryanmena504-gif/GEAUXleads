@@ -8,8 +8,10 @@ const client = axios.create({ baseURL: API });
 export const api = {
   listOpportunities: (params = {}) =>
     client.get("/opportunities", { params }).then((r) => r.data),
-  getOpportunity: (id) =>
-    client.get(`/opportunities/${id}`).then((r) => r.data),
+  getOpportunity: (id, { fresh = false } = {}) =>
+    client
+      .get(`/opportunities/${id}`, { params: fresh ? { fresh: true } : {} })
+      .then((r) => r.data),
   summary: () => client.get("/opportunities/summary").then((r) => r.data),
   missions: () => client.get("/opportunities/missions").then((r) => r.data),
   pipeline: () => client.get("/opportunities/pipeline").then((r) => r.data),
@@ -68,6 +70,14 @@ export const api = {
   // On-demand outreach writer (Make webhook; returns 503 when not configured)
   outreachWrite: (id) =>
     client.post(`/opportunities/${id}/outreach-write`).then((r) => r.data),
+
+  // On-demand Contact Finder (Make webhook; 503 when not configured)
+  findContact: (id) =>
+    client.post(`/opportunities/${id}/find-contact`).then((r) => r.data),
+
+  // On-demand Lead Re-check for new public info (Make webhook; 503 when not configured)
+  recheckLead: (id) =>
+    client.post(`/opportunities/${id}/recheck`).then((r) => r.data),
 
   // Fresh Intel digest — leads the daily review agent flagged with new info
   freshIntel: (limit = 20) =>
