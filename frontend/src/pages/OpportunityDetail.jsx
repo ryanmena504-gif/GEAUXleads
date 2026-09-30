@@ -19,6 +19,7 @@ import OutreachDraftCard from "@/components/OutreachDraftCard";
 import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import OutreachWriterButton from "@/components/OutreachWriterButton";
+import AgentRunButton from "@/components/AgentRunButton";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -45,6 +46,8 @@ import {
   Building2,
   Signal,
   Hammer,
+  UserSearch,
+  RefreshCcw,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -495,6 +498,35 @@ const OpportunityDetail = () => {
                 buttons live in PortfolioCheckPanel and the Actions panel. */}
             <CompletedProjectProofCard opportunity={opp} />
             {outreachAllowed(opp) !== "none" && <OutreachDraftCard opportunity={opp} />}
+            {/* New info — Lead Re-check agent (Make) looks for genuinely new
+                public info and fills New info flag / summary / date. */}
+            <section className="bh-surface rounded-md p-5" data-testid="new-info-card">
+              <SectionHeading title="New info" />
+              {opp.flag_new_info || opp.new_info_summary ? (
+                <div className="mb-3 text-sm leading-relaxed text-[var(--bh-ink-2)]">
+                  {opp.new_info_summary || "Flagged as having new public info."}
+                  {opp.new_info_date && (
+                    <div className="mt-1 text-[11px] text-[var(--bh-ink-mute)]">
+                      Flagged {fmtDate(opp.new_info_date)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="mb-3 text-[12.5px] text-[var(--bh-ink-3)]">
+                  No new public info flagged for this lead.
+                </p>
+              )}
+              <AgentRunButton
+                opp={opp}
+                trigger={api.recheckLead}
+                watchFields={["flag_new_info", "new_info_summary", "new_info_date"]}
+                label="Re-check for new info"
+                icon={RefreshCcw}
+                doneMessage="Re-check finished."
+                onUpdated={setOpp}
+                testId="recheck-lead-btn"
+              />
+            </section>
             {/* Intelligence */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading
@@ -600,6 +632,20 @@ const OpportunityDetail = () => {
                 <KV label="Applicant" value={opp.applicant} />
                 <KV label="Contractor on record" value={opp.contractor} />
                 <KV label="Owner" value={opp.owner} />
+              </div>
+              <div className="mt-4">
+                {/* Contact Finder agent (Make) — fills Contact phone / email or
+                    notes why none exists. Research only; nothing is sent. */}
+                <AgentRunButton
+                  opp={opp}
+                  trigger={api.findContact}
+                  watchFields={["phone", "email", "evidence_summary", "notes"]}
+                  label={opp.phone || opp.email ? "Find contact again" : "Find contact"}
+                  icon={UserSearch}
+                  doneMessage="Contact finder finished — contact details updated."
+                  onUpdated={setOpp}
+                  testId="find-contact-btn"
+                />
               </div>
               <div className="mt-4">
                 <ResearchPanel

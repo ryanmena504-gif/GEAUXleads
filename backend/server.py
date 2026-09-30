@@ -229,8 +229,12 @@ async def opportunity_duplicates():
 
 
 @api_router.get("/opportunities/{opp_id}")
-async def get_opportunity(opp_id: str):
+async def get_opportunity(opp_id: str, fresh: bool = False):
     svc = get_opportunity_service()
+    # fresh=true re-reads this one record from Airtable first, so a page
+    # waiting on a Make agent's write-back sees it without the cache TTL.
+    if fresh and hasattr(svc, "_refresh_one"):
+        await _bg(svc._refresh_one, opp_id)
     opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
@@ -2138,6 +2142,56 @@ async def trigger_portfolio_check(opp_id: str):
 
     return {"ok": True, "status": "triggered",
             "message": "Portfolio check running — real web search takes 15-30 seconds."}
+
+
+async def _trigger_record_agent(opp_id: str, env_name: str, label: str,
+                                audit_action: str) -> Dict[str, Any]:
+    """POST {"record_id": ...} to an on-demand Make agent for one lead.
+
+    The Make scenario does the work and writes results back to Airtable; this
+    returns as soon as Make accepts the request. Nothing is ever sent to the
+    lead. The webhook URL lives only in the backend env var `env_name`.
+    """
+    webhook = _make_webhook(env_name)
+    if not webhook:
+        raise HTTPException(status_code=503,
+                            detail=f"{label} is not configured ({env_name} missing)")
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(webhook, json={"record_id": opp.get("id")})
+    except Exception as e:  # noqa: BLE001
+        logger.exception("%s webhook POST failed", label)
+        raise HTTPException(status_code=502, detail=f"{label} trigger failed: {e}")
+    if r.status_code >= 300:
+        logger.warning("%s webhook non-2xx status=%s", label, r.status_code)
+        raise HTTPException(status_code=502,
+                            detail=f"{label} trigger failed (webhook returned {r.status_code})")
+    try:
+        get_audit_log().record(action=audit_action, entity_id=opp_id, outcome="accepted",
+                               reason=f"{label} triggered for {opp.get('name')}")
+    except Exception:  # noqa: BLE001
+        logger.exception("audit record failed — continuing anyway")
+    return {"ok": True, "status": "triggered", "message": f"{label} running."}
+
+
+@api_router.post("/opportunities/{opp_id}/find-contact")
+async def trigger_find_contact(opp_id: str):
+    """Contact Finder agent: searches for a verified public phone/email and
+    fills Contact phone / Contact email (or notes why none exists)."""
+    return await _trigger_record_agent(opp_id, "CONTACT_FINDER_WEBHOOK",
+                                       "Contact finder", "find_contact_triggered")
+
+
+@api_router.post("/opportunities/{opp_id}/recheck")
+async def trigger_lead_recheck(opp_id: str):
+    """Lead Re-check agent: looks for genuinely new public info and fills
+    New info flag / New info summary / New info date."""
+    return await _trigger_record_agent(opp_id, "LEAD_RECHECK_WEBHOOK",
+                                       "Lead re-check", "lead_recheck_triggered")
 
 
 @api_router.post("/opportunities/{opp_id}/outreach-write")
