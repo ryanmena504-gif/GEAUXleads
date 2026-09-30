@@ -38,13 +38,19 @@ export const LANE_LABEL = {
   non_permit: "Projects to Watch",
 };
 
+// Lead sources — the exact option values of the Airtable Leads "Source"
+// field (the backend passes them through unchanged, and the Source filter
+// matches them exactly). "Other " really has a trailing space in Airtable.
 export const SOURCES = [
-  "permit",
-  "website",
-  "referral",
-  "nextdoor",
-  "google_places",
-  "manual",
+  "Permit Issued",
+  "Permit",
+  "Property Sale Record",
+  "Website",
+  "Google maps",
+  "Instagram",
+  "Referral",
+  "Manuals research",
+  "Other ",
 ];
 
 export const PROJECT_TYPES = [

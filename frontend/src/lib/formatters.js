@@ -99,10 +99,15 @@ export const fmtRelative = (iso) => {
 
 export const sourceLabel = (s) =>
   ({
+    // Airtable "Source" option values (see SOURCES in constants.js)
+    "Google maps": "Google Maps",
+    "Manuals research": "Manual research",
+    "Other ": "Other",
+    // Legacy codes still used by the sample data
     permit: "Permit",
     website: "Website",
     referral: "Referral",
     nextdoor: "Nextdoor",
     google_places: "Google Places",
     manual: "Manual entry",
-  })[s] || s || "—";
+  })[s] || (typeof s === "string" ? s.trim() : s) || "—";

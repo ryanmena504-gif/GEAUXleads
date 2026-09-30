@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
 import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
-import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save, Phone } from "lucide-react";
+import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save, Phone, Tags } from "lucide-react";
+import { SOURCES } from "@/lib/constants";
+import { sourceLabel } from "@/lib/formatters";
 import { toast } from "sonner";
 import { fetchUserSettings, saveUserSettings } from "@/hooks/useUserSettings";
 
@@ -347,6 +349,17 @@ const Settings = () => {
               title="New Orleans Permits"
               subtitle="Primary discovery source · daily refresh via Make.com"
               right={<Pill tone="on">Live</Pill>}
+            />
+            <Row
+              icon={Tags}
+              title="Lead sources"
+              subtitle={
+                <span data-testid="settings-lead-sources">
+                  Recognized values of the Airtable Leads &ldquo;Source&rdquo; field:{" "}
+                  {SOURCES.map(sourceLabel).join(" · ")}
+                </span>
+              }
+              right={<Pill tone="on">{SOURCES.length} sources</Pill>}
             />
             <Row
               icon={Zap}
