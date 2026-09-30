@@ -40,12 +40,13 @@ export const currentQueue = (opp) => {
  *   "first_contact" → Current Queue = "Ready to Contact"
  *                     Show Open Email Draft; Open Text Draft only when
  *                     SMS Permission is explicitly granted.
- *   "follow_up"     → Current Queue = "Contacted"
- *                     Show Open Follow-Up Draft only.
+ *   "follow_up"     → Current Queue = "Contacted" AND fewer than 4 touches
+ *                     used. Show Open Follow-Up Draft only.
  *                     Hide Text / Email / Draft a Note / I sent it and every
  *                     initial-contact control.
  *   "none"          → Current Queue = "All Projects" (or any other value,
- *                     or unclassified). Hide every messaging and draft
+ *                     or unclassified), OR the 4-touch sequence is complete
+ *                     (Outreach attempt >= 4). Hide every messaging and draft
  *                     control. No exceptions.
  *
  * Every draft renderer in the codebase MUST route through this helper. Do
@@ -55,8 +56,36 @@ export const currentQueue = (opp) => {
 export const outreachAllowed = (opp) => {
   const q = currentQueue(opp);
   if (q === "Ready to Contact") return "first_contact";
-  if (q === "Contacted") return "follow_up";
+  if (q === "Contacted") {
+    // The 4-touch sequence is spent — no fifth message, no exceptions.
+    if (touchCount(opp) >= 4) return "none";
+    return "follow_up";
+  }
   return "none";
+};
+
+/**
+ * touchCount — touches logged so far in the 4-touch outreach sequence,
+ * from Airtable's `Outreach attempt` (0-4). Garbage/missing → 0.
+ */
+export const touchCount = (opp) => {
+  const n = Number(opp?.outreach_attempt);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(4, Math.floor(n)));
+};
+
+/**
+ * nextTouch — the touch Ryan owes next, given touches logged so far.
+ * Returns null when the sequence is complete. Mirrors
+ * backend/services/followup_sequence.py — keep the two in sync.
+ */
+const TOUCH_LABELS = { 1: "Email", 2: "Call + text", 3: "Follow-up email", 4: "Breakup email" };
+const TOUCH_CHANNELS = { 1: "Email", 2: "Call", 3: "Email", 4: "Email" };
+export const nextTouch = (opp) => {
+  const done = touchCount(opp);
+  if (done >= 4) return null;
+  const attempt = done + 1;
+  return { attempt, of: 4, label: TOUCH_LABELS[attempt], channel: TOUCH_CHANNELS[attempt] };
 };
 
 /**

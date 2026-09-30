@@ -55,6 +55,7 @@ FIELD_ALIASES: Dict[str, Tuple[str, ...]] = {
     "message": ("first_message",),
     "approval_status": ("approval_status",),
     "outreach_status": ("outreach_status",),
+    "attempt": ("outreach_attempt",),
     "workflow_status": ("status", "status_raw"),
     "risk_flags": ("risk_flags",),
     "ai_missing_information": ("missing_information",),
@@ -470,6 +471,24 @@ def evaluate(
             field="Outreach status / Message sent date",
             message="Outreach has already been sent to this lead — approving again risks a duplicate message.",
             remediation="Use follow-up rather than a fresh approval.",
+        ))
+
+    # ---- 9b. four-touch sequence cap ----
+    # A lead that has used all 4 touches is done — approving a fifth message
+    # would contradict the sequence. Ryan can reset `Outreach attempt` in
+    # Airtable to re-open a lead deliberately.
+    attempt_raw = _raw(record, "attempt")
+    attempt_num = coerce_number(attempt_raw)
+    sequence_done = attempt_num is not None and attempt_num >= 4
+    if not check("sequence_not_complete", "Fewer than 4 outreach touches used",
+                 not sequence_done,
+                 f"{attempt_num:g} of 4 used" if attempt_num is not None else "no touches logged"):
+        findings.append(Finding(
+            code="sequence_complete",
+            severity=BLOCKER,
+            field="Outreach attempt",
+            message="All 4 outreach touches have been used — the sequence is complete.",
+            remediation="Reset Outreach attempt in Airtable to deliberately re-open the sequence.",
         ))
 
     # ---- 10. advisory: stale AI prose ----

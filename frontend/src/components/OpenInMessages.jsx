@@ -1,5 +1,6 @@
 import React from "react";
-import { Mail, Reply, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Mail, Reply, ShieldCheck, AlertTriangle, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
@@ -99,31 +100,69 @@ const buildFirstDraft = (opp, sender) => {
   };
 };
 
+/**
+ * buildFollowUpDraft — attempt-aware follow-up copy for the 4-touch sequence.
+ *
+ * The next touch is (outreach_attempt || 0) + 1, which is 2, 3, or 4 here
+ * (touch 1 is the first-contact "Email Now"; a spent sequence never renders
+ * this component at all). Each touch gets its own copy:
+ *   2 → call + text: a short TEXT template with a copy button (no mailto —
+ *       Ryan calls from his phone, then pastes this text).
+ *   3 → follow-up email: brief check-in referencing the first note.
+ *   4 → breakup email: permission-to-close-the-file note.
+ *
+ * All copy is hardcoded safe fallback text. The same rule as ever applies:
+ * `current_recommendation` is Claude's ADVICE TO RYAN — never customer-facing
+ * outreach copy (2026-02-19 bug). Nothing AI-authored is piped in.
+ */
 const buildFollowUpDraft = (opp, sender) => {
   const isLandlord = (opp?.lane || "").toLowerCase() === "landlord";
   const salutation = buildSalutation(
     [opp?.decision_maker, opp?.contact_name],
     { verb: "Hi", generic: "there" },
   );
+  const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
+  const senderPhone = (sender?.sender_phone || DEFAULT_SENDER_PHONE).trim();
+  const project = opp?.project_type || opp?.name || "your project";
+  const address = opp?.project_address || opp?.name || "your properties";
+  const attempt = Math.max(0, Math.min(4, Math.floor(Number(opp?.outreach_attempt) || 0))) + 1;
+
+  if (attempt === 2) {
+    // Call + text touch — a text template, not an email.
+    const body = isLandlord
+      ? `${salutation}, it's ${senderName} with The Shirtless Handyman — tried calling about ${address}. I do turnovers and punch-list work between tenants, one call. Worth a quick chat this week? — ${senderName} ${senderPhone}`
+      : `${salutation}, it's ${senderName} with The Shirtless Handyman — tried giving you a call about ${project}. Worth a quick chat this week? — ${senderName} ${senderPhone}`;
+    return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
+  }
+
+  if (attempt >= 4) {
+    // Breakup — the last touch. Permission to close the file.
+    const subject = isLandlord
+      ? `Should I close this out?`
+      : `Should I close this out?`;
+    const rec = isLandlord
+      ? "I don't want to keep pestering you — should I close this out on my end? If anything needs attention between tenants down the road, just text me a photo."
+      : `I don't want to keep pestering you — should I close out ${project} on my end? If it's still on your radar, just reply and I'll make time this week.`;
+    const body = [salutation, "", rec].filter(Boolean).join("\n");
+    return {
+      kind: "email",
+      subject,
+      body: withSignature(body, sender?.sender_name, sender?.sender_phone),
+      airtable_rejected: false,
+      airtable_reject_reason: null,
+    };
+  }
+
+  // Touch 3 — the plain follow-up email.
   const subject = isLandlord
-    ? `Turnover check-in · ${opp?.project_address || opp?.name || "your properties"}`
-    : `Following up · ${opp?.project_type || opp?.name || "your project"}`;
-  const landlordDefault =
-    "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
-  const projectDefault =
-    "Just checking in to see if now is a better time to chat.";
-  // CRITICAL: `current_recommendation` is Claude's ADVICE TO RYAN
-  // ("go build a memo", "wait for a reply", "map recurring scopes") — it
-  // is NOT customer-facing outreach copy. It was previously piped into
-  // the mailto body which caused directives to Ryan to be sent as
-  // messages to prospects (2026-02-19 bug). Follow-up drafts now use
-  // ONLY the hardcoded safe copy above. If we ever want a per-record
-  // follow-up line, it needs its own dedicated Airtable field owned by
-  // Claude with an explicit "customer-facing" contract — never a reused
-  // operator-directive field.
-  const rec = isLandlord ? landlordDefault : projectDefault;
+    ? `Turnover check-in · ${address}`
+    : `Following up · ${project}`;
+  const rec = isLandlord
+    ? "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there."
+    : `Circling back on my note from last week about ${project}. If the timing wasn't right, no worries — happy to take a look whenever it is.`;
   const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {
+    kind: "email",
     subject,
     body: withSignature(body, sender?.sender_name, sender?.sender_phone),
     airtable_rejected: false,
@@ -175,6 +214,18 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const draft = isFollowup
     ? buildFollowUpDraft(opportunity, senderIdentity)
     : buildFirstDraft(opportunity, senderIdentity);
+  // Touch 2 of the 4-touch sequence is call + text: no mailto, just a text
+  // template with a copy button. Ryan calls from his phone, pastes this as
+  // the text, then logs the touch in the results panel below.
+  const isTextTouch = isFollowup && draft.kind === "text";
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(draft.body);
+      toast.success("Text copied — paste it in Messages after your call");
+    } catch {
+      toast.error("Copy failed — long-press the text to copy it manually");
+    }
+  };
   // Belt-and-braces: the composed body is the final source of truth for the
   // mailto. If the composer somehow still produced garbage (e.g. a future
   // Airtable field lands unguarded), refuse to render the send button.
@@ -213,6 +264,29 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       title={`Draft rejected: ${finalCheck.reason}`}
     >
       <AlertTriangle size={size === "sm" ? 13 : 14} /> Draft blocked
+    </div>
+  ) : isTextTouch ? (
+    <div className="space-y-2">
+      <div
+        className="rounded-md p-3 text-[13px] leading-relaxed"
+        style={{
+          background: "var(--bh-surface)",
+          border: "1px solid var(--bh-hairline)",
+          color: "var(--bh-ink)",
+        }}
+        data-testid={`follow-up-text-template-${opportunity?.id || "unknown"}`}
+      >
+        {draft.body}
+      </div>
+      <button
+        type="button"
+        onClick={copyText}
+        data-testid={`follow-up-text-copy-${opportunity?.id || "unknown"}`}
+        className={`${btnBase} ${SIZE[size]}`}
+        style={styleOverride}
+      >
+        <Copy size={size === "sm" ? 13 : 14} /> Copy text
+      </button>
     </div>
   ) : (
     <a
@@ -258,7 +332,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       <div className="flex items-center gap-2">
         <Icon size={13} style={{ color: "var(--bh-brass)" }} />
         <span className="bh-eyebrow" style={{ color: "var(--bh-brass)" }}>
-          {isFollowup ? "Follow up" : "Contact them"}
+          {isTextTouch ? "Call + text" : isFollowup ? "Follow up" : "Contact them"}
         </span>
         {contextBadge}
       </div>
@@ -301,14 +375,17 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
         </div>
       )}
       <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)]">
-        Opens a draft in your default mail app. Nothing sends until you press
-        Send yourself.
+        {isTextTouch
+          ? "Call them from your phone, then copy the text above into Messages. Nothing is logged until you tap it below."
+          : "Opens a draft in your default mail app. Nothing sends until you press Send yourself."}
       </div>
       <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
         <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
-        {isFollowup
-          ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
-          : "Native mailto handoff. No provider API, no automated send."}
+        {isTextTouch
+          ? "Touch 2 of 4. Log it in the results panel once the call + text are done."
+          : isFollowup
+            ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
+            : "Native mailto handoff. No provider API, no automated send."}
       </div>
     </div>
   );

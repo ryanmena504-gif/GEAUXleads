@@ -240,3 +240,23 @@ def test_to_dict_is_json_shaped(approvable_lead):
                             "warnings", "checks", "recipient", "thresholds"}
     assert isinstance(payload["blockers"], list)
     assert isinstance(payload["recipient"], dict)
+
+
+# --------------------------------------------- four-touch sequence cap
+def test_sequence_complete_blocks_further_outreach(approvable_lead):
+    lead = {**approvable_lead, "outreach_attempt": 4}
+    result = policy.evaluate(lead)
+    assert not result.eligible
+    assert "sequence_complete" in codes(result)
+
+
+def test_three_touches_used_still_eligible(approvable_lead):
+    lead = {**approvable_lead, "outreach_attempt": 3}
+    result = policy.evaluate(lead)
+    assert result.eligible, codes(result)
+    assert "sequence_complete" not in codes(result)
+
+
+def test_no_attempt_recorded_still_eligible(approvable_lead):
+    result = policy.evaluate(approvable_lead)
+    assert result.eligible, codes(result)
