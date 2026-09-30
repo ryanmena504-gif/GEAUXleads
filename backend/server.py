@@ -320,24 +320,74 @@ async def update_fields(opp_id: str, body: FieldUpdate):
 
 @api_router.post("/opportunities/{opp_id}/result")
 async def record_result(opp_id: str, body: ResultUpdate):
-    """Persist a result only after Ryan explicitly confirms it in the app."""
+    """Persist a result only after Ryan explicitly confirms it in the app.
+
+    The "sent" and "followup_sent" events also advance the four-touch
+    outreach sequence (services.followup_sequence): each logged touch bumps
+    `Outreach attempt` and schedules `Next followup`; touch 4 closes the lead
+    as Lost. Once the sequence is complete the endpoint refuses further
+    sends with a 422 — a Lost lead can't get a fifth message.
+    """
+    from services.followup_sequence import advance as _advance_touch, coerce_attempt as _coerce_attempt
+
     event = (body.event or "").strip().lower()
     channel = (body.channel or "").strip()
-    if event not in {"sent", "replied", "estimate_requested", "not_interested", "no_response"}:
+    if event not in {"sent", "replied", "estimate_requested", "not_interested", "no_response", "followup_sent"}:
         raise HTTPException(status_code=422, detail="Unknown result")
     if channel and channel not in {"Text", "Email", "Call", "Other"}:
         raise HTTPException(status_code=422, detail="Unknown contact method")
+
+    svc = get_opportunity_service()
+    current = await _bg(svc.get, opp_id) if hasattr(svc, "get") else None
+    if not current:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    if event in {"sent", "followup_sent"}:
+        # The sequence needs a real `Outreach attempt` column. Without this
+        # check the write layer would silently drop the attempt counter
+        # (unknown fields are filtered) while still scheduling Next
+        # followup — a lead stuck re-doing "Touch 1 of 4" forever. Fail
+        # honestly instead: 422 with instructions to add the field by hand.
+        # GEAUXleads never auto-creates it.
+        require_field = getattr(svc, "_require_custom_field", None)
+        if callable(require_field):
+            try:
+                require_field("outreach_attempt", "Outreach attempt", "Number")
+            except AirtableWriteError as e:
+                raise HTTPException(status_code=e.status_code, detail=str(e))
+
+    attempt = _coerce_attempt(current.get("outreach_attempt"))
 
     now = datetime.now(timezone.utc).isoformat()
     updates: Dict[str, Any] = {}
     if event == "sent":
         # Pipeline status must NOT auto-advance on "I sent it".
+        if attempt >= 4:
+            raise HTTPException(status_code=422, detail="All 4 outreach touches are used — the sequence is complete")
+        touch = _advance_touch(attempt)
         updates = {
             "outreach_status": "Sent",
             "outreach_channel": channel or "Other",
             "message_sent_date": now,
             "date_contacted": now,
+            "outreach_attempt": touch["outreach_attempt"],
+            "next_follow_up": touch["next_follow_up"] or "",
         }
+    elif event == "followup_sent":
+        # Touches 2-4, logged from the Contacted follow-up panel.
+        if attempt >= 4:
+            raise HTTPException(status_code=422, detail="All 4 outreach touches are used — the sequence is complete")
+        touch = _advance_touch(attempt)
+        updates = {
+            "outreach_status": "Sent",
+            "outreach_channel": channel or "Other",
+            "message_sent_date": now,
+            "outreach_attempt": touch["outreach_attempt"],
+            "next_follow_up": touch["next_follow_up"] or "",
+        }
+        if touch["closes_lead"]:
+            # Touch 4 was the breakup email — the sequence is over.
+            updates["status"] = "Lost"
     elif event == "replied":
         updates = {
             "outreach_status": "Replied",
@@ -362,7 +412,6 @@ async def record_result(opp_id: str, body: ResultUpdate):
     elif event == "no_response":
         updates = {"outreach_status": "No response"}
 
-    svc = get_opportunity_service()
     try:
         updated = await _bg(svc.update_fields, opp_id, updates) if hasattr(svc, "update_fields") else None
     except AirtableWriteError as e:
@@ -974,90 +1023,48 @@ async def list_recent_handoffs(limit: int = 100):
 
 
 # ============================================================================
-# Follow-up sequencing — cross-references the handoff_log with the opportunity
-# list to find leads that were touched days ago and never nudged again.
-# Owners buy from whoever is still present; this endpoint keeps Ryan present.
+# Follow-up sequencing — the four-touch outreach sequence, driven by Airtable.
+# A Contacted lead is due when its `Next followup` date is today or earlier
+# and it has touches remaining (`Outreach attempt` < 4). Each item carries
+# the next touch spec (attempt number, channel, label) so the UI can say
+# "Touch 2 of 4 — Call + text" instead of just "nudge".
+#
+# Replaces the old time-elapsed buckets (email >= 5d, text >= 3d), which read
+# a Mongo handoff log that nothing writes to — the log stayed empty, so the
+# old endpoint never surfaced anything. State now lives in Airtable, which is
+# also what the Missions page reads (`Next followup` <= today).
 # ============================================================================
 @api_router.get("/follow-ups/due")
 async def follow_ups_due(limit: int = 20):
-    """Leads Ryan touched but hasn't nudged recently.
+    """Contacted leads due for their next touch in the 4-touch sequence."""
+    from services.followup_sequence import due_for_touch
 
-    Buckets (evaluated in order — first match wins):
-      • estimate_check  · status = Estimate requested / Estimate sent AND
-                          last touch ≥ 7 days ago
-      • email_nudge     · last touch was email AND ≥ 5 days ago
-      • text_nudge      · last touch was text  AND ≥ 3 days ago
-    """
-    hsvc = get_handoff_service()
     osvc = get_opportunity_service()
-    if not hsvc or not osvc:
+    if not osvc:
         return {"available": False, "items": []}
 
-    from datetime import datetime, timezone as _tz
-    now = datetime.now(_tz.utc)
-
-    # Pull the last 500 handoffs and reduce to the most-recent per opportunity.
-    handoffs = await hsvc.list_recent(limit=500)
-    last_by_opp: Dict[str, Dict[str, Any]] = {}
-    for h in handoffs:
-        opp_id = h.get("opportunity_id")
+    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
+    out: List[Dict[str, Any]] = []
+    for opp in all_ops:
+        opp_id = opp.get("id")
         if not opp_id:
             continue
-        # handoffs come back sorted DESC by `at`; keep first per opp.
-        if opp_id in last_by_opp:
-            continue
-        last_by_opp[opp_id] = h
-
-    if not last_by_opp:
-        return {"available": True, "items": []}
-
-    # Index all opportunities so we can join without an N+1 pattern.
-    all_ops = await _bg(osvc.all, ) if hasattr(osvc, "all") else []
-    by_id = {o.get("id"): o for o in all_ops if o.get("id")}
-
-    ACTIVE_CLOSED = {"Won", "Lost", "Disqualified"}
-    ESTIMATE_STATUSES = {"Estimate requested", "Estimate sent"}
-    out: List[Dict[str, Any]] = []
-
-    for opp_id, h in last_by_opp.items():
-        opp = by_id.get(opp_id)
-        if not opp:
+        queue = (opp.get("current_queue") or "").strip()
+        if queue != "Contacted":
             continue
         status = (opp.get("status") or "").strip()
-        if status in ACTIVE_CLOSED:
+        if status in {"Won", "Lost", "Disqualified"}:
             continue
-        # Parse the ISO timestamp; skip if unparseable.
-        raw_at = h.get("at") or ""
-        try:
-            last_at = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
-        except Exception:
+        touch = due_for_touch(opp)
+        if not touch:
             continue
-        days_since = (now - last_at).total_seconds() / 86400.0
-        channel = (h.get("channel") or "").lower()
-
-        bucket = None
-        threshold = None
-        if status in ESTIMATE_STATUSES and days_since >= 7:
-            bucket, threshold = "estimate_check", 7
-        elif channel == "email" and days_since >= 5:
-            bucket, threshold = "email_nudge", 5
-        elif channel == "text" and days_since >= 3:
-            bucket, threshold = "text_nudge", 3
-        if not bucket:
-            continue
-
-        reason = (
-            f"{int(days_since)} days since your last {channel or 'touch'}"
-            if bucket != "estimate_check"
-            else f"{int(days_since)} days since estimate was requested"
-        )
-
         out.append({
             "opportunity_id": opp_id,
             "opportunity": {
                 "id": opp_id,
                 "name": opp.get("name"),
                 "status": status,
+                "current_queue": "Contacted",
                 "lane": opp.get("lane"),
                 "priority_band": opp.get("priority_band"),
                 "priority_score": opp.get("priority_score"),
@@ -1065,24 +1072,17 @@ async def follow_ups_due(limit: int = 20):
                 "contact_phone": opp.get("contact_phone") or opp.get("phone"),
                 "contact_email": opp.get("contact_email") or opp.get("email"),
                 "first_message": opp.get("first_message") or opp.get("first_contact_message"),
+                "outreach_attempt": opp.get("outreach_attempt"),
+                "next_follow_up": opp.get("next_follow_up"),
             },
-            "last_touch": {
-                "channel": channel or "unknown",
-                "at": raw_at,
-                "days_ago": round(days_since, 1),
-                "device_hint": h.get("device_hint"),
-            },
-            "bucket": bucket,
-            "threshold_days": threshold,
-            "reason": reason,
+            "touch": touch,
+            "bucket": "follow_up",
+            "reason": f"Touch {touch['attempt']} of {touch['of']} — {touch['label']} due",
         })
 
-    # Rank: estimate_check first, then by priority_score desc, then days desc.
-    BUCKET_ORDER = {"estimate_check": 0, "text_nudge": 1, "email_nudge": 2}
     out.sort(key=lambda r: (
-        BUCKET_ORDER.get(r["bucket"], 99),
         -(r["opportunity"].get("priority_score") or 0),
-        -(r["last_touch"].get("days_ago") or 0),
+        r["touch"]["attempt"],
     ))
     return {"available": True, "items": out[: max(1, min(limit, 100))]}
 
@@ -1972,12 +1972,15 @@ def _sent_today(opp: Dict[str, Any], today: str) -> bool:
 
 async def _outreach_queue(svc, target: int, today: str):
     """Today's outreach queue: Ready-to-Contact leads not yet contacted today,
-    top `target` by governed priority score. Returns (items, sent_today_count)."""
+    top `target` by governed priority score. Returns (items, sent_today_count).
+
+    sent_today counts every touch logged today — first contacts AND follow-up
+    touches 2-4 on Contacted records (both write message_sent_date). The
+    daily 10 is a workload target, not a first-contact-only target.
+    """
+    from services.followup_sequence import touches_logged_today as _touches_today
     all_opps = await _bg(svc.list)
-    sent_today = sum(
-        1 for o in all_opps
-        if o.get("current_queue") == "Ready to Contact" and _sent_today(o, today)
-    )
+    sent_today = _touches_today(all_opps, today)
     candidates = [
         o for o in all_opps
         if o.get("current_queue") == "Ready to Contact" and not _sent_today(o, today)

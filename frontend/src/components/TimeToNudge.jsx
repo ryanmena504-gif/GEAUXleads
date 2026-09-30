@@ -17,6 +17,14 @@ import OpenInMessages from "@/components/OpenInMessages";
  * flow used elsewhere — approval-only.
  */
 const BUCKET_META = {
+  follow_up: {
+    label: "Follow-up due",
+    hint: "Next touch in the 4-touch sequence",
+    icon: MessageSquare,
+    fg: "var(--bh-brass)",
+    bg: "var(--bh-brass-mute)",
+    border: "var(--bh-hair-warm)",
+  },
   estimate_check: {
     label: "Check on estimate",
     hint: "You sent an estimate — see if they're ready",
@@ -44,10 +52,14 @@ const BUCKET_META = {
 };
 
 const NudgeRow = ({ item }) => {
-  const meta = BUCKET_META[item.bucket] || BUCKET_META.text_nudge;
+  const meta = BUCKET_META[item.bucket] || BUCKET_META.follow_up;
   const Icon = meta.icon;
   const opp = item.opportunity || {};
+  const touch = item.touch || null;
   const days = Math.max(0, Math.round(item.last_touch?.days_ago ?? 0));
+  const subline = touch
+    ? `Touch ${touch.attempt} of ${touch.of} · ${touch.label}`
+    : `${days === 0 ? "Today" : days === 1 ? "1 day ago" : `${days} days ago`} · ${meta.hint}`;
   return (
     <div
       className="bh-surface rounded-md p-4 flex items-start gap-4 hover:bg-white/[0.03] transition-colors duration-150"
@@ -77,7 +89,7 @@ const NudgeRow = ({ item }) => {
         </div>
         <div className="mt-1 text-[12.5px] text-[var(--bh-ink-mute)] inline-flex items-center gap-1.5">
           <Clock3 size={11} strokeWidth={1.75} />
-          {days === 0 ? "Today" : days === 1 ? "1 day ago" : `${days} days ago`} · {meta.hint}
+          {subline}
         </div>
         <div className="mt-3">
           <OpenInMessages opportunity={opp} variant="pill" />
