@@ -329,6 +329,10 @@ EDITABLE_FIELDS = {
     # Ryan-owned override/journal fields (see LIVE_FIELDS).
     "Mission Override",
     "Activity Log",
+    # Contact fields — written only via explicit Ryan-confirmed actions
+    # (e.g. saving a researched phone/email onto a lead). Never auto-filled.
+    "Contact phone",
+    "Contact email",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -350,6 +354,8 @@ WRITE_ALIAS: Dict[str, str] = {
     "date_replied": "Date replied",
     "mission_override": "Mission Override",
     "activity_log": "Activity Log",
+    "phone": "Contact phone",
+    "email": "Contact email",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.

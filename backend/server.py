@@ -28,6 +28,7 @@ from services.user_settings_service import (
     DEFAULTS as USER_SETTINGS_DEFAULTS,
 )
 from services.airtable_settings_service import AirtableSettingsError
+from services.field_norm import is_valid_email, is_valid_phone, normalize_email
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -96,6 +97,8 @@ class FieldUpdate(BaseModel):
     ryans_decision: Optional[str] = None
     next_follow_up: Optional[str] = None
     outcome: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class ResultUpdate(BaseModel):
@@ -285,6 +288,16 @@ async def update_fields(opp_id: str, body: FieldUpdate):
         if not current:
             raise HTTPException(status_code=404, detail="Opportunity not found")
         return current
+    # Validate contact fields before they reach Airtable — the frontend only
+    # offers "save" on parsed values, but this is the trust boundary.
+    if "phone" in payload and payload["phone"]:
+        if not is_valid_phone(payload["phone"]):
+            raise HTTPException(status_code=422, detail="That phone number doesn't look valid")
+    if "email" in payload and payload["email"]:
+        normalized = normalize_email(payload["email"])
+        if not normalized or not is_valid_email(normalized):
+            raise HTTPException(status_code=422, detail="That email address doesn't look valid")
+        payload["email"] = normalized
     if hasattr(svc, "update_fields"):
         try:
             updated = await _bg(svc.update_fields, opp_id, payload)
@@ -1850,7 +1863,7 @@ from services import research_cache_service as _research_cache
 
 
 class ResearchRequest(BaseModel):
-    research_type: str  # decision_maker | permit_explainer | landlord_background
+    research_type: str  # decision_maker | permit_explainer | landlord_background | re_agent_background | owner_contact
     record_id: str
     query: str
     force_refresh: Optional[bool] = False
@@ -1873,6 +1886,7 @@ async def create_research(req: ResearchRequest):
         "permit_explainer",
         "landlord_background",
         "re_agent_background",
+        "owner_contact",
     ):
         raise HTTPException(status_code=400, detail="unknown research_type")
 
