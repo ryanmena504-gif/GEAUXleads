@@ -559,10 +559,16 @@ def _derive_status(opp: Dict[str, Any]) -> str:
     appr = (opp.get("approval_status") or "").lower() if isinstance(opp.get("approval_status"), str) else ""
     if "approved" in appr:
         return "Ready"
+    # Ryan's manual Status is source of truth for terminal states: a lead he
+    # marked Won / Lost / Disqualified must stay closed even when a stale
+    # enrichment flag still says "needs research". (2026-10-01: 63 records
+    # manually disqualified were still deriving as "Needs research".)
+    raw = (opp.get("status_raw") or "") if isinstance(opp.get("status_raw"), str) else ""
+    if raw in ("Won", "Lost", "Disqualified"):
+        return raw
     enrich = (opp.get("enrichment_status") or "").lower() if isinstance(opp.get("enrichment_status"), str) else ""
     if "needs research" in enrich or "research" in enrich:
         return "Needs research"
-    raw = (opp.get("status_raw") or "") if isinstance(opp.get("status_raw"), str) else ""
     if raw:
         return raw
     return "New"
