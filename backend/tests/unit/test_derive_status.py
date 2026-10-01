@@ -43,3 +43,42 @@ def test_outreach_manual_result_beats_enrichment_research():
         )
         == "Conversation started"
     )
+
+
+def test_manual_disqualified_beats_stale_enrichment_research():
+    # 2026-10-01: 63 records manually marked Disqualified in Airtable still
+    # derived as "Needs research" because enrichment was checked first.
+    assert (
+        _derive_status(
+            {
+                "status_raw": "Disqualified",
+                "enrichment_status": "Needs research",
+            }
+        )
+        == "Disqualified"
+    )
+
+
+def test_manual_lost_and_won_beat_stale_enrichment_research():
+    assert (
+        _derive_status(
+            {"status_raw": "Lost", "enrichment_status": "Needs research"}
+        )
+        == "Lost"
+    )
+    assert (
+        _derive_status({"status_raw": "Won", "enrichment_status": "Enriched"})
+        == "Won"
+    )
+
+
+def test_non_terminal_raw_status_still_falls_through_to_enrichment():
+    assert (
+        _derive_status(
+            {
+                "status_raw": "Needs research",
+                "enrichment_status": "Needs research",
+            }
+        )
+        == "Needs research"
+    )
