@@ -339,6 +339,7 @@ _UNLOCKED_GATE_VALUES = frozenset({
     "ready to pitch",
     "approved",
     "ready to contact",
+    "ready for campaign review",
     "outreach cleared",
     "gate cleared",
     "open",
