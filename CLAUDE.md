@@ -120,7 +120,7 @@ frontend/
 
 | Route | File | Purpose |
 | --- | --- | --- |
-| `/` | CommandCenter.jsx | Home dashboard: morning brief, follow-ups, pipeline |
+| `/` | CommandCenter.jsx | Home ("Today"): who to reach in order as work tickets, follow-ups due, referrals, your bench (landlords/PMs/agents/investors/partners), parked + needs-research collapsed |
 | `/opportunities` | Opportunities.jsx | Project list w/ filters (Lane, Source, Status, Priority, Mission, Type, min score, search) |
 | `/opportunities/:id` | OpportunityDetail.jsx | Project detail, drafts, activity |
 | `/missions` | Missions.jsx | Today's outreach missions grouped by action |

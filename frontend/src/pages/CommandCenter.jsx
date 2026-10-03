@@ -3,38 +3,32 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import TopHeader from "@/components/TopHeader";
 import LearningStrip from "@/components/LearningStrip";
-import MorningBrief from "@/components/MorningBrief";
 import FreshIntel from "@/components/FreshIntel";
-import TodayOutreach from "@/components/TodayOutreach";
+import Bench from "@/components/Bench";
+import OpenInMessages from "@/components/OpenInMessages";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
-import { fmtMoney, moneyDisplay, sourceLabel } from "@/lib/formatters";
+import { moneyDisplay, sourceLabel } from "@/lib/formatters";
 import {
   queueBucket,
   sortForQueue,
-  allowedAction,
-  whyReady,
   notReadyReason,
   needsEnrichment,
+  nextTouch,
+  outreachAllowed,
 } from "@/lib/queue";
 import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
-import CommandCenterStats from "@/components/CommandCenterStats";
-import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
+import { buildSalutation } from "@/lib/greeting";
 import {
-  Mail,
-  Reply,
-  Info,
+  Check,
   ChevronRight,
   ChevronDown,
-  MapPin,
-  Phone,
-  Sparkles,
-  Clock,
-  Snowflake,
-  Zap,
-  Gift,
   ExternalLink,
+  Gift,
+  Loader2,
+  MapPin,
+  Zap,
 } from "lucide-react";
 
 // Short hostname for source-URL chips (e.g. "onestop.nola.gov" → "nola.gov").
@@ -74,96 +68,6 @@ const SourceChip = ({ opp }) => {
       <span className="truncate max-w-[180px]">{label}</span>
     </a>
   );
-};
-
-// ─── mailto helpers ───────────────────────────────────────────────────────
-// Draft-only. Opening a draft NEVER writes to Airtable. Ryan chooses whether
-// to press Send inside his native mail app.
-
-const enc = encodeURIComponent;
-
-const buildFirstDraft = (opp, sender) => {
-  const lane = (opp.lane || "").toLowerCase();
-  const isPartner = lane === "partner";
-  const isLandlord = lane === "landlord";
-  const senderName = sender?.sender_name || "Ryan";
-  const senderPhone = sender?.sender_phone || "";
-  const generic = isPartner ? "team" : "there";
-  // Pass ONLY person-name fields — never opp.name (record/project name).
-  const salutation = buildSalutation(
-    [opp.decision_maker, opp.contact_name],
-    { verb: "Hi", generic },
-  );
-  const partnerFallback = [
-    `I'm ${senderName} with The Shirtless Handyman. I came across ${opp.name || "your team"} while looking at the kind of work being done around the area.`,
-    "",
-    "We handle seamless finish work when a project calls for something beyond tile or paint: microcement, lime plaster, waterproof grout-free showers, feature walls, and similar details. Not every job needs it, but it can be a strong option on the right project — happy to be a resource whenever it comes up.",
-    "",
-    "Would love to trade referrals or meet up for a quick coffee if you're open to it.",
-  ].join("\n");
-  const landlordFallback = [
-    `I'm ${senderName} with The Shirtless Handyman. I saw you own ${opp.project_address || "properties around the area"} and wanted to reach out.`,
-    "",
-    "I'm a one-call fix. No coordinating three trades, no waiting on estimates. Text me a photo of what needs attention and I'll tell you what it'll cost and when I can be there.",
-  ].join("\n");
-  const projectFallback = [
-    `I'm ${senderName} with The Shirtless Handyman. I came across your ${opp.project_type || "project"} and wanted to reach out.`,
-    "",
-    "We handle seamless finish work when a project calls for something beyond tile or paint: microcement, lime plaster, waterproof grout-free showers, feature walls, and similar details. Happy to answer any questions or share references whenever you're ready.",
-  ].join("\n");
-  const fallbackBody = isLandlord ? landlordFallback : (isPartner ? partnerFallback : projectFallback);
-  const subject =
-    opp.first_message_subject ||
-    (isLandlord
-      ? `Turnovers, punch-list, and everything between tenants`
-      : isPartner
-        ? `${senderName} at The Shirtless Handyman — quick intro`
-        : `Quick note about your ${opp.project_type || "project"}`);
-  // Strip any greeting the classifier already put on `first_message` so
-  // we never render "Hi Tristan,\n\nHi Tristan,\nI'm Ryan..." style
-  // duplicates. Fallback bodies never carry a greeting themselves.
-  const rawBody =
-    opp.first_message || opp.first_contact_message || fallbackBody;
-  const cleanBody = stripLeadingGreeting(rawBody);
-  const bodyLines = [
-    salutation,
-    "",
-    cleanBody,
-    "",
-    `— ${senderName}`,
-    senderPhone,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return { subject, body: bodyLines };
-};
-
-const buildFollowUpDraft = (opp, sender) => {
-  const isLandlord = (opp.lane || "").toLowerCase() === "landlord";
-  const salutation = buildSalutation(
-    [opp.decision_maker, opp.contact_name],
-    { verb: "Hi", generic: "there" },
-  );
-  const subject = isLandlord
-    ? `Turnover check-in · ${opp.project_address || opp.name || "your properties"}`
-    : `Following up · ${opp.project_type || opp.name || "your project"}`;
-  const landlordDefault =
-    "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there.";
-  const projectDefault =
-    "Just checking in to see if now is a better time to chat.";
-  const rec = opp.current_recommendation || (isLandlord ? landlordDefault : projectDefault);
-  const cleanRec = stripLeadingGreeting(rec);
-  const bodyLines = [
-    salutation,
-    "",
-    cleanRec,
-    "",
-    sender?.sender_name ? `— ${sender.sender_name}` : "— Ryan",
-    sender?.sender_phone ? sender.sender_phone : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return { subject, body: bodyLines };
 };
 
 // ─── UI atoms ─────────────────────────────────────────────────────────────
@@ -213,209 +117,6 @@ const HeaderMeta = ({ opp }) => (
     {opp.source && <span>· Found on {sourceLabel(opp.source)}</span>}
   </div>
 );
-
-/**
- * ReadyRow — Ready to Contact. Shows governed signals, Priority Explanation
- * (Why This Matters), Current Recommendation (What to Do Next), and a single
- * "Open Email Draft" (or "Open Text Draft" when SMS Permission is granted
- * and no public email is on file).
- */
-const ReadyRow = ({ opp, sender }) => {
-  const chips = whyReady(opp);
-  const action = allowedAction(opp);
-  const email = opp.email || opp.email_alt;
-
-  const onEmailDraft = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!email) return;
-    const draft = buildFirstDraft(opp, sender);
-    window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
-  };
-
-  return (
-    <div
-      data-testid={`ready-row-${opp.id}`}
-      className="bh-surface rounded-md p-4 border-l-2"
-      style={{ borderLeftColor: "var(--bh-brass)" }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 group">
-          <div className="font-display text-[17px] text-[var(--bh-ink)] group-hover:text-white tracking-tight truncate">
-            {opp.name}
-          </div>
-          <HeaderMeta opp={opp} />
-          {opp.priority_explanation && (
-            <div className="mt-2 text-[13px] text-[var(--bh-ink-2)]">
-              <span className="bh-eyebrow mr-2">Why this matters</span>
-              {opp.priority_explanation}
-            </div>
-          )}
-          {opp.current_recommendation && (
-            <div className="mt-1.5 text-[13px] text-amber-200/90">
-              <span className="bh-eyebrow mr-2">What to do next</span>
-              {opp.current_recommendation}
-            </div>
-          )}
-          {opp.project_fit_reason && (
-            <div className="mt-1.5 text-[12.5px] text-[var(--bh-ink-3)]">
-              <span className="bh-eyebrow mr-2">Fit reason</span>
-              {opp.project_fit_reason}
-            </div>
-          )}
-          {chips.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {chips.map((c) => (
-                <Chip key={c.label} label={c.label} value={c.value} tone="ready" />
-              ))}
-              {typeof opp.governed_priority_score === "number" && (
-                <Chip label="Score" value={opp.governed_priority_score} tone="ready" />
-              )}
-            </div>
-          )}
-          {opp.public_contact_evidence && (
-            <details className="mt-2 group/details">
-              <summary className="cursor-pointer text-[11.5px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1">
-                <Info size={11} /> More details · public contact evidence
-              </summary>
-              <div className="mt-2 text-[12px] text-[var(--bh-ink-3)] leading-relaxed pl-4 border-l bh-hairline">
-                <div>{opp.public_contact_evidence}</div>
-                {opp.contact_verified_date && (
-                  <div className="mt-1 mono text-[10.5px] uppercase tracking-widest opacity-75">
-                    Verified {opp.contact_verified_date}
-                  </div>
-                )}
-                {opp.score_basis && (
-                  <div className="mt-2 pt-2 border-t bh-hairline">
-                    <div className="mono text-[10px] uppercase tracking-widest opacity-75 mb-0.5">
-                      Score basis
-                    </div>
-                    <div>{opp.score_basis}</div>
-                  </div>
-                )}
-              </div>
-            </details>
-          )}
-        </Link>
-        {(() => {
-          const money = moneyDisplay(opp);
-          return money ? (
-            <div className="hidden md:block text-right shrink-0">
-              <div className="bh-eyebrow">Possible work value</div>
-              <div
-                className="font-display text-[18px] text-[var(--bh-ink)] tabular-nums"
-                data-testid={`money-${opp.id}`}
-              >
-                {money}
-              </div>
-            </div>
-          ) : null;
-        })()}
-      </div>
-
-      <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
-        <SourceChip opp={opp} />
-        {action === "email_first" && email && (
-          <button
-            type="button"
-            data-testid={`email-now-${opp.id}`}
-            onClick={onEmailDraft}
-            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold"
-            style={{ background: "var(--bh-brass)", color: "var(--bh-surface)" }}
-          >
-            <Mail size={13} /> Email Now
-          </button>
-        )}
-        {!action && (
-          <span className="text-[11.5px] text-[var(--bh-ink-3)]">
-            No verified public business email on file — open the record to add one.
-          </span>
-        )}
-        <Link
-          to={`/opportunities/${opp.id}`}
-          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
-        >
-          Open <ChevronRight size={12} />
-        </Link>
-      </div>
-    </div>
-  );
-};
-
-/**
- * ContactedRow — a lead Ryan has already reached out to. NEVER shows a
- * first-contact action. Follow-up draft only.
- */
-const ContactedRow = ({ opp, sender }) => {
-  const email = opp.email || opp.email_alt;
-  const action = allowedAction(opp);
-
-  const onFollowUp = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (action !== "email_followup" || !email) return;
-    const draft = buildFollowUpDraft(opp, sender);
-    window.location.href = `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
-  };
-
-  return (
-    <div
-      data-testid={`contacted-row-${opp.id}`}
-      className="bh-surface rounded-md p-4"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 group">
-          <div className="font-display text-[17px] text-[var(--bh-ink)] group-hover:text-white tracking-tight truncate">
-            {opp.name}
-          </div>
-          <HeaderMeta opp={opp} />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {opp.contact_state && <Chip label="Status" value={opp.contact_state} />}
-            {opp.freshness && <Chip label="Freshness" value={opp.freshness} />}
-            {opp.next_follow_up && (
-              <Chip label="Next follow-up" value={opp.next_follow_up} />
-            )}
-          </div>
-          {opp.current_recommendation && (
-            <div className="mt-2 text-[13px] text-amber-200/90">
-              <span className="bh-eyebrow mr-2">What to do next</span>
-              {opp.current_recommendation}
-            </div>
-          )}
-          {opp.reply_summary && (
-            <div className="mt-1.5 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-2">
-              <span className="bh-eyebrow mr-2">Last reply</span>
-              {opp.reply_summary}
-            </div>
-          )}
-        </Link>
-      </div>
-      <div className="mt-3 pt-3 border-t bh-hairline flex flex-wrap items-center gap-2">
-        {action === "email_followup" && (
-          <button
-            type="button"
-            data-testid={`follow-up-email-${opp.id}`}
-            onClick={onFollowUp}
-            className="inline-flex items-center gap-1.5 h-11 px-4 rounded-md text-[13px] font-semibold border bh-hairline text-[var(--bh-ink)] hover:bg-[var(--bh-surface-2)]"
-          >
-            <Reply size={13} /> Follow Up Email
-          </button>
-        )}
-        {!action && (
-          <span className="text-[11.5px] text-[var(--bh-ink-3)]">
-            No verified public business email on file — open the record for details.
-          </span>
-        )}
-        <Link
-          to={`/opportunities/${opp.id}`}
-          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
-        >
-          Open <ChevronRight size={12} />
-        </Link>
-      </div>
-    </div>
-  );
-};
 
 /**
  * buildReferralDraft — 5-days-after-Won referral ask. Native mailto only,
@@ -724,11 +425,235 @@ const SectionShell = ({ eyebrow, title, hint, icon: Icon, count, testId, childre
   </section>
 );
 
+// ─── Today: work tickets ──────────────────────────────────────────────────
+//
+// Home reads like the day's job sheet: one ticket on top for the next person
+// to reach, the rest as stubs underneath. Every message button is
+// OpenInMessages, so the global outreachAllowed() gate, the 4-touch limit and
+// the draft-safety check all apply here exactly as on the detail page.
+
+const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+const sentToday = (opp) => {
+  const d = (opp.message_sent_date || opp.date_contacted || "").slice(0, 10);
+  return Boolean(d) && d >= todayUtc();
+};
+
+const ticketNo = (n) => `No. ${String(n).padStart(2, "0")}`;
+
+const MarkSentButton = ({ opp, busy, onSent }) => (
+  <button
+    type="button"
+    disabled={busy}
+    onClick={() => onSent(opp.id)}
+    data-testid={`mark-sent-${opp.id}`}
+    title="Tap after you've sent it from your mail app"
+    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[12px] font-medium border bh-hairline text-[var(--bh-olive)] hover:bg-[var(--bh-olive-mute)] transition-colors disabled:opacity-60"
+  >
+    {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} I sent it
+  </button>
+);
+
+const TicketHero = ({ opp, n, busy, onSent }) => {
+  const money = moneyDisplay(opp);
+  const meta = [opp.project_address, opp.project_type, opp.source && `via ${sourceLabel(opp.source)}`]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <article data-testid={`ticket-hero-${opp.id}`} className="bh-ticket bh-ticket--hero">
+      <div className="px-5 pt-4 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="mono text-[10.5px] uppercase tracking-[0.18em] text-[var(--bh-brass)]">
+            {ticketNo(n)} · Up next
+          </span>
+          {money && (
+            <span className="text-right">
+              <span className="font-display text-[20px] tabular-nums text-[var(--bh-ink)]">{money}</span>
+              <span className="block text-[10.5px] text-[var(--bh-ink-mute)]">possible work</span>
+            </span>
+          )}
+        </div>
+        <Link to={`/opportunities/${opp.id}`} className="block mt-1 group">
+          <h3 className="font-display text-[26px] leading-tight tracking-tight text-[var(--bh-ink)] group-hover:underline decoration-[var(--bh-hair-warm)] underline-offset-4">
+            {opp.name}
+          </h3>
+          {meta && <div className="mt-1 text-[12.5px] text-[var(--bh-ink-mute)]">{meta}</div>}
+        </Link>
+      </div>
+      <div className="bh-perforation" aria-hidden="true" />
+      <dl className="px-5 py-4 space-y-2.5 text-[14px] leading-relaxed">
+        {opp.priority_explanation && (
+          <div className="grid grid-cols-[72px_1fr] gap-3">
+            <dt className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] pt-1">Why now</dt>
+            <dd className="text-[var(--bh-ink-2)]">{opp.priority_explanation}</dd>
+          </div>
+        )}
+        {opp.current_recommendation && (
+          <div className="grid grid-cols-[72px_1fr] gap-3">
+            <dt className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)] pt-1">Do this</dt>
+            <dd className="text-[var(--bh-ink)]">{opp.current_recommendation}</dd>
+          </div>
+        )}
+      </dl>
+      <div className="px-5 pb-5 flex flex-wrap items-center gap-2">
+        <OpenInMessages opportunity={opp} variant="pill" />
+        <MarkSentButton opp={opp} busy={busy} onSent={onSent} />
+        <SourceChip opp={opp} />
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="ml-auto text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] inline-flex items-center gap-1"
+        >
+          Open <ChevronRight size={12} />
+        </Link>
+      </div>
+    </article>
+  );
+};
+
+const TicketStub = ({ opp, n, busy, onSent }) => {
+  const money = moneyDisplay(opp);
+  const why = opp.priority_explanation || opp.current_recommendation;
+  return (
+    <article data-testid={`ticket-stub-${opp.id}`} className="bh-ticket flex items-stretch">
+      <div className="w-14 shrink-0 flex items-start justify-center pt-3.5 border-r border-dashed bh-hairline-strong">
+        <span className="mono text-[11px] tabular-nums text-[var(--bh-ink-mute)]">
+          {String(n).padStart(2, "0")}
+        </span>
+      </div>
+      <div className="flex-1 min-w-0 p-3 sm:flex sm:items-center sm:gap-4">
+        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 block group">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[15px] font-semibold text-[var(--bh-ink)] truncate group-hover:underline">
+              {opp.name}
+            </span>
+            {money && (
+              <span className="shrink-0 text-[12px] tabular-nums text-[var(--bh-ink-3)]">{money}</span>
+            )}
+          </div>
+          {why && <div className="mt-0.5 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-1">{why}</div>}
+        </Link>
+        <div className="mt-2 sm:mt-0 flex items-center gap-2 shrink-0">
+          <OpenInMessages opportunity={opp} variant="pill" />
+          <MarkSentButton opp={opp} busy={busy} onSent={onSent} />
+        </div>
+      </div>
+    </article>
+  );
+};
+
+/**
+ * WaitingRow — someone Ryan already reached. Shows which touch is next and
+ * when; the follow-up control is OpenInMessages (follow-up mode only).
+ */
+const WaitingRow = ({ opp }) => {
+  const next = nextTouch(opp);
+  const lastBit = opp.reply_summary || opp.current_recommendation;
+  return (
+    <article data-testid={`waiting-row-${opp.id}`} className="bh-surface rounded-md p-3.5">
+      <div className="flex items-start gap-3">
+        <Link to={`/opportunities/${opp.id}`} className="flex-1 min-w-0 group">
+          <div className="text-[15px] font-semibold text-[var(--bh-ink)] truncate group-hover:underline">
+            {opp.name}
+          </div>
+          <div className="mt-0.5 text-[12px] text-[var(--bh-ink-mute)] flex flex-wrap gap-x-2">
+            {opp.contact_state && <span>{opp.contact_state}</span>}
+            {next && <span>· Next: touch {next.attempt} of 4, {next.label.toLowerCase()}</span>}
+            {opp.next_follow_up && <span>· due {opp.next_follow_up}</span>}
+          </div>
+          {lastBit && <div className="mt-1 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-2">{lastBit}</div>}
+        </Link>
+      </div>
+      <div className="mt-2.5">
+        <OpenInMessages opportunity={opp} variant="pill" />
+      </div>
+    </article>
+  );
+};
+
+const Disclosure = ({ testId, title, count, hint, open, onToggle, children }) => (
+  <section data-testid={testId} className="border-t bh-hairline pt-4">
+    <button
+      type="button"
+      data-testid={`${testId}-toggle`}
+      onClick={onToggle}
+      className="w-full flex items-center gap-3 text-left"
+    >
+      <span className="flex-1">
+        <span className="text-[15px] font-semibold text-[var(--bh-ink)]">{title}</span>
+        {typeof count === "number" && (
+          <span className="ml-2 text-[13px] tabular-nums text-[var(--bh-ink-mute)]">{count}</span>
+        )}
+        {hint && <span className="block text-[12px] text-[var(--bh-ink-mute)] mt-0.5">{hint}</span>}
+      </span>
+      <ChevronDown
+        size={16}
+        strokeWidth={1.75}
+        className={"shrink-0 text-[var(--bh-ink-3)] transition-transform " + (open ? "rotate-180" : "")}
+      />
+    </button>
+    {open && <div className="mt-3 space-y-1.5">{children}</div>}
+  </section>
+);
+
+const Chapter = ({ title, aside, children, testId }) => (
+  <section data-testid={testId} className="space-y-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b bh-hairline pb-2">
+      <h2 className="font-display text-[21px] tracking-tight text-[var(--bh-ink)] whitespace-nowrap">{title}</h2>
+      {aside && <span className="text-[12px] text-[var(--bh-ink-mute)]">{aside}</span>}
+    </div>
+    {children}
+  </section>
+);
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+const DayHeadline = ({ ready, due, referrals, progress }) => {
+  const dateLabel = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  let headline;
+  if (ready === null) headline = "Pulling today's list…";
+  else if (ready > 0) headline = `${plural(ready, "person is", "people are")} ready to hear from you.`;
+  else if (due > 0) headline = "No new introductions today — just follow-ups.";
+  else headline = "Nobody's waiting on you. Go build relationships.";
+  const extras = [
+    due > 0 && plural(due, "follow-up is due", "follow-ups are due"),
+    referrals > 0 && `${plural(referrals, "happy customer", "happy customers")} to ask for a referral`,
+  ].filter(Boolean);
+  const pct = progress && progress.target > 0 ? Math.min(100, (progress.sent_today / progress.target) * 100) : 0;
+  return (
+    <header data-testid="day-headline" className="pt-1">
+      <div className="mono text-[10.5px] uppercase tracking-[0.18em] text-[var(--bh-ink-mute)]">{dateLabel}</div>
+      <h1 className="mt-2 font-display text-[30px] sm:text-[36px] leading-[1.1] tracking-tight text-[var(--bh-ink)] max-w-2xl">
+        {headline}
+      </h1>
+      {extras.length > 0 && (
+        <p className="mt-2 text-[14px] text-[var(--bh-ink-3)]">{extras.join(" · ")}.</p>
+      )}
+      {progress && progress.target > 0 && (
+        <div className="mt-4 flex items-center gap-3 max-w-md" data-testid="outreach-progress">
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-[var(--bh-surface-2)]">
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: "var(--bh-brass)" }} />
+          </div>
+          <span className="text-[12px] tabular-nums text-[var(--bh-ink-3)] whitespace-nowrap">
+            {progress.sent_today} of {progress.target} touches today
+          </span>
+        </div>
+      )}
+    </header>
+  );
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────
 
 const CommandCenter = () => {
   const [items, setItems] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [markingId, setMarkingId] = useState(null);
+  const [open, setOpen] = useState({ more: false, parked: false, enrichment: false });
   const { settings: senderSettings } = useUserSettings();
 
   const load = useCallback(() => {
@@ -744,6 +669,10 @@ const CommandCenter = () => {
         setItems((prev) => prev ?? []);
         setLoadError("Could not load your projects — the GEAUXleads API didn't respond.");
       });
+    api
+      .outreachQueue()
+      .then((res) => setProgress({ target: res.target, sent_today: res.sent_today }))
+      .catch(() => setProgress(null));
   }, []);
 
   useEffect(() => {
@@ -751,54 +680,64 @@ const CommandCenter = () => {
   }, [load]);
   useLiveUpdates(load);
 
-  const { ready, contacted, referrals, all, enrichment } = useMemo(() => {
-    if (!Array.isArray(items))
-      return { ready: null, contacted: null, referrals: null, all: null, enrichment: null };
-    const readyList = [];
-    const contactedList = [];
-    const referralList = [];
-    const allList = [];
-    const enrichmentList = [];
+  const markSent = useCallback(
+    async (id) => {
+      setMarkingId(id);
+      try {
+        await api.recordResult(id, { event: "sent", channel: "Email" });
+        toast.success("Logged. On to the next one.");
+        load();
+      } catch (err) {
+        toast.error(err?.response?.data?.detail || err?.message || "Couldn't log it as sent");
+      } finally {
+        setMarkingId(null);
+      }
+    },
+    [load],
+  );
+
+  const lists = useMemo(() => {
+    if (!Array.isArray(items)) return null;
+    const ready = [];
+    const contacted = [];
+    const referrals = [];
+    const parked = [];
+    const enrichment = [];
     for (const opp of items) {
-      // Won leads with the 5-day referral window elapsed get their own
-      // top-of-mind lane — never mixed into Ready/Contacted/All.
+      // Won leads with the 5-day referral window elapsed get their own lane.
       if (opp.status === "Won" && opp.referral_prompt_ready) {
-        referralList.push(opp);
+        referrals.push(opp);
         continue;
       }
       const bucket = queueBucket(opp);
-      if (bucket === "ready") readyList.push(opp);
-      else if (bucket === "contacted") contactedList.push(opp);
-      else if (needsEnrichment(opp)) enrichmentList.push(opp);
-      else allList.push(opp);
+      if (bucket === "ready") {
+        if (!sentToday(opp)) ready.push(opp);
+      } else if (bucket === "contacted") contacted.push(opp);
+      else if (needsEnrichment(opp)) enrichment.push(opp);
+      else parked.push(opp);
     }
+    // Follow-ups that still have a touch left, soonest due first.
+    const waiting = sortForQueue(contacted.filter((o) => outreachAllowed(o) === "follow_up"));
+    waiting.sort((a, b) => String(a.next_follow_up || "9999").localeCompare(String(b.next_follow_up || "9999")));
     return {
-      ready: sortForQueue(readyList),
-      contacted: sortForQueue(contactedList),
-      // Freshest referrals first (recently-Won leads are easier for the
-      // customer to remember). Ties broken by longer wait.
-      referrals: [...referralList].sort(
-        (a, b) => (a.days_since_won ?? 0) - (b.days_since_won ?? 0),
-      ),
-      all: sortForQueue(allList),
-      // Enrichment records have no governed score by definition — sort by
-      // days-on-table so the oldest (most in need of a nudge to the
-      // enrichment pipeline) surface first.
-      enrichment: [...enrichmentList].sort(
-        (a, b) => (b.days_on_table ?? 0) - (a.days_on_table ?? 0),
-      ),
+      ready: sortForQueue(ready),
+      waiting,
+      referrals: referrals.sort((a, b) => (a.days_since_won ?? 0) - (b.days_since_won ?? 0)),
+      parked: sortForQueue(parked),
+      enrichment: enrichment.sort((a, b) => (b.days_on_table ?? 0) - (a.days_on_table ?? 0)),
     };
   }, [items]);
 
-  const [enrichmentOpen, setEnrichmentOpen] = useState(false);
+  const target = progress?.target || 10;
+  const todayStack = lists ? lists.ready.slice(0, target) : [];
+  const beyond = lists ? lists.ready.slice(target) : [];
+  const [hero, ...stubs] = todayStack;
+  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   return (
     <>
-      <TopHeader
-        pageTitle="Your work list"
-        subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
-      />
-      <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
+      <TopHeader pageTitle="Today" subtitle="Who to reach, in order" />
+      <main className="px-4 lg:px-8 py-6 pb-28 max-w-4xl space-y-10">
         {loadError && (
           <div
             role="alert"
@@ -808,165 +747,115 @@ const CommandCenter = () => {
             {loadError} The lists below may be empty or out of date — reload to try again.
           </div>
         )}
-        <CommandCenterStats items={items} />
-        <MorningBrief />
-        <TodayOutreach />
-        <FreshIntel />
-        <LearningStrip />
-        <SectionShell
-          testId="section-ready-to-contact"
-          eyebrow="1 · Ready to Contact"
-          title="Ready to Contact"
-          hint="Records the classifier has approved for first contact — verified public business channel, premium fit, and evidence on file. Only list that allows a first-contact action."
-          icon={Mail}
-          count={ready?.length}
-        >
-          {ready === null ? (
-            <EmptyCard testId="ready-loading">Loading…</EmptyCard>
-          ) : ready.length === 0 ? (
-            <EmptyCard testId="ready-empty">
-              No records are Ready to Contact yet. The classifier will promote
-              them here once every gate passes.
-            </EmptyCard>
-          ) : (
-            <div className="space-y-2">
-              {ready.map((opp) => (
-                <ReadyRow key={opp.id} opp={opp} sender={senderSettings} />
-              ))}
-            </div>
-          )}
-        </SectionShell>
 
-        <SectionShell
-          testId="section-contacted"
-          eyebrow="2 · Contacted"
-          title="Contacted"
-          hint="Records already reached out to. Follow-up drafts only — no first-contact actions here."
-          icon={Reply}
-          count={contacted?.length}
-        >
-          {contacted === null ? (
-            <EmptyCard testId="contacted-loading">Loading…</EmptyCard>
-          ) : contacted.length === 0 ? (
-            <EmptyCard testId="contacted-empty">
-              Nothing to follow up on yet.
-            </EmptyCard>
-          ) : (
-            <div className="space-y-2">
-              {contacted.map((opp) => (
-                <ContactedRow key={opp.id} opp={opp} sender={senderSettings} />
-              ))}
-            </div>
-          )}
-        </SectionShell>
+        <DayHeadline
+          ready={lists ? lists.ready.length : null}
+          due={lists ? lists.waiting.length : 0}
+          referrals={lists ? lists.referrals.length : 0}
+          progress={progress}
+        />
 
-        {referrals && referrals.length > 0 && (
-          <SectionShell
-            testId="section-referrals-due"
-            eyebrow="3 · Referrals due"
-            title="Ask for a referral"
-            hint="Leads that closed as Won at least 5 days ago. Customer memory is still fresh — one tap opens a native referral ask. Nothing writes back to Airtable."
-            icon={Gift}
-            count={referrals.length}
+        {lists === null ? (
+          <EmptyCard testId="today-loading">Loading…</EmptyCard>
+        ) : (
+          <Chapter
+            testId="section-ready-to-contact"
+            title="Reach out"
+            aside={lists.ready.length ? "Best fit first" : null}
           >
+            {hero ? (
+              <div className="space-y-2">
+                <TicketHero opp={hero} n={1} busy={markingId === hero.id} onSent={markSent} />
+                {stubs.map((opp, i) => (
+                  <TicketStub key={opp.id} opp={opp} n={i + 2} busy={markingId === opp.id} onSent={markSent} />
+                ))}
+              </div>
+            ) : (
+              <EmptyCard testId="ready-empty">
+                Nobody new is cleared for first contact right now. Your bench below is where the next ones come from.
+              </EmptyCard>
+            )}
+            {beyond.length > 0 && (
+              <Disclosure
+                testId="ready-beyond-target"
+                title="Also ready"
+                count={beyond.length}
+                hint={`Past today's target of ${target}.`}
+                open={open.more}
+                onToggle={() => toggle("more")}
+              >
+                {beyond.map((opp, i) => (
+                  <TicketStub key={opp.id} opp={opp} n={target + i + 1} busy={markingId === opp.id} onSent={markSent} />
+                ))}
+              </Disclosure>
+            )}
+          </Chapter>
+        )}
+
+        {lists && lists.waiting.length > 0 && (
+          <Chapter testId="section-contacted" title="Waiting on them" aside="Soonest due first">
             <div className="space-y-2">
-              {referrals.map((opp) => (
+              {lists.waiting.map((opp) => (
+                <WaitingRow key={opp.id} opp={opp} />
+              ))}
+            </div>
+          </Chapter>
+        )}
+
+        {lists && lists.referrals.length > 0 && (
+          <Chapter testId="section-referrals-due" title="Ask for a referral" aside="Won 5+ days ago">
+            <div className="space-y-2">
+              {lists.referrals.map((opp) => (
                 <ReferralRow key={opp.id} opp={opp} sender={senderSettings} />
               ))}
             </div>
-          </SectionShell>
+          </Chapter>
         )}
 
-        <SectionShell
-          testId="section-all-projects"
-          eyebrow={referrals && referrals.length > 0 ? "4 · All Projects" : "3 · All Projects"}
-          title="All Projects"
-          hint="Everything else — paused, needs proof, needs history check, or not appropriate. These records have been enriched but aren't ready yet. Read-only view. No outreach actions."
-          icon={Clock}
-          count={all?.length}
+        <Chapter
+          testId="section-bench"
+          title="Your bench"
+          aside="Repeat work comes from people, not permits"
         >
-          {all === null ? (
-            <EmptyCard testId="all-loading">Loading…</EmptyCard>
-          ) : all.length === 0 ? (
-            <EmptyCard testId="all-empty">Every record is in Ready or Contacted.</EmptyCard>
-          ) : (
-            <div className="space-y-1.5">
-              {all.slice(0, 40).map((opp) => (
+          <Bench />
+        </Chapter>
+
+        <FreshIntel />
+        <LearningStrip />
+
+        {lists && (
+          <div className="space-y-4">
+            <Disclosure
+              testId="section-all-projects"
+              title="Parked"
+              count={lists.parked.length}
+              hint="Enriched but not ready — needs proof, paused, or not a fit. No outreach from here."
+              open={open.parked}
+              onToggle={() => toggle("parked")}
+            >
+              {lists.parked.slice(0, 40).map((opp) => (
                 <AllProjectsRow key={opp.id} opp={opp} />
               ))}
-              {all.length > 40 && (
-                <div className="pt-2 text-[12px] text-[var(--bh-ink-3)]">
-                  Showing 40 of {all.length}. Open All Projects to see more.
-                </div>
+              {lists.parked.length > 40 && (
+                <Link to="/opportunities" className="block pt-2 text-[12px] text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)]">
+                  Showing 40 of {lists.parked.length} — see them all in Opportunities
+                </Link>
               )}
-            </div>
-          )}
-        </SectionShell>
-
-        <section data-testid="section-needs-enrichment" className="space-y-3">
-          <button
-            type="button"
-            data-testid="needs-enrichment-toggle"
-            onClick={() => setEnrichmentOpen((v) => !v)}
-            className="w-full text-left flex items-start gap-3 py-1 hover:opacity-90 transition-opacity"
-          >
-            <div className="flex-1">
-              <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 flex items-center gap-1.5">
-                <Snowflake size={11} strokeWidth={1.75} />
-                4 · Cold — Needs Enrichment
-              </div>
-              <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
-                Needs Enrichment
-                {enrichment?.length ? (
-                  <span
-                    className="ml-2 text-[13px] text-[var(--bh-ink-mute)] tabular-nums"
-                    data-testid="needs-enrichment-count"
-                  >
-                    ({enrichment.length})
-                  </span>
-                ) : null}
-              </h2>
-              <p className="text-[12.5px] text-[var(--bh-ink-mute)] mt-0.5 max-w-2xl leading-relaxed">
-                Records the classifier tagged as needing enrichment, or that
-                still have no score and no reachable channel. Kept on
-                production so the enrichment pipeline keeps working on them —
-                never surfaced in the day's work list. Tap to {enrichmentOpen ? "collapse" : "expand"}.
-              </p>
-            </div>
-            <ChevronDown
-              size={16}
-              strokeWidth={1.75}
-              className={
-                "mt-2 shrink-0 text-[var(--bh-ink-3)] transition-transform duration-150 " +
-                (enrichmentOpen ? "rotate-180" : "")
-              }
-            />
-          </button>
-
-          {enrichmentOpen && (
-            <div data-testid="needs-enrichment-list">
-              {enrichment === null ? (
-                <EmptyCard testId="enrichment-loading">Loading…</EmptyCard>
-              ) : enrichment.length === 0 ? (
-                <EmptyCard testId="enrichment-empty">
-                  Nothing needs enrichment right now — every unclassified
-                  record either has a governed score or a reachable channel.
-                </EmptyCard>
-              ) : (
-                <div className="space-y-1.5">
-                  {enrichment.slice(0, 60).map((opp) => (
-                    <EnrichmentRow key={opp.id} opp={opp} />
-                  ))}
-                  {enrichment.length > 60 && (
-                    <div className="pt-2 text-[12px] text-[var(--bh-ink-3)]">
-                      Showing 60 of {enrichment.length}.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+            </Disclosure>
+            <Disclosure
+              testId="section-needs-enrichment"
+              title="Needs research"
+              count={lists.enrichment.length}
+              hint="No score and no way to reach them yet. The enrichment pipeline keeps working on these."
+              open={open.enrichment}
+              onToggle={() => toggle("enrichment")}
+            >
+              {lists.enrichment.slice(0, 60).map((opp) => (
+                <EnrichmentRow key={opp.id} opp={opp} />
+              ))}
+            </Disclosure>
+          </div>
+        )}
       </main>
     </>
   );
