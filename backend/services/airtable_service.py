@@ -526,10 +526,21 @@ PIPELINE_STATUSES = [
 # the read path would silently override what the write path just stored.
 # "Sent" / "No response" intentionally do NOT auto-advance the pipeline stage.
 # Won / Lost flags still win over outreach (a closed deal is closed).
+# Rejection reason values that are placeholders, not a decision.
+_NON_DECISION_OUTCOMES = {"pending"}
+
+
 def _derive_status(opp: Dict[str, Any]) -> str:
     if opp.get("flag_won"):
         return "Won"
-    if opp.get("outcome"):
+    raw_status = opp.get("status_raw") if isinstance(opp.get("status_raw"), str) else ""
+    # A Rejection reason explains a close; it doesn't override how Ryan closed
+    # it. A Disqualified lead with a reason stays Disqualified, and the
+    # "Pending" placeholder never closes a live conversation.
+    if raw_status in ("Won", "Lost", "Disqualified"):
+        return raw_status
+    outcome = opp.get("outcome")
+    if isinstance(outcome, str) and outcome.strip().lower() not in _NON_DECISION_OUTCOMES and outcome.strip():
         return "Lost"
 
     outreach = opp.get("outreach_status")

@@ -127,6 +127,7 @@ frontend/
 | `/relationships` | Relationships.jsx | Partner intelligence cards |
 | `/intelligence` | Intelligence.jsx | Projects to watch |
 | `/discovery/*` | Discovery*.jsx | Permit/landlord/property-manager discovery (not in sidebar) |
+| `/pass-reasons` | PassReasons.jsx | Card-by-card tagger for disqualified leads with no Rejection reason (linked from Home when there's a backlog) |
 | `/debug` | DebugPanel.jsx | Diagnostics (not in sidebar) |
 | `/settings` | Settings.jsx | Data sources, message playbooks, config |
 
@@ -180,6 +181,12 @@ Route smoke test: `cd frontend && APP_URL=<frontend url> npx -p playwright@1 nod
   ReferenceError and blanked the page. After any merge, check that identifiers used from
   `@/lib/*` are actually imported.
 - Discovery/Debug routes exist but are intentionally not in the sidebar.
+- **Pass reasons:** the preset list lives in `backend/services/rejection_service.py`
+  (served at `GET /api/rejection-reasons`). A pass writes Status=Disqualified + Rejection
+  reason + an Activity Log line. New presets are added as Rejection reason options on first
+  use (typecast); if refused, the write falls back to the closest legacy option. The
+  learning loop reads Rejection reason — keep it filled. "Pending" is a placeholder and
+  never closes a lead (`_derive_status`).
 - `bloodhound-opportunity-intel` repo was deleted; the two repos are `GEAUXleads` and
   `the-shirtless-handyman`. Never delete/merge repos without explicit confirmation from Ryan.
 

@@ -6,6 +6,7 @@ import LearningStrip from "@/components/LearningStrip";
 import FreshIntel from "@/components/FreshIntel";
 import Bench from "@/components/Bench";
 import OpenInMessages from "@/components/OpenInMessages";
+import PassSheet from "@/components/PassSheet";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -454,7 +455,19 @@ const MarkSentButton = ({ opp, busy, onSent }) => (
   </button>
 );
 
-const TicketHero = ({ opp, n, busy, onSent }) => {
+const PassButton = ({ opp, onPass }) => (
+  <button
+    type="button"
+    onClick={() => onPass(opp)}
+    data-testid={`pass-${opp.id}`}
+    title="Not a fit — pass with a reason"
+    className="inline-flex items-center h-9 px-3 rounded-md text-[12px] font-medium text-[var(--bh-ink-3)] hover:text-[var(--bh-clay)] hover:bg-[var(--bh-clay-mute)] transition-colors"
+  >
+    Pass
+  </button>
+);
+
+const TicketHero = ({ opp, n, busy, onSent, onPass }) => {
   const money = moneyDisplay(opp);
   const meta = [opp.project_address, opp.project_type, opp.source && `via ${sourceLabel(opp.source)}`]
     .filter(Boolean)
@@ -498,6 +511,7 @@ const TicketHero = ({ opp, n, busy, onSent }) => {
       <div className="px-5 pb-5 flex flex-wrap items-center gap-2">
         <OpenInMessages opportunity={opp} variant="pill" />
         <MarkSentButton opp={opp} busy={busy} onSent={onSent} />
+        <PassButton opp={opp} onPass={onPass} />
         <SourceChip opp={opp} />
         <Link
           to={`/opportunities/${opp.id}`}
@@ -510,7 +524,7 @@ const TicketHero = ({ opp, n, busy, onSent }) => {
   );
 };
 
-const TicketStub = ({ opp, n, busy, onSent }) => {
+const TicketStub = ({ opp, n, busy, onSent, onPass }) => {
   const money = moneyDisplay(opp);
   const why = opp.priority_explanation || opp.current_recommendation;
   return (
@@ -535,6 +549,7 @@ const TicketStub = ({ opp, n, busy, onSent }) => {
         <div className="mt-2 sm:mt-0 flex items-center gap-2 shrink-0">
           <OpenInMessages opportunity={opp} variant="pill" />
           <MarkSentButton opp={opp} busy={busy} onSent={onSent} />
+          <PassButton opp={opp} onPass={onPass} />
         </div>
       </div>
     </article>
@@ -646,6 +661,29 @@ const DayHeadline = ({ ready, due, referrals, progress }) => {
   );
 };
 
+/**
+ * ReasonBacklogNudge — disqualified leads with no Rejection reason are blank
+ * rows to the learning loop. Shows only when there's a backlog.
+ */
+const ReasonBacklogNudge = ({ count }) => {
+  if (!count) return null;
+  return (
+    <Link
+      to="/pass-reasons"
+      data-testid="reason-backlog-nudge"
+      className="flex items-center gap-4 rounded-md border border-dashed p-4 hover:bg-[var(--bh-brass-mute)] transition-colors"
+      style={{ borderColor: "var(--bh-hair-warm)" }}
+    >
+      <span className="font-display text-[30px] leading-none tabular-nums text-[var(--bh-brass)]">{count}</span>
+      <span className="flex-1 text-[13.5px] text-[var(--bh-ink-2)]">
+        <strong className="text-[var(--bh-ink)]">{count === 1 ? "pass has" : "passes have"} no reason.</strong>{" "}
+        Tag them in a couple of minutes — the classifier learns from every one.
+      </span>
+      <ChevronRight size={16} className="shrink-0 text-[var(--bh-ink-3)]" />
+    </Link>
+  );
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────
 
 const CommandCenter = () => {
@@ -654,6 +692,8 @@ const CommandCenter = () => {
   const [progress, setProgress] = useState(null);
   const [markingId, setMarkingId] = useState(null);
   const [open, setOpen] = useState({ more: false, parked: false, enrichment: false });
+  const [passTarget, setPassTarget] = useState(null);
+  const [reasonBacklog, setReasonBacklog] = useState(0);
   const { settings: senderSettings } = useUserSettings();
 
   const load = useCallback(() => {
@@ -673,6 +713,10 @@ const CommandCenter = () => {
       .outreachQueue()
       .then((res) => setProgress({ target: res.target, sent_today: res.sent_today }))
       .catch(() => setProgress(null));
+    api
+      .passBacklog(1)
+      .then((res) => setReasonBacklog(res.count || 0))
+      .catch(() => setReasonBacklog(0));
   }, []);
 
   useEffect(() => {
@@ -709,7 +753,10 @@ const CommandCenter = () => {
         referrals.push(opp);
         continue;
       }
-      const bucket = queueBucket(opp);
+      // A lead Ryan closed (e.g. just passed on) leaves the action lists right
+      // away, even before the classifier re-files its Current Queue.
+      const closed = ["Won", "Lost", "Disqualified"].includes(opp.status);
+      const bucket = closed ? "all" : queueBucket(opp);
       if (bucket === "ready") {
         if (!sentToday(opp)) ready.push(opp);
       } else if (bucket === "contacted") contacted.push(opp);
@@ -765,9 +812,9 @@ const CommandCenter = () => {
           >
             {hero ? (
               <div className="space-y-2">
-                <TicketHero opp={hero} n={1} busy={markingId === hero.id} onSent={markSent} />
+                <TicketHero opp={hero} n={1} busy={markingId === hero.id} onSent={markSent} onPass={setPassTarget} />
                 {stubs.map((opp, i) => (
-                  <TicketStub key={opp.id} opp={opp} n={i + 2} busy={markingId === opp.id} onSent={markSent} />
+                  <TicketStub key={opp.id} opp={opp} n={i + 2} busy={markingId === opp.id} onSent={markSent} onPass={setPassTarget} />
                 ))}
               </div>
             ) : (
@@ -785,7 +832,7 @@ const CommandCenter = () => {
                 onToggle={() => toggle("more")}
               >
                 {beyond.map((opp, i) => (
-                  <TicketStub key={opp.id} opp={opp} n={target + i + 1} busy={markingId === opp.id} onSent={markSent} />
+                  <TicketStub key={opp.id} opp={opp} n={target + i + 1} busy={markingId === opp.id} onSent={markSent} onPass={setPassTarget} />
                 ))}
               </Disclosure>
             )}
@@ -821,6 +868,7 @@ const CommandCenter = () => {
         </Chapter>
 
         <FreshIntel />
+        <ReasonBacklogNudge count={reasonBacklog} />
         <LearningStrip />
 
         {lists && (
@@ -857,6 +905,12 @@ const CommandCenter = () => {
           </div>
         )}
       </main>
+      <PassSheet
+        opp={passTarget}
+        open={Boolean(passTarget)}
+        onOpenChange={(v) => !v && setPassTarget(null)}
+        onPassed={load}
+      />
     </>
   );
 };

@@ -21,6 +21,7 @@ import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import OutreachWriterButton from "@/components/OutreachWriterButton";
 import AgentRunButton from "@/components/AgentRunButton";
+import PassSheet from "@/components/PassSheet";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
@@ -49,6 +50,7 @@ import {
   Hammer,
   UserSearch,
   RefreshCcw,
+  Ban,
 } from "lucide-react";
 
 const ACTION_BUTTONS = [
@@ -173,6 +175,7 @@ const OpportunityDetail = () => {
   const { id } = useParams();
   const [opp, setOpp] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [passOpen, setPassOpen] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
   const [releasing, setReleasing] = useState(false);
   const airtableUrlFor = useAirtableRecordUrl();
@@ -471,6 +474,16 @@ const OpportunityDetail = () => {
                     </React.Fragment>
                   );
                 })}
+                <button
+                  type="button"
+                  data-testid="action-pass"
+                  disabled={opp.status === "Disqualified" && Boolean(opp.outcome) && opp.outcome !== "Pending"}
+                  onClick={() => setPassOpen(true)}
+                  className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm transition-colors duration-150 border bh-hairline text-[var(--bh-clay)] hover:bg-[var(--bh-clay-mute)] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Ban size={14} />
+                  {opp.status === "Disqualified" ? "Add the reason you passed" : "Pass on this lead"}
+                </button>
                 {/* Draft a Note is retired. The single Email Now / Follow
                     Up Email button in OpenInMessages is the ONLY outreach
                     entry point on Ready and Contacted records. */}
@@ -487,6 +500,12 @@ const OpportunityDetail = () => {
             opportunity={opp}
           />
         )}
+        <PassSheet
+          opp={opp}
+          open={passOpen}
+          onOpenChange={setPassOpen}
+          onPassed={() => api.getOpportunity(id, { fresh: true }).then(setOpp).catch(() => {})}
+        />
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left col: Intelligence + Contact + Property */}

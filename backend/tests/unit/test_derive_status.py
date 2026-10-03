@@ -82,3 +82,16 @@ def test_non_terminal_raw_status_still_falls_through_to_enrichment():
         )
         == "Needs research"
     )
+
+
+def test_rejection_reason_keeps_manual_disqualified():
+    assert _derive_status({"status_raw": "Disqualified", "outcome": "Wrong trade"}) == "Disqualified"
+
+
+def test_pending_rejection_reason_does_not_close_a_conversation():
+    opp = {"status_raw": "Conversation started", "outcome": "Pending", "outreach_status": "Replied"}
+    assert _derive_status(opp) == "Conversation started"
+
+
+def test_real_rejection_reason_without_terminal_status_is_lost():
+    assert _derive_status({"status_raw": "New", "outcome": "Too small"}) == "Lost"
