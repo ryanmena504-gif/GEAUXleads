@@ -85,7 +85,7 @@ def test_approve_writes_only_allowlisted_fields(service):
     assert result["state"] == "approved"
     written = {name for _, fields in service._table.writes for name in fields}
     assert written <= EDITABLE_FIELDS
-    assert written == {"Approval status", "Outreach status"}
+    assert written == {"Approval status"}   # Outreach status has no "Approved" option
 
 
 def test_approve_does_not_claim_a_message_was_sent(service):
@@ -155,7 +155,7 @@ def test_replay_is_audited_without_a_second_acceptance():
 def test_a_double_click_without_a_client_key_still_approves_once(service):
     service.approve("rec1")
     service.approve("rec1")
-    assert len(service._table.writes) == 2      # both fields, from one approval
+    assert len(service._table.writes) == 1      # one write, from one approval
 
 
 # ----------------------------------------------------------------- revert
@@ -163,14 +163,14 @@ def test_revert_clears_the_session_approval_and_writes_a_status(service):
     service.approve("rec1")
     result = service.revert_approval("rec1", actor="ryan", reason="wrong lead")
     assert result["state"] == "approval_reverted"
-    assert result["reverted_to"] == "Pending"
+    assert result["reverted_to"] == "Ready for review"
     assert "rec1" not in service._approvals
 
 
 def test_revert_degrades_through_the_select_vocabulary(service):
-    service._table.rejected_values = {"Pending", "Pending Approval"}
+    service._table.rejected_values = {"Ready for review"}
     service.approve("rec1")
-    assert service.revert_approval("rec1")["reverted_to"] == "Needs Review"
+    assert service.revert_approval("rec1")["reverted_to"] == "Needs draft"
 
 
 def test_revert_allows_a_deliberate_re_approval_on_the_same_day(service):

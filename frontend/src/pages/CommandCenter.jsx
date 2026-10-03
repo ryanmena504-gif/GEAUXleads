@@ -728,10 +728,22 @@ const SectionShell = ({ eyebrow, title, hint, icon: Icon, count, testId, childre
 
 const CommandCenter = () => {
   const [items, setItems] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const { settings: senderSettings } = useUserSettings();
 
   const load = useCallback(() => {
-    api.listOpportunities().then(setItems).catch(() => setItems([]));
+    api
+      .listOpportunities()
+      .then((rows) => {
+        setItems(rows);
+        setLoadError(null);
+      })
+      .catch(() => {
+        // Keep the last good list on a failed live refresh; only show an
+        // error instead of silently rendering empty queues.
+        setItems((prev) => prev ?? []);
+        setLoadError("Could not load your projects — the GEAUXleads API didn't respond.");
+      });
   }, []);
 
   useEffect(() => {
@@ -787,6 +799,15 @@ const CommandCenter = () => {
         subtitle="Ready to Contact first. Contacted for follow-ups. All Projects for everything else."
       />
       <main className="px-4 lg:px-8 py-6 pb-28 max-w-6xl space-y-10">
+        {loadError && (
+          <div
+            role="alert"
+            data-testid="home-load-error"
+            className="bh-surface rounded-md border-t-2 border-t-red-500/60 p-4 text-sm text-red-200"
+          >
+            {loadError} The lists below may be empty or out of date — reload to try again.
+          </div>
+        )}
         <CommandCenterStats items={items} />
         <MorningBrief />
         <TodayOutreach />

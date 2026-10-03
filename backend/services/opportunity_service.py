@@ -181,7 +181,7 @@ class SampleOpportunityService:
         return aggregations.pipeline_counts(self.all())
 
     def duplicates_report(self) -> Dict[str, Any]:
-        return dedupe.duplicate_report(self._duplicate_index)
+        return dedupe.duplicate_report(dedupe.annotate(list(self._data.values())))
 
     # ---------- writes ----------
     def update_status(self, opp_id: str, status: str) -> Optional[Dict[str, Any]]:

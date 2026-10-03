@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { Suspense, createContext, useContext, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import BottomNav from "@/components/BottomNav";
@@ -7,6 +7,12 @@ import RouteErrorBoundary from "@/components/RouteErrorBoundary";
 
 const PaletteContext = createContext({ open: () => {} });
 export const useCommandPalette = () => useContext(PaletteContext);
+
+const PageLoading = () => (
+  <div className="px-4 lg:px-8 py-10 text-[13px] text-[var(--bh-ink-3)]" data-testid="page-loading">
+    Loading…
+  </div>
+);
 
 const AppLayout = () => {
   const [open, setOpen] = useState(false);
@@ -32,7 +38,9 @@ const AppLayout = () => {
           className="lg:pl-64 min-h-screen pb-24 lg:pb-0"
         >
           <RouteErrorBoundary key={pathname}>
-            <Outlet />
+            <Suspense fallback={<PageLoading />}>
+              <Outlet />
+            </Suspense>
           </RouteErrorBoundary>
         </main>
         <BottomNav />

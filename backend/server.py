@@ -149,11 +149,9 @@ async def list_opportunities(
 
 @api_router.get("/opportunities/lanes")
 async def lane_breakdown():
-    """Counts + pipeline value per lane (market_capture / partner / non_permit)."""
+    """Counts + pipeline value per lane."""
+    from services.airtable_service import LANES, LANE_LABELS as LABEL
     svc = get_opportunity_service()
-    LANES = ("market_capture", "partner", "non_permit")
-    LABEL = {"market_capture": "Market Capture", "partner": "Partner Pipeline",
-             "non_permit": "Non-Permit Signals"}
     all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = []
     for lane in LANES:
@@ -176,9 +174,8 @@ async def lane_breakdown():
 @api_router.get("/opportunities/top-by-lane")
 async def top_by_lane(limit: int = 4):
     """Top N per lane, ranked by canonical Lead score."""
-    from services.airtable_service import sort_opportunities as _sort_ops
+    from services.airtable_service import LANES, sort_opportunities as _sort_ops
     svc = get_opportunity_service()
-    LANES = ("market_capture", "partner", "non_permit")
     all_ops = await _bg(svc.all, ) if hasattr(svc, "all") else []
     out = {}
     for lane in LANES:
@@ -2064,9 +2061,11 @@ async def outreach_prepare(target: Optional[int] = None):
             triggered += 1
     try:
         get_audit_log().record(
-            event="outreach_prepare",
-            record_id="daily",
-            detail=f"Outreach prep: {triggered} writers triggered, {already} already had messages (target {n})",
+            action="outreach_prepare",
+            entity_id="daily",
+            outcome="accepted",
+            entity_type="batch",
+            reason=f"Outreach prep: {triggered} writers triggered, {already} already had messages (target {n})",
         )
     except Exception:  # noqa: BLE001
         logger.exception("audit record failed — continuing anyway")
@@ -2153,9 +2152,10 @@ async def trigger_portfolio_check(opp_id: str):
 
     try:
         get_audit_log().record(
-            event="portfolio_check_triggered",
-            record_id=opp_id,
-            detail=f"Portfolio check triggered for {opp.get('name')}",
+            action="portfolio_check_triggered",
+            entity_id=opp_id,
+            outcome="accepted",
+            reason=f"Portfolio check triggered for {opp.get('name')}",
         )
     except Exception:  # noqa: BLE001
         logger.exception("audit record failed — continuing anyway")
@@ -2273,9 +2273,10 @@ async def trigger_outreach_write(opp_id: str):
 
     try:
         get_audit_log().record(
-            event="outreach_write_triggered",
-            record_id=opp_id,
-            detail=f"Outreach writer triggered for {opp.get('name')}",
+            action="outreach_write_triggered",
+            entity_id=opp_id,
+            outcome="accepted",
+            reason=f"Outreach writer triggered for {opp.get('name')}",
         )
     except Exception:  # noqa: BLE001
         logger.exception("audit record failed — continuing anyway")

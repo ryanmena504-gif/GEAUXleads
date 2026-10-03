@@ -1,8 +1,6 @@
 /**
- * Regression fixtures for the greeting helpers. Not wired into a test
- * runner (the app has no jest config yet) — kept as documented cases
- * covering every real-world name shape Ryan has seen produce a bug.
- * Run manually with `node --experimental-vm-modules` after any change.
+ * Regression fixtures for the greeting helpers — every real-world name shape
+ * Ryan has seen produce a bug. Runs under `yarn test`.
  */
 import {
   buildSalutation,
@@ -11,11 +9,8 @@ import {
   stripLeadingGreeting,
 } from "../greeting.js";
 
-const eq = (a, b, label) => {
-  const ok = a === b;
-  console.log(ok ? "PASS" : "FAIL", label, `→ got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
-  if (!ok) process.exitCode = 1;
-};
+const cases = [];
+const eq = (got, want, label) => cases.push([label, got, want]);
 
 // looksLikeBusiness
 eq(looksLikeBusiness("Tristan Construction LLC"), true, "biz: Tristan Construction LLC");
@@ -36,34 +31,34 @@ eq(personalFirstName("MRB Investments LLC"), null, "first: MRB business → null
 eq(personalFirstName(""), null, "first: empty");
 eq(personalFirstName("  Anna-Marie Doe"), "Anna-Marie", "first: hyphenated");
 
-// buildSalutation — falls through decision_maker → contact_name → owner_name → name
+// buildSalutation — tries each person-name candidate in order, skipping businesses
 eq(
-  buildSalutation({ decision_maker: "John Smith", name: "Tristan Construction LLC" }),
+  buildSalutation(["John Smith", "Tristan Construction LLC"]),
   "Hi John,",
   "salute: decision_maker wins over business name",
 );
 eq(
-  buildSalutation({ decision_maker: "", name: "Tristan Construction LLC" }),
+  buildSalutation(["", "Tristan Construction LLC"]),
   "Hi there,",
   "salute: falls back to generic when name is a business",
 );
 eq(
-  buildSalutation({ decision_maker: "", name: "John Smith" }),
+  buildSalutation(["", "John Smith"]),
   "Hi John,",
-  "salute: uses name when it looks like a person",
+  "salute: falls through to the next person-shaped candidate",
 );
 eq(
-  buildSalutation({ owner_name: "MRB Investments LLC" }, { verb: "Dear", generic: "Property Owner" }),
+  buildSalutation(["MRB Investments LLC"], { verb: "Dear", generic: "Property Owner" }),
   "Dear Property Owner,",
   "salute: landlord letter generic for business owner",
 );
 eq(
-  buildSalutation({ owner_name: "Grzegorz Pomietlarz" }, { verb: "Dear", generic: "Property Owner" }),
+  buildSalutation(["Grzegorz Pomietlarz"], { verb: "Dear", generic: "Property Owner" }),
   "Dear Grzegorz,",
   "salute: landlord letter uses real name",
 );
 eq(
-  buildSalutation({ decision_maker: null, name: null }),
+  buildSalutation([null, null]),
   "Hi there,",
   "salute: everything blank → generic",
 );
@@ -96,3 +91,7 @@ eq(
 );
 eq(stripLeadingGreeting(""), "", "strip: empty");
 eq(stripLeadingGreeting(null), "", "strip: null");
+
+test.each(cases)("%s", (_label, got, want) => {
+  expect(got).toBe(want);
+});
