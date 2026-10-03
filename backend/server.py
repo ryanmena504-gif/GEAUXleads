@@ -635,7 +635,7 @@ async def leads_action(lead_id: str, body: LeadAction):
     if action == "hold":
         return await _bg(svc.hold, lead_id, actor=body.actor)
     if action == "release_hold":
-        if (svc.get(lead_id) or {}).get("hunt_status") != "Paused":
+        if ((await _bg(svc.get, lead_id)) or {}).get("hunt_status") != "Paused":
             raise HTTPException(status_code=409, detail="Lead is not on hold (Hunt status is not Paused)")
         return await _bg(svc.release_hold, lead_id, actor=body.actor)
     if action == "skip":
@@ -1333,8 +1333,8 @@ async def discovery_property_managers(status: str = "worth_a_look"):
         is_actionable_property_manager,
     )
 
-    items = list_property_managers(status=status)
-    counts = property_manager_status_counts()
+    items = await _bg(list_property_managers, status=status)
+    counts = await _bg(property_manager_status_counts)
 
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
@@ -1374,8 +1374,8 @@ async def discovery_real_estate_agents(status: str = "all"):
         is_actionable_agent,
     )
 
-    items = list_real_estate_agents(status=status)
-    counts = real_estate_agent_status_counts()
+    items = await _bg(list_real_estate_agents, status=status)
+    counts = await _bg(real_estate_agent_status_counts)
 
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
@@ -1406,8 +1406,8 @@ async def discovery_landlords(status: str = "not_contacted", ids: Optional[str] 
     from services.discovery_service import list_landlords, landlord_status_counts
 
     id_list = [i.strip() for i in ids.split(",")] if ids else None
-    items = list_landlords(status=status, ids=id_list)
-    counts = landlord_status_counts()
+    items = await _bg(list_landlords, status=status, ids=id_list)
+    counts = await _bg(landlord_status_counts)
     return {
         "items": items,
         "count": len(items),
@@ -1426,8 +1426,8 @@ async def discovery_investors(status: str = "all"):
         is_actionable_investor,
     )
 
-    items = list_investors(status=status)
-    counts = investor_status_counts()
+    items = await _bg(list_investors, status=status)
+    counts = await _bg(investor_status_counts)
 
     handoff = get_discovery_handoff_service()
     fresh_ids: set = set()
@@ -1836,7 +1836,8 @@ async def export_opportunities_csv(
     query params as GET /api/opportunities so the CSV always matches what
     the operator sees on-screen."""
     svc = get_opportunity_service()
-    rows = svc.list(
+    rows = await _bg(
+        svc.list,
         source=source, status=status, priority_band=priority_band,
         daily_mission=daily_mission, project_type=project_type,
         min_score=min_score, q=q, lane=lane, sort=sort, view=view,
@@ -1859,7 +1860,7 @@ async def export_discovery_csv(feed: str):
     if feed not in mapping:
         raise HTTPException(status_code=404, detail="unknown feed")
     key, fn = mapping[feed]
-    result = fn(status="all") if fn.__code__.co_argcount else fn()
+    result = await _bg(fn, status="all") if fn.__code__.co_argcount else await _bg(fn)
     items = result.get("items", []) if isinstance(result, dict) else (result or [])
     return _csv_response(key, items)
 
@@ -1874,7 +1875,7 @@ async def export_discovery_csv(feed: str):
 async def audit_draft_safety():
     from services.draft_safety import looks_like_ai_prompt
     svc = get_opportunity_service()
-    all_ops = svc.all() if (svc and hasattr(svc, "all")) else []
+    all_ops = (await _bg(svc.all)) if (svc and hasattr(svc, "all")) else []
     # Every Airtable field the composer trusts as part of a mailto: draft.
     # Body sources — piped straight into the email body:
     BODY_FIELDS = ("first_message", "first_contact_message", "current_recommendation")

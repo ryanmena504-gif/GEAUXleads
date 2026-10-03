@@ -15,12 +15,14 @@ telling Ryan to create it in Airtable.
 """
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import threading
 import time
 from typing import Any, Dict, Optional
 
-from pyairtable import Api
+from services.airtable_client import make_api
 
 from services.user_settings_service import DEFAULTS, validate_patch
 
@@ -43,7 +45,7 @@ class AirtableSettingsService:
         self._api_key = api_key
         self._base_id = base_id
         self._table_name = table_name
-        self._api = Api(api_key)
+        self._api = make_api(api_key)
         self._table_id: Optional[str] = None
         self._ready = False
         self._lock = threading.Lock()
@@ -116,7 +118,8 @@ class AirtableSettingsService:
             merged.update(self._cache)
             return merged
         try:
-            records = self._table().all()
+            # pyairtable is sync — keep it off the event loop.
+            records = await asyncio.to_thread(lambda: self._table().all())
         except AirtableSettingsError as e:
             # Missing table: never create it, never crash — use defaults.
             log.warning("Airtable settings unavailable — returning defaults: %s", e)
@@ -140,7 +143,7 @@ class AirtableSettingsService:
         clean = validate_patch(patch)  # raises ValueError on bad input
         if not clean:
             return await self.get()
-        try:
+        def _write() -> None:
             table = self._table()
             existing = {}
             for rec in table.all():
@@ -154,6 +157,10 @@ class AirtableSettingsService:
                     table.update(existing[k], {"Value": value})
                 else:
                     table.create({"Key": k, "Value": value})
+
+        try:
+            # pyairtable is sync — keep it off the event loop.
+            await asyncio.to_thread(_write)
         except AirtableSettingsError:
             raise
         except Exception as e:  # noqa: BLE001
