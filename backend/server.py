@@ -42,6 +42,12 @@ load_dotenv(ROOT_DIR / '.env')
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Worker pool for _bg(): the default is min(32, cpu+4), which on a small
+    # Railway container is ~5 threads — a few slow Airtable reads can starve
+    # every other request. Airtable calls are I/O-bound, so a wider pool is cheap.
+    from concurrent.futures import ThreadPoolExecutor
+    asyncio.get_running_loop().set_default_executor(
+        ThreadPoolExecutor(max_workers=32, thread_name_prefix="airtable-io"))
     # Startup: register the Airtable webhook (idempotent).
     try:
         await init_webhook_manager()
@@ -308,6 +314,66 @@ async def undo_pass_opportunity(opp_id: str, body: PassUndoBody):
     get_audit_log().record(action="pass_undone", entity_id=opp_id, entity_type="opportunity",
                            outcome="accepted", changes={"Status": body.previous_status})
     return opp
+
+
+# ---------- Waiting on you (AI-approved signals not yet on the list) ----------
+# See services/promotion_service.py: the Make promotion scenario stopped
+# moving approved permits into Leads, so Ryan can do it here, one tap each.
+
+@api_router.get("/pipeline/waiting")
+async def pipeline_waiting():
+    from services.promotion_service import get_promotion_service
+    svc = get_promotion_service()
+    if svc is None:
+        return {"available": False, "items": [], "count": 0}
+    try:
+        items = await _bg(svc.waiting)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("pipeline/waiting read failed")
+        raise HTTPException(status_code=502, detail=f"Could not read Raw Signals: {e}")
+    return {"available": True, "items": items, "count": len(items)}
+
+
+@api_router.post("/pipeline/waiting/{raw_id}/promote")
+async def pipeline_promote(raw_id: str):
+    from services.promotion_service import AlreadyHandled, get_promotion_service
+    svc = get_promotion_service()
+    if svc is None:
+        raise HTTPException(status_code=503, detail="Airtable is not configured")
+    try:
+        result = await _bg(svc.promote, raw_id)
+    except AlreadyHandled as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("promote %s failed", raw_id)
+        raise HTTPException(status_code=502, detail=f"Could not add it to your list: {e}")
+    osvc = get_opportunity_service()
+    if hasattr(osvc, "force_refresh"):
+        await _bg(osvc.force_refresh)
+    get_audit_log().record(action="promote_signal", entity_id=raw_id, entity_type="raw_signal",
+                           outcome="accepted", changes={"Lead": result.get("lead_id")})
+    return result
+
+
+@api_router.post("/pipeline/waiting/{raw_id}/pass")
+async def pipeline_pass(raw_id: str, body: PassBody):
+    from services.promotion_service import AlreadyHandled, get_promotion_service
+    from services.rejection_service import UnknownReason
+    svc = get_promotion_service()
+    if svc is None:
+        raise HTTPException(status_code=503, detail="Airtable is not configured")
+    try:
+        result = await _bg(svc.pass_signal, raw_id, body.reason, body.note)
+    except UnknownReason as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except AlreadyHandled as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("pass signal %s failed", raw_id)
+        raise HTTPException(status_code=502, detail=f"Could not save the pass: {e}")
+    get_audit_log().record(action="pass_signal", entity_id=raw_id, entity_type="raw_signal",
+                           outcome="accepted", reason=result["promotion_status"])
+    return result
 
 
 @api_router.patch("/opportunities/{opp_id}/mission")

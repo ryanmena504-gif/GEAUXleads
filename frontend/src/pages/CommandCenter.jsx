@@ -7,6 +7,7 @@ import FreshIntel from "@/components/FreshIntel";
 import Bench from "@/components/Bench";
 import OpenInMessages from "@/components/OpenInMessages";
 import PassSheet from "@/components/PassSheet";
+import { OnePhoneAway, WaitingOnYou } from "@/components/PipelineRescue";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -838,6 +839,10 @@ const CommandCenter = () => {
             )}
           </Chapter>
         )}
+
+        <WaitingOnYou onChanged={load} />
+
+        <OnePhoneAway items={items} />
 
         {lists && lists.waiting.length > 0 && (
           <Chapter testId="section-contacted" title="Waiting on them" aside="Soonest due first">

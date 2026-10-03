@@ -37,6 +37,12 @@ export const api = {
     client.post(`/opportunities/${id}/pass`, { reason, note }).then((r) => r.data),
   undoPass: (id, previous_status) =>
     client.post(`/opportunities/${id}/pass/undo`, { previous_status }).then((r) => r.data),
+  // AI-approved permits that never reached Leads (promotion automation stalled).
+  pipelineWaiting: () => client.get("/pipeline/waiting").then((r) => r.data),
+  promoteSignal: (rawId) =>
+    client.post(`/pipeline/waiting/${rawId}/promote`).then((r) => r.data),
+  passSignal: (rawId, reason, note) =>
+    client.post(`/pipeline/waiting/${rawId}/pass`, { reason, note }).then((r) => r.data),
   addActivity: (id, type, note) =>
     client
       .post(`/opportunities/${id}/activity`, { type, note })
