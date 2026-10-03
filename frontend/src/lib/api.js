@@ -29,6 +29,14 @@ export const api = {
     client.patch(`/opportunities/${id}/fields`, patch).then((r) => r.data),
   recordResult: (id, payload) =>
     client.post(`/opportunities/${id}/result`, payload).then((r) => r.data),
+  // One-tap pass: Status → Disqualified + Rejection reason + Activity Log line.
+  rejectionReasons: () => client.get("/rejection-reasons").then((r) => r.data),
+  passBacklog: (limit = 200) =>
+    client.get("/pass-backlog", { params: { limit } }).then((r) => r.data),
+  passOpportunity: (id, reason, note) =>
+    client.post(`/opportunities/${id}/pass`, { reason, note }).then((r) => r.data),
+  undoPass: (id, previous_status) =>
+    client.post(`/opportunities/${id}/pass/undo`, { previous_status }).then((r) => r.data),
   addActivity: (id, type, note) =>
     client
       .post(`/opportunities/${id}/activity`, { type, note })

@@ -250,6 +250,66 @@ async def update_status(opp_id: str, body: StatusUpdate):
     return updated
 
 
+# ---------- Pass (disqualify with a reason) ----------
+# One tap from Home or the detail page. The reason feeds the classifier
+# learning loop; see services/rejection_service.py.
+
+class PassBody(BaseModel):
+    reason: str
+    note: Optional[str] = None
+
+
+class PassUndoBody(BaseModel):
+    previous_status: Optional[str] = None
+
+
+@api_router.get("/rejection-reasons")
+async def rejection_reasons():
+    from services.rejection_service import REJECTION_REASONS
+    return [{"key": r["key"], "label": r["label"], "detail": r["detail"]} for r in REJECTION_REASONS]
+
+
+@api_router.get("/pass-backlog")
+async def pass_backlog(limit: int = 200):
+    """Disqualified leads with no real Rejection reason, newest first."""
+    from services.rejection_service import backlog
+    return await _bg(backlog, get_opportunity_service(), max(1, min(limit, 500)))
+
+
+@api_router.post("/opportunities/{opp_id}/pass")
+async def pass_opportunity(opp_id: str, body: PassBody):
+    from services.rejection_service import UnknownReason, pass_lead
+    try:
+        result = await _bg(pass_lead, get_opportunity_service(), opp_id, body.reason, body.note)
+    except UnknownReason as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    get_audit_log().record(
+        action="pass", entity_id=opp_id, entity_type="opportunity", outcome="accepted",
+        reason=result["rejection_reason_written"],
+        changes={"Rejection reason": result["rejection_reason_written"],
+                 **({"Status": "Disqualified"} if result["status_changed"] else {})},
+    )
+    return result
+
+
+@api_router.post("/opportunities/{opp_id}/pass/undo")
+async def undo_pass_opportunity(opp_id: str, body: PassUndoBody):
+    from services.rejection_service import undo_pass
+    try:
+        opp = await _bg(undo_pass, get_opportunity_service(), opp_id, body.previous_status)
+    except AirtableWriteError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    if opp is None:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    get_audit_log().record(action="pass_undone", entity_id=opp_id, entity_type="opportunity",
+                           outcome="accepted", changes={"Status": body.previous_status})
+    return opp
+
+
 @api_router.patch("/opportunities/{opp_id}/mission")
 async def update_mission(opp_id: str, body: MissionUpdate):
     svc = get_opportunity_service()

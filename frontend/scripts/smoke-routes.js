@@ -34,6 +34,7 @@ const ROUTES = [
   "/discovery/landlords",
   "/discovery/landlords/print",
   "/discovery/investors",
+  "/pass-reasons",
 ];
 
 async function checkRoute(page, path) {

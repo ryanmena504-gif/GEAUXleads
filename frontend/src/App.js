@@ -22,6 +22,7 @@ const DiscoveryRealEstateAgents = lazy(() => import("@/pages/DiscoveryRealEstate
 const DiscoveryLandlords = lazy(() => import("@/pages/DiscoveryLandlords"));
 const LandlordLetterPrint = lazy(() => import("@/pages/LandlordLetterPrint"));
 const DiscoveryInvestors = lazy(() => import("@/pages/DiscoveryInvestors"));
+const PassReasons = lazy(() => import("@/pages/PassReasons"));
 
 function App() {
   return (
@@ -44,6 +45,7 @@ function App() {
             <Route path="/discovery/landlords" element={<DiscoveryLandlords />} />
             <Route path="/discovery/landlords/print" element={<LandlordLetterPrint />} />
             <Route path="/discovery/investors" element={<DiscoveryInvestors />} />
+            <Route path="/pass-reasons" element={<PassReasons />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
