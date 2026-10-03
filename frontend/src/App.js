@@ -1,23 +1,27 @@
 import "@/App.css";
+import { lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 
 import AppLayout from "@/layouts/AppLayout";
 import CommandCenter from "@/pages/CommandCenter";
-import Opportunities from "@/pages/Opportunities";
-import OpportunityDetail from "@/pages/OpportunityDetail";
-import Missions from "@/pages/Missions";
-import Relationships from "@/pages/Relationships";
-import Intelligence from "@/pages/Intelligence";
-import ReviewQueue from "@/pages/ReviewQueue";
-import Settings from "@/pages/Settings";
-import Lookup from "@/pages/Lookup";
-import DebugPanel from "@/pages/DebugPanel";
-import DiscoveryPropertyManagers from "@/pages/DiscoveryPropertyManagers";
-import DiscoveryRealEstateAgents from "@/pages/DiscoveryRealEstateAgents";
-import DiscoveryLandlords from "@/pages/DiscoveryLandlords";
-import LandlordLetterPrint from "@/pages/LandlordLetterPrint";
-import DiscoveryInvestors from "@/pages/DiscoveryInvestors";
+
+// Home loads eagerly; every other page is split into its own chunk so the
+// phone only downloads the screen Ryan actually opens.
+const Opportunities = lazy(() => import("@/pages/Opportunities"));
+const OpportunityDetail = lazy(() => import("@/pages/OpportunityDetail"));
+const Missions = lazy(() => import("@/pages/Missions"));
+const Relationships = lazy(() => import("@/pages/Relationships"));
+const Intelligence = lazy(() => import("@/pages/Intelligence"));
+const ReviewQueue = lazy(() => import("@/pages/ReviewQueue"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Lookup = lazy(() => import("@/pages/Lookup"));
+const DebugPanel = lazy(() => import("@/pages/DebugPanel"));
+const DiscoveryPropertyManagers = lazy(() => import("@/pages/DiscoveryPropertyManagers"));
+const DiscoveryRealEstateAgents = lazy(() => import("@/pages/DiscoveryRealEstateAgents"));
+const DiscoveryLandlords = lazy(() => import("@/pages/DiscoveryLandlords"));
+const LandlordLetterPrint = lazy(() => import("@/pages/LandlordLetterPrint"));
+const DiscoveryInvestors = lazy(() => import("@/pages/DiscoveryInvestors"));
 
 function App() {
   return (

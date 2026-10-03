@@ -80,7 +80,6 @@ LIVE_FIELDS: Dict[str, str] = {
     # the app renders whatever Airtable actually shows Ryan on a given record.
     "Official project value": "official_project_value",
     "Estimated opportunity value": "opportunity_value_display",
-    "Permit project value": "permit_project_value",
 
     # Contact block
     "Contact name": "decision_maker",
@@ -1401,7 +1400,7 @@ class AirtableOpportunityService:
     def add_activity(self, opp_id: str, type_: str, note: Optional[str]) -> Optional[Dict[str, Any]]:
         # Appended to the "Activity Log" long-text column as
         # "ISO_TIMESTAMP | type | note" and rendered into the timeline on read.
-        self._require_custom_field("activity_log", "Activity Log", "long text")
+        self._require_custom_field("activity_log_raw", "Activity Log", "long text")
         try:
             record = self._table.get(opp_id)
             fields = record.get("fields", {}) if isinstance(record, dict) else {}

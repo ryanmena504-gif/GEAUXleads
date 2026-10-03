@@ -120,7 +120,7 @@ frontend/
 
 | Route | File | Purpose |
 | --- | --- | --- |
-| `/` | CommandCenter.jsx | Home dashboard: morning brief, follow-ups, pipeline |
+| `/` | CommandCenter.jsx | Home ("Today"): who to reach in order as work tickets, follow-ups due, referrals, your bench (landlords/PMs/agents/investors/partners), parked + needs-research collapsed |
 | `/opportunities` | Opportunities.jsx | Project list w/ filters (Lane, Source, Status, Priority, Mission, Type, min score, search) |
 | `/opportunities/:id` | OpportunityDetail.jsx | Project detail, drafts, activity |
 | `/missions` | Missions.jsx | Today's outreach missions grouped by action |
@@ -166,12 +166,12 @@ Never commit keys. Never log the API key.
 
 ## Open tasks (do these, then delete the line)
 
-1. Add a React error boundary around each route so one throwing component can't blank the page.
-2. Add `.catch` to `api.listOpportunities().then(setItems)` in Opportunities.jsx and show a real
-   error state instead of "No opportunities match your filters."
-3. Add a render smoke test that loads each route against real API data and fails on
-   ReferenceError (catches the dropped-import problem below).
-4. Surface **Explee Hot Leads** (unreviewed, newest first) prominently on Home.
+1. Surface **Explee Hot Leads** (unreviewed, newest first) prominently on Home. Blocked: there
+   is no "Explee Hot Leads" table in the live base yet (checked Oct 2026) — needs the lead
+   Claude to create it or say where those replies land.
+
+Route smoke test: `cd frontend && APP_URL=<frontend url> npx -p playwright@1 node scripts/smoke-routes.js`
+— run it after any merge.
 
 ## Gotchas (learned the hard way)
 

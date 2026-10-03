@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
  *   • For each pattern: headline (governed field = value + lift phrase),
  *     the raw n/total, and the baseline rate for context.
  *
- * Placement: Home page, just below WonThisMonth. If insights are empty, a
+ * Placement: Home page, below the morning brief. If insights are empty, a
  * small "learning starts after N more outcomes" strip renders instead so
  * Ryan understands why the panel is quiet.
  */

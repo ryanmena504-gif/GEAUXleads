@@ -63,31 +63,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class UserSettingsService:
-    def __init__(self, mongo_url: str, db_name: str):
-        self._client = AsyncIOMotorClient(mongo_url)
-        self._col = self._client[db_name][COLLECTION]
-
-    @staticmethod
-    def _serialize(doc: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        merged = dict(DEFAULTS)
-        if doc:
-            for k, v in doc.items():
-                if k in ("_id", "key"):
-                    continue
-                merged[k] = v
-        return merged
-
-    async def get(self) -> Dict[str, Any]:
-        doc = await self._col.find_one({"key": SINGLETON_KEY})
-        settings = self._serialize(doc)
-        # Gmail was a legacy default that can open an inbox instead of a
-        # compose window on iPhone. Move that default to native Mail. An
-        # explicit future Outlook choice is still respected.
-        if settings.get("email_provider") == "gmail":
-            settings["email_provider"] = "apple"
-        return settings
-
 def validate_patch(patch: Dict[str, Any]) -> Dict[str, Optional[str]]:
     """Whitelist + validate a settings patch. Shared by every settings backend.
     Returns the cleaned {key: string-or-None} map. Raises ValueError on bad input."""
@@ -124,6 +99,30 @@ def validate_patch(patch: Dict[str, Any]) -> Dict[str, Optional[str]]:
 
 
 class UserSettingsService:
+    def __init__(self, mongo_url: str, db_name: str):
+        self._client = AsyncIOMotorClient(mongo_url)
+        self._col = self._client[db_name][COLLECTION]
+
+    @staticmethod
+    def _serialize(doc: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        merged = dict(DEFAULTS)
+        if doc:
+            for k, v in doc.items():
+                if k in ("_id", "key"):
+                    continue
+                merged[k] = v
+        return merged
+
+    async def get(self) -> Dict[str, Any]:
+        doc = await self._col.find_one({"key": SINGLETON_KEY})
+        settings = self._serialize(doc)
+        # Gmail was a legacy default that can open an inbox instead of a
+        # compose window on iPhone. Move that default to native Mail. An
+        # explicit future Outlook choice is still respected.
+        if settings.get("email_provider") == "gmail":
+            settings["email_provider"] = "apple"
+        return settings
+
     async def update(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         clean = validate_patch(patch)
         if not clean:

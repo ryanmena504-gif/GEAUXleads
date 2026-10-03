@@ -345,3 +345,34 @@ body {
 [class*="bg-red-500"]       { background-color: var(--bh-clay-mute) !important; }
 [class*="border-red-500"]   { border-color: rgba(165,90,62,0.32) !important; }
 
+
+/* Work tickets (Home) — a job-sheet stub: paper card, brass edge on the
+   one up next, and a punched perforation between the header and the work. */
+.bh-ticket {
+    background: var(--bh-surface);
+    border: 1px solid var(--bh-hair);
+    border-radius: 8px;
+    box-shadow: var(--bh-shadow-sm);
+}
+.bh-ticket--hero {
+    border-left: 3px solid var(--bh-brass);
+    box-shadow: var(--bh-shadow-md);
+}
+.bh-perforation {
+    position: relative;
+    margin: 0 14px;
+    border-top: 1.5px dashed var(--bh-hair-strong);
+}
+.bh-perforation::before,
+.bh-perforation::after {
+    content: "";
+    position: absolute;
+    top: -8px;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: var(--bh-bg);
+    border: 1px solid var(--bh-hair);
+}
+.bh-perforation::before { left: -23px; }
+.bh-perforation::after { right: -22px; }
