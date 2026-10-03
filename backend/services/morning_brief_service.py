@@ -18,6 +18,8 @@ Sections:
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -80,7 +82,7 @@ async def compose_brief(
     a downstream service is unavailable (empty section instead of a 500)."""
     now = now or datetime.now(timezone.utc)
     try:
-        all_ops = opportunity_service.all() if hasattr(opportunity_service, "all") else []
+        all_ops = await asyncio.to_thread(opportunity_service.all) if hasattr(opportunity_service, "all") else []
     except Exception:
         log.exception("Morning brief: opportunity list unavailable")
         all_ops = []

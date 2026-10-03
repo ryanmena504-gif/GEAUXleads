@@ -23,7 +23,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from pyairtable import Api
+from services.airtable_client import make_api
 
 from services import dedupe
 from services.audit import derive_idempotency_key, get_audit_log
@@ -172,7 +172,7 @@ def _derive_lane_from_lead(dto: Dict[str, Any]) -> str:
 class LeadsAirtableService:
     def __init__(self, api_key: str, base_id: str, table_name: str = "Leads",
                  cache_ttl: float = 45.0):
-        self._api = Api(api_key)
+        self._api = make_api(api_key)
         self._base_id = base_id
         self._table_name = table_name
         self._table = self._api.table(base_id, table_name)

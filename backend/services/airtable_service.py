@@ -24,7 +24,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from pyairtable import Api
+from services.airtable_client import make_api
 
 from services import aggregations, dedupe, ingestion_diagnostics
 
@@ -795,7 +795,7 @@ class AirtableOpportunityService:
 
     def __init__(self, api_key: str, base_id: str, table_name: str, cache_ttl: float = 45.0):
         self._api_key = api_key
-        self._api = Api(api_key)
+        self._api = make_api(api_key)
         self._base_id = base_id
         self._table_name = table_name
         self._table = self._api.table(base_id, table_name)

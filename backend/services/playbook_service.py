@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from pyairtable import Api
+from services.airtable_client import make_api
 
 log = logging.getLogger("bloodhound.playbooks")
 
@@ -58,7 +58,7 @@ def _to_dto(record: Dict[str, Any]) -> Dict[str, Any]:
 class PlaybookService:
     def __init__(self, api_key: str, base_id: str, table_id: str = PLAYBOOKS_TABLE_ID,
                  cache_ttl: float = 60.0):
-        self._api = Api(api_key)
+        self._api = make_api(api_key)
         self._table = self._api.table(base_id, table_id)
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
