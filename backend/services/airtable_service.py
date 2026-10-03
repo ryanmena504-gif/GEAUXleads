@@ -801,6 +801,7 @@ class AirtableOpportunityService:
         self._table = self._api.table(base_id, table_name)
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
+        self._refresh_gate = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._last_refresh: float = 0.0
         self._refresh_started: float = 0.0
@@ -1086,6 +1087,21 @@ class AirtableOpportunityService:
         now = time.time()
         if not force and (now - self._last_refresh) < self._cache_ttl and self._cache:
             return
+        # Single-flight: concurrent requests must not each re-download the
+        # whole Leads table — that trips Airtable's 5 req/s limit (30s
+        # lockout) and froze prod on 2026-10-03. If a refresh is running,
+        # serve the stale cache when there is one, else wait for it.
+        have_stale = bool(self._cache)
+        if not self._refresh_gate.acquire(blocking=force or not have_stale):
+            return
+        try:
+            if not force and (time.time() - self._last_refresh) < self._cache_ttl and self._cache:
+                return  # another thread refreshed while we waited
+            self._refresh_cache_locked(now)
+        finally:
+            self._refresh_gate.release()
+
+    def _refresh_cache_locked(self, now: float) -> None:
         with self._lock:
             self._refreshing = True
             self._refresh_started = now

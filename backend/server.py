@@ -42,6 +42,12 @@ load_dotenv(ROOT_DIR / '.env')
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Worker pool for _bg(): the default is min(32, cpu+4), which on a small
+    # Railway container is ~5 threads — a few slow Airtable reads can starve
+    # every other request. Airtable calls are I/O-bound, so a wider pool is cheap.
+    from concurrent.futures import ThreadPoolExecutor
+    asyncio.get_running_loop().set_default_executor(
+        ThreadPoolExecutor(max_workers=32, thread_name_prefix="airtable-io"))
     # Startup: register the Airtable webhook (idempotent).
     try:
         await init_webhook_manager()

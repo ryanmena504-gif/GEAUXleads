@@ -122,6 +122,8 @@ class DiscoveryReader:
         self._table = self._api.table(base_id, table_name)
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
+        # Single-flight: only one thread downloads the table at a time.
+        self._refresh_lock = threading.Lock()
         self._cache: List[Dict[str, Any]] = []
         self._last_refresh: float = 0.0
         self._last_error: Optional[str] = None
@@ -146,7 +148,23 @@ class DiscoveryReader:
         with self._lock:
             if not self._needs_refresh():
                 return list(self._cache)
-        # Do the refresh outside the lock to avoid blocking readers.
+            have_stale = self._last_refresh > 0
+        # Single-flight: concurrent callers must not each download the whole
+        # table — that trips Airtable's 5 req/s limit (30s lockout). If a
+        # refresh is already running, serve the stale copy when there is one,
+        # otherwise wait for that refresh instead of starting another.
+        if not self._refresh_lock.acquire(blocking=not have_stale):
+            with self._lock:
+                return list(self._cache)
+        try:
+            with self._lock:
+                if not self._needs_refresh():
+                    return list(self._cache)
+            return self._fetch()
+        finally:
+            self._refresh_lock.release()
+
+    def _fetch(self) -> List[Dict[str, Any]]:
         try:
             records = self._table.all()
             items = [self._record_to_dict(r) for r in records]
