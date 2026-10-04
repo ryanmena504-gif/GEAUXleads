@@ -564,7 +564,10 @@ async def config():
         # Not secrets — base + table IDs are visible to any authenticated
         # Airtable user on the base. API key stays server-side.
         "airtable_base_id": os.environ.get("AIRTABLE_BASE_ID") or None,
-        "airtable_leads_table_id": os.environ.get("AIRTABLE_LEADS_TABLE_ID") or None,
+        # Without the table ID an airtable.com record link 404s, so fall back
+        # to the ID the opportunity service resolved from the base schema.
+        "airtable_leads_table_id": (os.environ.get("AIRTABLE_LEADS_TABLE_ID")
+                                    or getattr(svc, "_table_id", None)),
     }
 
 

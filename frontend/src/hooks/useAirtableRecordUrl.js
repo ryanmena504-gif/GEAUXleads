@@ -34,10 +34,10 @@ export const useAirtableRecordUrl = () => {
     return () => { alive = false; };
   }, []);
   return (recordId) => {
-    if (!ids || !ids.base_id || !recordId) return null;
-    // Airtable's canonical record URL. Works even without a view ID.
-    if (ids.table_id) return `https://airtable.com/${ids.base_id}/${ids.table_id}/${recordId}`;
-    return `https://airtable.com/${ids.base_id}/${recordId}`;
+    // Airtable's record URL needs base + table + record; a link without the
+    // table ID lands on "page not found", so show no link rather than a broken one.
+    if (!ids || !ids.base_id || !ids.table_id || !recordId) return null;
+    return `https://airtable.com/${ids.base_id}/${ids.table_id}/${recordId}`;
   };
 };
 
