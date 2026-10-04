@@ -187,6 +187,12 @@ Route smoke test: `cd frontend && APP_URL=<frontend url> npx -p playwright@1 nod
   use (typecast); if refused, the write falls back to the closest legacy option. The
   learning loop reads Rejection reason — keep it filled. "Pending" is a placeholder and
   never closes a lead (`_derive_status`).
+- **Stalled promotion (Oct 2026):** the Make scenario "qualified signals to dashboard leads"
+  runs daily but promotes nothing, so AI-approved Raw Signals never reach Leads. Home's
+  "Waiting on you" (`services/promotion_service.py`, `GET /api/pipeline/waiting`) lets Ryan
+  promote them with the same field mapping as that scenario, or pass with a reason
+  (`Promotion Status = "Passed by Ryan: …"`). Promoted signals are marked
+  "Promoted to Leads", so the scenario never duplicates them once it's fixed.
 - `bloodhound-opportunity-intel` repo was deleted; the two repos are `GEAUXleads` and
   `the-shirtless-handyman`. Never delete/merge repos without explicit confirmation from Ryan.
 

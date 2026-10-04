@@ -85,7 +85,7 @@ export const ReasonGrid = ({ reasons, busyKey, onPick, compact = false }) => (
  * PassSheet — "Why pass?" One tap on a reason disqualifies the lead, saves
  * the Rejection reason and journals it to Activity Log. Nothing is sent.
  */
-const PassSheet = ({ opp, open, onOpenChange, onPassed }) => {
+const PassSheet = ({ opp, open, onOpenChange, onPassed, submit }) => {
   const [reasons, setReasons] = useState([]);
   const [note, setNote] = useState("");
   const [busyKey, setBusyKey] = useState(null);
@@ -101,7 +101,14 @@ const PassSheet = ({ opp, open, onOpenChange, onPassed }) => {
   const pick = async (reason) => {
     setBusyKey(reason.key);
     try {
-      await passWithUndo(opp, reason, note.trim(), onPassed);
+      if (submit) {
+        // Caller-supplied save (e.g. passing on a raw signal) — no undo.
+        await submit(reason, note.trim());
+        toast.success(`Passed — ${reason.label}`);
+        onPassed?.();
+      } else {
+        await passWithUndo(opp, reason, note.trim(), onPassed);
+      }
       onOpenChange(false);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Couldn't save the pass");
