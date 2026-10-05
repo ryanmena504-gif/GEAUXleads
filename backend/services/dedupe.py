@@ -30,7 +30,7 @@ from services.field_norm import (
     normalize_permit,
     phone_digits,
 )
-from services.outreach_policy import FIELD_ALIASES, readiness_score, resolve
+from services.outreach_policy import FIELD_ALIASES, readiness_score
 
 # Identity keys in descending strength. A shared key of any kind merges two
 # records into the same group.
