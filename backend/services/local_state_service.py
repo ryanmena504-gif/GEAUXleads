@@ -6,7 +6,7 @@ that overlap across Leads/Discovery feeds don't collide.
 from __future__ import annotations
 import logging, os
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient
 
 log = logging.getLogger("bloodhound.local_state")
