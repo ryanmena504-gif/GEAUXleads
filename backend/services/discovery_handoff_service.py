@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional, Set
+from typing import Iterable, Optional, Set
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
