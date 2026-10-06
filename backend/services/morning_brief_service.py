@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from html import escape
 from typing import Any, Dict, List, Optional
 
