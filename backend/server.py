@@ -210,6 +210,75 @@ async def pipeline():
     return await _bg(svc.pipeline_counts, )
 
 
+@api_router.get("/scoreboard/warming")
+async def warming_scoreboard():
+    """Reply-rate scoreboard for the four-touch warm-up sequence.
+
+    Read-only rollup over logged touches — never writes, never contacts anyone.
+    Per touch N (1-4): reached = leads with attempt >= N; replied = leads with
+    attempt == N and a confirmed reply. Reply rate = replied / reached.
+    A reply is only counted when Ryan confirmed it (flag_reply_received);
+    nothing is inferred from inboxes.
+    """
+    svc = get_opportunity_service()
+
+    def _coerce_int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+
+    def _is_true(v):
+        return v is True or v == 1 or (isinstance(v, str) and v.strip().lower() in {"true", "yes", "checked"})
+
+    all_opps = await _bg(svc.all, )
+    touched = [o for o in all_opps if _coerce_int(o.get("outreach_attempt")) >= 1]
+
+    touches = []
+    for n in (1, 2, 3, 4):
+        reached = [o for o in touched if _coerce_int(o.get("outreach_attempt")) >= n]
+        replied = [o for o in reached
+                   if _coerce_int(o.get("outreach_attempt")) == n and _is_true(o.get("flag_reply_received"))]
+        rate = round(len(replied) / len(reached) * 100) if reached else None
+        touches.append({
+            "touch": n,
+            "reached": len(reached),
+            "replied": len(replied),
+            "reply_rate_pct": rate,
+        })
+
+    leads = []
+    for o in touched:
+        attempt = _coerce_int(o.get("outreach_attempt"))
+        leads.append({
+            "id": o.get("id"),
+            "name": o.get("name") or "Unnamed",
+            "touch": attempt,
+            "channel": o.get("outreach_channel") or "",
+            "status": o.get("outreach_status") or "",
+            "replied": _is_true(o.get("flag_reply_received")),
+            "date_replied": o.get("date_replied") or "",
+            "reply_summary": o.get("reply_summary") or "",
+            "estimate": _is_true(o.get("flag_estimate")),
+            "won": _is_true(o.get("flag_won")),
+            "next_follow_up": o.get("next_follow_up") or "",
+            "message_sent_date": o.get("message_sent_date") or "",
+            "date_contacted": o.get("date_contacted") or "",
+        })
+    leads.sort(key=lambda l: (l["touch"], l["name"]))
+
+    total_replied = sum(1 for o in touched if _is_true(o.get("flag_reply_received")))
+    return {
+        "touched_leads": len(touched),
+        "replied_leads": total_replied,
+        "estimate_leads": sum(1 for o in touched if _is_true(o.get("flag_estimate"))),
+        "won_leads": sum(1 for o in touched if _is_true(o.get("flag_won"))),
+        "touches": touches,
+        "leads": leads,
+        "empty": len(touched) == 0,
+    }
+
+
 @api_router.get("/opportunities/recent")
 async def recent(limit: int = 10):
     svc = get_opportunity_service()
