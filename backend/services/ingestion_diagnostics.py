@@ -16,7 +16,7 @@ from __future__ import annotations
 import threading
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from services.field_norm import (
     clean_text,
