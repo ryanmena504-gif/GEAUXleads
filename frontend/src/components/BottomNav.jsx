@@ -58,6 +58,7 @@ const moreSections = [
   {
     heading: "Tools",
     items: [
+      { to: "/scoreboard/warming", label: "Warm-up Scoreboard", icon: TrendingUp },
       { to: "/lookup", label: "Phone Lookup", icon: Search },
       { to: "/debug", label: "Debug Panel", icon: Bug },
     ],

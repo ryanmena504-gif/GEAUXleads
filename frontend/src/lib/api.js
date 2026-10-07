@@ -105,6 +105,10 @@ export const api = {
   outreachPrepare: (target) =>
     client.post("/outreach/prepare", null, { params: target ? { target } : {} }).then((r) => r.data),
 
+  // Warm-up scoreboard — reply rate per touch + booked estimates per lead
+  warmingScoreboard: () =>
+    client.get("/scoreboard/warming").then((r) => r.data),
+
   // Draft a Note — playbooks (read-only Airtable) + drafts (Mongo-backed)
   listPlaybooks: () =>
     client.get("/message-playbooks").then((r) => r.data),

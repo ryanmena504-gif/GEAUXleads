@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/sonner";
 
 import AppLayout from "@/layouts/AppLayout";
 import CommandCenter from "@/pages/CommandCenter";
-
 // Home loads eagerly; every other page is split into its own chunk so the
 // phone only downloads the screen Ryan actually opens.
 const Opportunities = lazy(() => import("@/pages/Opportunities"));
@@ -23,6 +22,7 @@ const DiscoveryLandlords = lazy(() => import("@/pages/DiscoveryLandlords"));
 const LandlordLetterPrint = lazy(() => import("@/pages/LandlordLetterPrint"));
 const DiscoveryInvestors = lazy(() => import("@/pages/DiscoveryInvestors"));
 const PassReasons = lazy(() => import("@/pages/PassReasons"));
+const WarmupScoreboard = lazy(() => import("@/pages/WarmupScoreboard"));
 
 function App() {
   return (
@@ -34,6 +34,7 @@ function App() {
             <Route path="/opportunities" element={<Opportunities />} />
             <Route path="/opportunities/:id" element={<OpportunityDetail />} />
             <Route path="/missions" element={<Missions />} />
+            <Route path="/scoreboard/warming" element={<WarmupScoreboard />} />
             <Route path="/relationships" element={<Relationships />} />
             <Route path="/intelligence" element={<Intelligence />} />
             <Route path="/review-queue" element={<ReviewQueue />} />
