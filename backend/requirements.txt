@@ -16,3 +16,4 @@ requests>=2.31.0
 pyairtable==3.4.2
 twilio==9.11.1
 perplexityai==0.43.6
+openai>=1.0.0

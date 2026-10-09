@@ -2427,61 +2427,60 @@ async def trigger_lead_recheck(opp_id: str):
 
 @api_router.post("/opportunities/{opp_id}/outreach-write")
 async def trigger_outreach_write(opp_id: str):
-    webhook = _make_webhook("OUTREACH_WRITER_WEBHOOK")
-    if not webhook:
-        raise HTTPException(
-            status_code=503,
-            detail="Outreach writer is not configured (OUTREACH_WRITER_WEBHOOK missing)",
-        )
+    """Generate an outreach draft directly (no Make webhook).
+
+    Builds the prompt from the opportunity, calls OpenAI, stores the draft
+    plus the full recipe (prompt + inputs) in Airtable, and returns everything
+    immediately so the frontend can show it inline — no polling, no refresh.
+    """
+    from services.outreach_draft_service import generate_draft, recipe_to_field
+
     svc = get_opportunity_service()
     opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    payload = {
-        "record_id": opp.get("id"),
-        "opportunity_id": opp.get("opportunity_id"),
-        "name": opp.get("name"),
-        "company": opp.get("company"),
-        "decision_maker": opp.get("decision_maker"),
-        "website": opp.get("website") or opp.get("website_alt"),
-        "project_address": opp.get("project_address"),
-        "project_type": opp.get("project_type"),
-        "permit_description": opp.get("permit_description"),
-        "phone": opp.get("phone"),
-        "email": opp.get("email"),
-        "evidence_summary": opp.get("evidence_summary"),
-        "outreach_angle": opp.get("outreach_angle"),
-        "triggered_at": datetime.now(timezone.utc).isoformat(),
-        "triggered_by": "geauxleads-app",
-    }
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(webhook, json=payload)
-        if r.status_code >= 300:
-            logger.warning("outreach-writer webhook non-2xx status=%s", r.status_code)
-            raise HTTPException(
-                status_code=502,
-                detail=f"Outreach writer trigger failed (webhook returned {r.status_code})",
-            )
-    except HTTPException:
-        raise
+        result = await generate_draft(opp)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
-        logger.exception("outreach-writer webhook POST failed")
-        raise HTTPException(status_code=502, detail=f"Outreach writer trigger failed: {e}")
+        logger.exception("outreach draft generation failed")
+        raise HTTPException(status_code=502, detail=f"Draft generation failed: {e}")
+
+    # Store draft + recipe in Airtable.
+    try:
+        await _bg(
+            svc.update_fields,
+            opp_id,
+            {
+                "Draft Outreach Body": result["draft"],
+                "Draft Outreach Subject": result["subject"],
+                "Draft Outreach Generated At": datetime.now(timezone.utc).isoformat(),
+                "Draft Recipe": recipe_to_field(result["recipe"]),
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to store draft in Airtable — returning anyway")
 
     try:
         get_audit_log().record(
-            action="outreach_write_triggered",
+            action="outreach_write_generated",
             entity_id=opp_id,
             outcome="accepted",
-            reason=f"Outreach writer triggered for {opp.get('name')}",
+            reason=f"Draft generated directly for {opp.get('name')}",
         )
     except Exception:  # noqa: BLE001
         logger.exception("audit record failed — continuing anyway")
 
-    return {"ok": True, "status": "triggered",
-            "message": "Outreach writer running — writing your first message."}
+    return {
+        "ok": True,
+        "status": "ready",
+        "draft": result["draft"],
+        "subject": result["subject"],
+        "recipe": result["recipe"],
+        "message": "Draft ready.",
+    }
 
 
 # Registered last: include_router copies api_router's routes at call time,
