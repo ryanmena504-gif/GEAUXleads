@@ -129,9 +129,15 @@ const buildFollowUpDraft = (opp, sender) => {
 
   if (attempt === 2) {
     // Call + text touch — a text template, not an email.
+    // Prefer the staged draft if one exists (from this morning's staging or
+    // the transparent outreach generator).
+    const staged = (opp?.draft_outreach_body || "").trim();
+    if (staged) {
+      return { kind: "text", subject: "", body: staged, airtable_rejected: false, airtable_reject_reason: null };
+    }
     const body = isLandlord
-      ? `${salutation}, it's ${senderName} with The Shirtless Handyman — tried calling about ${address}. I do turnovers and punch-list work between tenants, one call. Worth a quick chat this week? — ${senderName} ${senderPhone}`
-      : `${salutation}, it's ${senderName} with The Shirtless Handyman — tried giving you a call about ${project}. Worth a quick chat this week? — ${senderName} ${senderPhone}`;
+      ? `${salutation} it's ${senderName} with The Shirtless Handyman — tried calling about ${address}. I do turnovers and punch-list work between tenants, one call. Worth a quick chat this week? — ${senderName} ${senderPhone}`
+      : `${salutation} it's ${senderName} with The Shirtless Handyman — tried giving you a call. Worth a quick chat this week? — ${senderName} ${senderPhone}`;
     return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
   }
 
