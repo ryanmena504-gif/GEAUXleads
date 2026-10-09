@@ -334,6 +334,11 @@ EDITABLE_FIELDS = {
     # (e.g. saving a researched phone/email onto a lead). Never auto-filled.
     "Contact phone",
     "Contact email",
+    # Outreach draft fields — written by the transparent draft generator.
+    "Draft Outreach Body",
+    "Draft Outreach Subject",
+    "Draft Outreach Generated At",
+    "Draft Recipe",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -357,6 +362,10 @@ WRITE_ALIAS: Dict[str, str] = {
     "activity_log": "Activity Log",
     "phone": "Contact phone",
     "email": "Contact email",
+    "draft_outreach_body": "Draft Outreach Body",
+    "draft_outreach_subject": "Draft Outreach Subject",
+    "draft_outreach_generated_at": "Draft Outreach Generated At",
+    "draft_recipe": "Draft Recipe",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.
