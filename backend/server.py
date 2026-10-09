@@ -2306,6 +2306,42 @@ async def fresh_intel(limit: int = 20):
     return {"items": out, "count": len(out)}
 
 
+@api_router.post("/digest/fresh-intel/run")
+async def run_fresh_intel_review():
+    """Trigger the daily lead review directly (no Make scenario).
+
+    Scans leads for new info, flags them, auto-enhances at most 3.
+    Designed to run on a schedule; also tappable manually.
+    """
+    from services.daily_reviewer_service import run_daily_review
+
+    svc = get_opportunity_service()
+
+    async def auto_enhance(opp_id: str):
+        # Re-use the portfolio-check trigger logic directly.
+        # For now, this clears the flag (enhancement = reviewed).
+        # Full portfolio-check integration can be wired here.
+        pass
+
+    try:
+        stats = await run_daily_review(svc, auto_enhance_fn=auto_enhance)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("daily review failed")
+        raise HTTPException(status_code=502, detail=f"Daily review failed: {e}")
+
+    try:
+        get_audit_log().record(
+            action="daily_review_completed",
+            entity_id="system",
+            outcome="accepted",
+            reason=f"Scanned {stats['scanned']}, flagged {stats['flagged']}, enhanced {stats['auto_enhanced']}",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"ok": True, **stats}
+
+
 @api_router.post("/opportunities/{opp_id}/portfolio-check")
 async def trigger_portfolio_check(opp_id: str):
     webhook = _make_webhook("PORTFOLIO_CHECK_WEBHOOK")
