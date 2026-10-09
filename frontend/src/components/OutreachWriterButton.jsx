@@ -1,80 +1,125 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { PenLine, Loader2, AlertCircle } from "lucide-react";
+import { PenLine, Loader2, AlertCircle, MessageSquare, Check, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 /**
- * OutreachWriterButton — on-demand outreach writer trigger (Make webhook).
+ * OutreachWriterButton — direct draft generation with transparency.
  *
- * Fires the Make scenario that writes the personalized first message for this
- * one record — no backlog, no fees unless tapped. The scenario runs async and
- * writes the message back to Airtable; the backend returns 202 immediately.
+ * Tapping fires the backend, which builds the prompt from the lead, calls
+ * OpenAI, and returns the draft + full recipe immediately. No Make webhook,
+ * no polling, no "refresh the page".
  *
- * Renders in the Actions panel next to the Email Now button. When a first
- * message already exists on the record, the label becomes "Re-write outreach".
- * If OUTREACH_WRITER_WEBHOOK is not configured, the backend 503s and the
- * button shows the error inline — never a crash.
+ * Shows the draft inline with a collapsible recipe (what the AI was told +
+ * which lead fields were used), an "Open in messages" sms: link, and a
+ * one-tap "Logged as sent" button.
  */
 export const OutreachWriterButton = ({ opp }) => {
-  const [state, setState] = useState({ status: "idle", error: null, elapsed: 0 });
-  const timerRef = useRef(null);
-
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopTimer, [stopTimer]);
+  const [state, setState] = useState({ status: "idle", error: null, draft: null, recipe: null });
+  const [showRecipe, setShowRecipe] = useState(false);
+  const [logged, setLogged] = useState(false);
 
   const run = useCallback(async () => {
-    setState({ status: "running", error: null, elapsed: 0 });
+    setState({ status: "running", error: null, draft: null, recipe: null });
+    setShowRecipe(false);
+    setLogged(false);
     try {
       const res = await api.outreachWrite(opp.id);
-      toast.success(res?.message || "Outreach writer running — writing your first message.");
+      setState({ status: "ready", error: null, draft: res.draft, recipe: res.recipe });
+      toast.success("Draft ready.");
     } catch (err) {
       const detail =
-        err?.response?.data?.detail || err?.message || "Outreach writer failed to start";
-      setState({ status: "error", error: detail, elapsed: 0 });
+        err?.response?.data?.detail || err?.message || "Draft generation failed";
+      setState({ status: "error", error: detail, draft: null, recipe: null });
       toast.error(detail);
-      return;
     }
-    timerRef.current = setInterval(() => {
-      setState((s) => {
-        const elapsed = s.elapsed + 1;
-        if (elapsed >= 40) {
-          stopTimer();
-          return { ...s, status: "done", elapsed };
-        }
-        return { ...s, elapsed };
-      });
-    }, 1000);
-  }, [opp.id, stopTimer]);
+  }, [opp.id]);
+
+  const markSent = useCallback(async () => {
+    try {
+      await api.recordResult(opp.id, { result: "sent", note: "Sent via transparent outreach flow" });
+      setLogged(true);
+      toast.success("Logged as sent.");
+    } catch (err) {
+      toast.error("Could not log — the text itself is unaffected.");
+    }
+  }, [opp.id]);
 
   const hasMessage = Boolean(opp.first_message || opp.first_contact_message);
+  const smsHref = state.draft && opp.phone
+    ? `sms:${opp.phone}?body=${encodeURIComponent(state.draft)}`
+    : null;
 
   if (state.status === "running") {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-[var(--bh-ink-2)] py-1.5">
         <Loader2 size={13} className="animate-spin text-[var(--bh-brass)]" />
-        Writing… {state.elapsed}s
+        Writing your draft…
       </div>
     );
   }
 
-  if (state.status === "done") {
+  if (state.status === "ready" && state.draft) {
     return (
-      <div className="space-y-1.5">
-        <div className="text-[12.5px] text-[var(--bh-ink-2)]">
-          Message written — refresh the page to see it.
+      <div className="space-y-2.5 rounded-md border bh-hairline p-3 bg-[var(--bh-surface)]">
+        <div className="text-[12.5px] leading-relaxed text-[var(--bh-ink)] whitespace-pre-wrap">
+          {state.draft}
         </div>
+
         <button
           type="button"
-          onClick={() => window.location.reload()}
-          className="text-[11px] font-medium underline hover:no-underline text-[var(--bh-ink-2)]"
+          onClick={() => setShowRecipe((v) => !v)}
+          className="flex items-center gap-1 text-[11px] font-medium text-[var(--bh-ink-3)] hover:text-[var(--bh-ink-2)]"
         >
-          Refresh now
+          <ChevronDown size={12} className={showRecipe ? "rotate-180" : ""} />
+          {showRecipe ? "Hide what the AI was told" : "See what the AI was told"}
+        </button>
+
+        {showRecipe && state.recipe && (
+          <div className="rounded bg-[var(--bh-surface-2)] p-2.5 text-[11px] leading-relaxed text-[var(--bh-ink-3)] space-y-2 max-h-64 overflow-y-auto">
+            <div>
+              <div className="font-semibold text-[var(--bh-ink-2)] mb-1">Instructions given</div>
+              <div className="whitespace-pre-wrap">{state.recipe.system_prompt}</div>
+            </div>
+            <div>
+              <div className="font-semibold text-[var(--bh-ink-2)] mb-1">Lead info used</div>
+              {Object.entries(state.recipe.inputs_used || {}).map(([k, v]) => (
+                <div key={k}>
+                  <span className="font-medium">{k.replace(/_/g, " ")}:</span> {String(v).slice(0, 120)}
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] opacity-70">Model: {state.recipe.model}</div>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          {smsHref && (
+            <a
+              href={smsHref}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 h-9 rounded text-sm font-medium bg-[var(--bh-brass)] text-white hover:opacity-90"
+            >
+              <MessageSquare size={14} />
+              Open in messages
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={markSent}
+            disabled={logged}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 h-9 rounded text-sm border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] disabled:opacity-60"
+          >
+            <Check size={14} />
+            {logged ? "Logged" : "Logged as sent"}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={run}
+          className="text-[11px] font-medium underline hover:no-underline text-[var(--bh-ink-3)]"
+        >
+          Re-write
         </button>
       </div>
     );
@@ -95,7 +140,7 @@ export const OutreachWriterButton = ({ opp }) => {
           <div>{state.error}</div>
           <button
             type="button"
-            onClick={() => setState({ status: "idle", error: null, elapsed: 0 })}
+            onClick={() => setState({ status: "idle", error: null, draft: null, recipe: null })}
             className="mt-2 text-[11px] font-medium underline hover:no-underline"
           >
             Try again
@@ -110,7 +155,7 @@ export const OutreachWriterButton = ({ opp }) => {
       type="button"
       onClick={run}
       data-testid="write-outreach-btn"
-      title="Write the first outreach message for this lead — on-demand, one record."
+      title="Write the outreach message for this lead — direct, with full transparency."
       className="w-full flex items-center gap-2 px-3 h-9 rounded text-sm border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] transition-colors duration-150"
     >
       <PenLine size={14} />
