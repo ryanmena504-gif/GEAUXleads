@@ -8,6 +8,7 @@ import {
   Network,
   Radar,
   Building2,
+  Bug,
   Settings as SettingsIcon,
 } from "lucide-react";
 import GeauxLogo from "@/components/GeauxLogo";
@@ -24,6 +25,7 @@ const nav = [
   { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },
   { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN", preview: true },
   { to: "/discovery/property-managers", label: "Discovery", icon: Building2, code: "DI" },
+  { to: "/debug", label: "Debug", icon: Bug, code: "DB" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, code: "SE" },
 ];
 

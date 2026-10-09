@@ -3,7 +3,7 @@ import axios from "axios";
 const BASE = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BASE}/api`;
 
-const client = axios.create({ baseURL: API });
+const client = axios.create({ baseURL: API, timeout: 30000 });
 
 export const api = {
   listOpportunities: (params = {}) =>
