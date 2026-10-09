@@ -8,7 +8,7 @@ import MissionBadge from "@/components/MissionBadge";
 import { api } from "@/lib/api";
 import { MISSIONS, STATUSES, BANDS, SOURCES, PROJECT_TYPES, LANES } from "@/lib/constants";
 import { moneyDisplay, sourceLabel } from "@/lib/formatters";
-import { LayoutGrid, Rows3, X } from "lucide-react";
+import { LayoutGrid, Rows3, X, ChevronDown, SlidersHorizontal } from "lucide-react";
 import SavedViewsBar from "@/components/SavedViewsBar";
 
 const FilterChip = ({ label, active, onClick, testId }) => (
@@ -46,6 +46,7 @@ const Opportunities = () => {
     Number(searchParams.get("min_score") || 0),
   );
   const [q, setQ] = useState(searchParams.get("q") || "");
+  const [showFilters, setShowFilters] = useState(false);
   const sort = searchParams.get("sort") || "lead_score";
   const setSort = (value) => {
     const next = new URLSearchParams(searchParams);
@@ -185,8 +186,18 @@ const Opportunities = () => {
                 <X size={12} /> Clear ({activeFilterCount})
               </button>
             )}
+            <button
+              onClick={() => setShowFilters((v) => !v)}
+              data-testid="toggle-filters"
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded text-xs border bh-hairline text-[var(--bh-ink-2)] hover:bg-[var(--bh-surface-2)] transition-colors duration-150"
+            >
+              <SlidersHorizontal size={13} />
+              Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              <ChevronDown size={12} className={showFilters ? "rotate-180" : ""} />
+            </button>
           </div>
 
+          {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <FilterGroup title="Lane">
               {LANES.map((l) => (
@@ -283,6 +294,7 @@ const Opportunities = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Results */}
