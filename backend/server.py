@@ -2448,16 +2448,16 @@ async def trigger_outreach_write(opp_id: str):
         logger.exception("outreach draft generation failed")
         raise HTTPException(status_code=502, detail=f"Draft generation failed: {e}")
 
-    # Store draft + recipe in Airtable.
+    # Store draft + recipe in Airtable (snake_case keys map via WRITE_ALIAS).
     try:
         await _bg(
             svc.update_fields,
             opp_id,
             {
-                "Draft Outreach Body": result["draft"],
-                "Draft Outreach Subject": result["subject"],
-                "Draft Outreach Generated At": datetime.now(timezone.utc).isoformat(),
-                "Draft Recipe": recipe_to_field(result["recipe"]),
+                "draft_outreach_body": result["draft"],
+                "draft_outreach_subject": result["subject"],
+                "draft_outreach_generated_at": datetime.now(timezone.utc).isoformat(),
+                "draft_recipe": recipe_to_field(result["recipe"]),
             },
         )
     except Exception:  # noqa: BLE001
