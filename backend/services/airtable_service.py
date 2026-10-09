@@ -339,6 +339,10 @@ EDITABLE_FIELDS = {
     "Draft Outreach Subject",
     "Draft Outreach Generated At",
     "Draft Recipe",
+    # Daily reviewer fields — written by the backend reviewer.
+    "New info flag",
+    "New info summary",
+    "New info date",
 }
 
 # Snake_case aliases the frontend/API layer speaks -> Airtable field name.
@@ -366,6 +370,9 @@ WRITE_ALIAS: Dict[str, str] = {
     "draft_outreach_subject": "Draft Outreach Subject",
     "draft_outreach_generated_at": "Draft Outreach Generated At",
     "draft_recipe": "Draft Recipe",
+    "new_info_flag": "New info flag",
+    "new_info_summary": "New info summary",
+    "new_info_date": "New info date",
 }
 
 # Airtable field types that are ALWAYS read-only regardless of allowlist.
