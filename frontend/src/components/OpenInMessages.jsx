@@ -393,6 +393,28 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
             : "Native mailto handoff. No provider API, no automated send."}
       </div>
+      <div className="pt-1">
+        <div className="text-[11.5px] font-medium text-[var(--bh-ink-2)] mb-1.5">
+          Send with the bathroom photo
+        </div>
+        <a
+          href={`shortcuts://run-shortcut?name=Send%20Outreach&input=text&text=${enc(draft.body)}`}
+          data-testid="outreach-shortcut-send"
+          className="inline-flex items-center gap-2 px-4 h-10 rounded-md text-[13px] font-medium text-white"
+          style={{ background: "var(--bh-brass)" }}
+        >
+          Open in Messages with photo
+        </a>
+        <div className="text-[11px] text-[var(--bh-ink-3)] mt-1">
+          Opens Messages with your text and the finished-bathroom photo attached. You tap Send.
+        </div>
+        <img
+          src="/outreach-bathroom.jpg"
+          alt="Finished microcement shower — attached automatically"
+          className="rounded-md w-full max-w-[320px] border mt-2"
+          style={{ borderColor: "var(--bh-hair-warm)" }}
+        />
+      </div>
     </div>
   );
 };
