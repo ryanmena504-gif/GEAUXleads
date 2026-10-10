@@ -6,6 +6,7 @@ export const API = `${BASE}/api`;
 const client = axios.create({ baseURL: API, timeout: 30000 });
 
 export const api = {
+  post: (path, data = {}) => client.post(path, data).then((r) => r.data),
   listOpportunities: (params = {}) =>
     client.get("/opportunities", { params }).then((r) => r.data),
   getOpportunity: (id, { fresh = false } = {}) =>
