@@ -2519,6 +2519,58 @@ async def trigger_outreach_write(opp_id: str):
     }
 
 
+@api_router.post("/opportunities/{opp_id}/gmail-draft")
+async def create_gmail_draft(opp_id: str):
+    """Create a Gmail draft with the outreach photo inline in the HTML body.
+
+    Uses the stored draft (or generates one), builds an HTML email with the
+    finished-bathroom photo CID-embedded, and appends it to Gmail Drafts via
+    IMAP. Ryan opens his mail app and taps Send. Nothing sends automatically.
+    """
+    from services.gmail_draft_service import create_draft as gmail_create_draft
+
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    # Use the stored draft if present, else the first-message field.
+    body = (
+        opp.get("draft_outreach_body")
+        or opp.get("first_message")
+        or opp.get("first_contact_message")
+        or ""
+    ).strip()
+    subject = (
+        opp.get("draft_outreach_subject") or f"Quick intro — {opp.get('name') or 'your project'}"
+    ).strip()
+    to_email = opp.get("email") or opp.get("contact_email") or ""
+    if not body:
+        raise HTTPException(status_code=400, detail="No draft text available — generate one first")
+    if not to_email:
+        raise HTTPException(status_code=400, detail="No email address on this record")
+
+    try:
+        result = await _bg(gmail_create_draft, to_email, subject, body, True)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("gmail draft creation failed")
+        raise HTTPException(status_code=502, detail=f"Draft creation failed: {e}")
+
+    try:
+        get_audit_log().record(
+            action="gmail_draft_created",
+            entity_id=opp_id,
+            outcome="accepted",
+            reason=f"Gmail draft with inline photo for {opp.get('name')}",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"ok": True, **result}
+
+
 # Registered last: include_router copies api_router's routes at call time,
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).

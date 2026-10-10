@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { Mail, Reply, ShieldCheck, AlertTriangle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { outreachAllowed } from "@/lib/queue";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import { looksLikeAIPrompt } from "@/lib/draftSafety";
+import { api } from "@/lib/api";
 
 /**
  * OpenInMessages — the single Email Now / Follow Up Email button.
@@ -237,9 +238,29 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   // Airtable field lands unguarded), refuse to render the send button.
   const finalCheck = looksLikeAIPrompt(draft.body);
   const composerBroken = finalCheck.trip;
-  const href = composerBroken
-    ? null
-    : `mailto:${enc(email)}?subject=${enc(draft.subject)}&body=${enc(draft.body)}`;
+
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [draftCreated, setDraftCreated] = useState(false);
+
+  const createGmailDraft = async () => {
+    setCreatingDraft(true);
+    try {
+      const res = await api.post(
+        `/opportunities/${opportunity?.id}/gmail-draft`,
+        {}
+      );
+      if (res?.ok) {
+        setDraftCreated(true);
+        toast.success("Draft ready in your mail app — open it and hit Send");
+      } else {
+        toast.error("Couldn't create the draft — try again");
+      }
+    } catch {
+      toast.error("Couldn't create the draft — try again");
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
   const testid = isFollowup
     ? `follow-up-email-${opportunity?.id || "unknown"}`
     : `email-now-${opportunity?.id || "unknown"}`;
@@ -295,14 +316,21 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       </button>
     </div>
   ) : (
-    <a
-      href={href}
+    <button
+      type="button"
+      onClick={createGmailDraft}
+      disabled={creatingDraft || draftCreated}
       data-testid={testid}
       className={`${btnBase} ${SIZE[size]}`}
       style={styleOverride}
     >
-      <Icon size={size === "sm" ? 13 : 14} /> {label}
-    </a>
+      <Icon size={size === "sm" ? 13 : 14} />{" "}
+      {draftCreated
+        ? "Draft ready — check your mail app"
+        : creatingDraft
+          ? "Creating draft…"
+          : `${label} with photo`}
+    </button>
   );
 
   if (variant === "pill") {
@@ -383,7 +411,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)]">
         {isTextTouch
           ? "Call them from your phone, then copy the text above into Messages. Nothing is logged until you tap it below."
-          : "Opens a draft in your default mail app. Nothing sends until you press Send yourself."}
+          : "Creates a draft in your Gmail with the bathroom photo in the email body. Nothing sends until you press Send yourself."}
       </div>
       <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
         <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
@@ -391,7 +419,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
           ? "Touch 2 of 4. Log it in the results panel once the call + text are done."
           : isFollowup
             ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
-            : "Native mailto handoff. No provider API, no automated send."}
+            : "Draft only — you review and send from your mail app."}
       </div>
       <div className="pt-1">
         <div className="text-[11.5px] font-medium text-[var(--bh-ink-2)] mb-1.5">
