@@ -393,6 +393,26 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
             ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
             : "Native mailto handoff. No provider API, no automated send."}
       </div>
+      <div className="pt-1">
+        <div className="text-[11.5px] font-medium text-[var(--bh-ink-2)] mb-1.5">
+          Attach this photo with your message
+        </div>
+        <a
+          href="/outreach-bathroom.jpg"
+          download="microcement-bathroom.jpg"
+          data-testid="outreach-photo-save"
+        >
+          <img
+            src="/outreach-bathroom.jpg"
+            alt="Finished microcement shower"
+            className="rounded-md w-full max-w-[320px] border"
+            style={{ borderColor: "var(--bh-hair-warm)" }}
+          />
+        </a>
+        <div className="text-[11px] text-[var(--bh-ink-3)] mt-1">
+          Tap the photo to save it, then attach it in Messages alongside your text.
+        </div>
+      </div>
     </div>
   );
 };
