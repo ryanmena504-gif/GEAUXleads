@@ -203,6 +203,8 @@ const secondary = {
  */
 export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const { settings } = useUserSettings();
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [draftCreated, setDraftCreated] = useState(false);
   const senderIdentity = {
     sender_name: settings?.sender_name,
     sender_phone: settings?.sender_phone,
@@ -238,9 +240,6 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   // Airtable field lands unguarded), refuse to render the send button.
   const finalCheck = looksLikeAIPrompt(draft.body);
   const composerBroken = finalCheck.trip;
-
-  const [creatingDraft, setCreatingDraft] = useState(false);
-  const [draftCreated, setDraftCreated] = useState(false);
 
   const createGmailDraft = async () => {
     setCreatingDraft(true);
