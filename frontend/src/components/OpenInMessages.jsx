@@ -252,10 +252,11 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
         setDraftCreated(true);
         toast.success("Draft ready in your mail app — open it and hit Send");
       } else {
-        toast.error("Couldn't create the draft — try again");
+        toast.error(`Couldn't create the draft: ${res?.detail || "unknown error"}`);
       }
-    } catch {
-      toast.error("Couldn't create the draft — try again");
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || "network error";
+      toast.error(`Draft failed: ${detail}`);
     } finally {
       setCreatingDraft(false);
     }
