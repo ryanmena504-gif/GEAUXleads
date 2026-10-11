@@ -37,7 +37,7 @@ export const OutreachWriterButton = ({ opp }) => {
 
   const markSent = useCallback(async () => {
     try {
-      await api.recordResult(opp.id, { result: "sent", note: "Sent via transparent outreach flow" });
+      await api.recordResult(opp.id, { event: "sent", note: "Sent via transparent outreach flow" });
       setLogged(true);
       toast.success("Logged as sent.");
     } catch (err) {
