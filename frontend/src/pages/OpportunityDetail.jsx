@@ -15,7 +15,6 @@ import OwnerContactResearch from "@/components/OwnerContactResearch";
 import ScoreExplanationCard from "@/components/ScoreExplanationCard";
 import ContactStatusChip from "@/components/ContactStatusChip";
 import CompletedProjectProofCard from "@/components/CompletedProjectProofCard";
-import PreviewNotice from "@/components/PreviewNotice";
 import OutreachDraftCard from "@/components/OutreachDraftCard";
 import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
@@ -43,11 +42,6 @@ import {
   XCircle,
   Gauge,
   Target,
-  User,
-  Network,
-  Building2,
-  Signal,
-  Hammer,
   UserSearch,
   RefreshCcw,
   Ban,
@@ -726,52 +720,8 @@ const OpportunityDetail = () => {
 
           {/* Right col: Activity */}
           <div className="space-y-6">
-            <section
-              className="bh-surface rounded-md p-5"
-              data-testid="detail-relationships-preview"
-            >
-              <SectionHeading
-                code="Section / 04"
-                title="Relationships"
-                hint="Not built yet"
-              />
-              {/* This panel used to show invented values ("1 possible via
-                  Sarah Delatte", confidence "Low") next to real lead fields on
-                  the page an operator decides from. Only the field names are
-                  kept — no graph exists to populate them. */}
-              <PreviewNotice
-                testId="detail-relationships-notice"
-                detail="No relationship graph is computed yet. These are the fields this panel will report; none of them influence the priority score or outreach eligibility."
-              >
-                <div className="space-y-2">
-                  {[
-                    { icon: User, label: "Direct relationship" },
-                    { icon: Network, label: "Mutual connection" },
-                    { icon: Building2, label: "Referral source" },
-                    { icon: Signal, label: "Relationship confidence" },
-                    { icon: Hammer, label: "Recommended intro path" },
-                  ].map((r) => (
-                    <div
-                      key={r.label}
-                      className="bh-surface-2 rounded p-3 flex items-center gap-3"
-                    >
-                      <div className="w-8 h-8 rounded bg-white/[0.03] border bh-hairline flex items-center justify-center">
-                        <r.icon size={14} className="text-neutral-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="mono text-[9px] uppercase tracking-widest text-neutral-500">
-                          {r.label}
-                        </div>
-                        <div className="text-sm text-neutral-600">—</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </PreviewNotice>
-            </section>
-
             <section className="bh-surface rounded-md p-5">
-              <SectionHeading code="Section / 05" title="Activity Timeline" />
+              <SectionHeading code="Section / 04" title="Activity Timeline" />
               <ol className="relative border-l bh-hairline pl-5 space-y-4">
                 {(opp.activity_timeline || []).map((a, i) => {
                   const Icon = activityIcon(a.type);
