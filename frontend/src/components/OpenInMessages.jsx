@@ -244,9 +244,12 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const createGmailDraft = async () => {
     setCreatingDraft(true);
     try {
+      // WYSIWYG: post the exact copy shown on screen (the composed draft),
+      // so the Gmail draft matches what Ryan just read. The backend falls
+      // back to the stored first-touch fields only when nothing is posted.
       const res = await api.post(
         `/opportunities/${opportunity?.id}/gmail-draft`,
-        {}
+        { body: draft.body, subject: draft.subject }
       );
       if (res?.ok) {
         setDraftCreated(true);

@@ -2520,7 +2520,7 @@ async def trigger_outreach_write(opp_id: str):
 
 
 @api_router.post("/opportunities/{opp_id}/gmail-draft")
-async def create_gmail_draft(opp_id: str):
+async def create_gmail_draft(opp_id: str, request: Request):
     """Create a Gmail draft with the outreach photo inline in the HTML body.
 
     Uses the stored draft (or generates one), builds an HTML email with the
@@ -2534,17 +2534,33 @@ async def create_gmail_draft(opp_id: str):
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
+    # WYSIWYG: prefer the exact copy the client just showed on screen (the
+    # composed draft body/subject). Without this, follow-up touches would
+    # draft the stored FIRST-touch message instead of the follow-up text the
+    # panel displays. Falls back to the stored fields for older clients.
+    posted = {}
+    try:
+        posted = await request.json()
+    except Exception:  # noqa: BLE001
+        posted = {}
+    if not isinstance(posted, dict):
+        posted = {}
+    posted_body = (posted.get("body") or "").strip()
+    posted_subject = (posted.get("subject") or "").strip()
+
     # Use the stored draft if present, else the first-message field.
-    body = (
+    body = posted_body or (
         opp.get("draft_outreach_body")
         or opp.get("first_message")
         or opp.get("first_contact_message")
         or ""
     ).strip()
-    subject = (
+    subject = posted_subject or (
         opp.get("draft_outreach_subject") or f"Quick intro — {opp.get('name') or 'your project'}"
     ).strip()
-    to_email = opp.get("email") or opp.get("contact_email") or ""
+    # Mirror the frontend's pickEmail: it renders the button when any of
+    # these hold an address, so the backend must accept the same set.
+    to_email = opp.get("email") or opp.get("email_alt") or opp.get("contact_email") or ""
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
     if not to_email:
