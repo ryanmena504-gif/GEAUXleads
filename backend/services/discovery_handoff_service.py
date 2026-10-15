@@ -34,7 +34,10 @@ def _now() -> str:
 
 class DiscoveryHandoffService:
     def __init__(self, mongo_url: str, db_name: str):
-        self._client = AsyncIOMotorClient(mongo_url)
+        # Fail fast when Mongo is unreachable (Atlas was never fixed) —
+        # without this, server selection hangs ~30s and every Discovery
+        # page takes half a minute to load.
+        self._client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=3000)
         self._col = self._client[db_name][COLLECTION]
 
     async def _seen(self, feed: str) -> Set[str]:

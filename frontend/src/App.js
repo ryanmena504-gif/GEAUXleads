@@ -20,7 +20,6 @@ const DiscoveryPropertyManagers = lazy(() => import("@/pages/DiscoveryPropertyMa
 const DiscoveryRealEstateAgents = lazy(() => import("@/pages/DiscoveryRealEstateAgents"));
 const DiscoveryLandlords = lazy(() => import("@/pages/DiscoveryLandlords"));
 const LandlordLetterPrint = lazy(() => import("@/pages/LandlordLetterPrint"));
-const DiscoveryInvestors = lazy(() => import("@/pages/DiscoveryInvestors"));
 const PassReasons = lazy(() => import("@/pages/PassReasons"));
 const WarmupScoreboard = lazy(() => import("@/pages/WarmupScoreboard"));
 
@@ -45,7 +44,6 @@ function App() {
             <Route path="/discovery/real-estate-agents" element={<DiscoveryRealEstateAgents />} />
             <Route path="/discovery/landlords" element={<DiscoveryLandlords />} />
             <Route path="/discovery/landlords/print" element={<LandlordLetterPrint />} />
-            <Route path="/discovery/investors" element={<DiscoveryInvestors />} />
             <Route path="/pass-reasons" element={<PassReasons />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
