@@ -648,7 +648,7 @@ const OpportunityDetail = () => {
                 <KV label="Owner" value={opp.owner} />
               </div>
               <div className="mt-4">
-                {/* Contact Finder agent (Make) — fills Contact phone / email or
+                {/* Contact Finder agent (in-app) — fills Contact phone / email or
                     notes why none exists. Research only; nothing is sent. */}
                 <AgentRunButton
                   opp={opp}

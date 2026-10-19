@@ -2448,9 +2448,66 @@ async def _trigger_record_agent(opp_id: str, env_name: str, label: str,
 @api_router.post("/opportunities/{opp_id}/find-contact")
 async def trigger_find_contact(opp_id: str):
     """Contact Finder agent: searches for a verified public phone/email and
-    fills Contact phone / Contact email (or notes why none exists)."""
-    return await _trigger_record_agent(opp_id, "CONTACT_FINDER_WEBHOOK",
-                                       "Contact finder", "find_contact_triggered")
+    fills Contact phone / Contact email (or notes why none exists).
+
+    Runs in-app (Perplexity research + Airtable write) — no Make webhook.
+    Returns immediately; the frontend polls the record until the contact
+    fields change, same UX as before.
+    """
+    from services.contact_finder_service import run_contact_finder
+
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    async def _run():
+        try:
+            result = await run_contact_finder(opp)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Contact Finder research failed for %s", opp_id)
+            try:
+                get_audit_log().record(
+                    action="find_contact_failed",
+                    entity_id=opp_id,
+                    outcome="error",
+                    reason=f"Contact Finder research failed: {e}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return
+
+        updates = {}
+        if result.get("phone"):
+            updates["phone"] = result["phone"]
+        if result.get("email"):
+            updates["email"] = result["email"]
+        if result.get("owner_name"):
+            updates["owner"] = result["owner_name"]
+        # Always record what the research concluded, even when nothing found.
+        # (evidence_summary is in the frontend's watchFields, so the button
+        # detects completion either way.)
+        context = result.get("entity_context") or "Contact Finder ran: no public contact found."
+        updates["evidence_summary"] = context
+
+        try:
+            await _bg(svc.update_fields, opp_id, updates)
+        except Exception:  # noqa: BLE001
+            logger.exception("Contact Finder Airtable write failed for %s", opp_id)
+            return
+
+        try:
+            get_audit_log().record(
+                action="find_contact_triggered",
+                entity_id=opp_id,
+                outcome="accepted",
+                reason=f"Contact Finder completed for {opp.get('name')}",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("audit record failed — continuing anyway")
+
+    asyncio.create_task(_run())
+    return {"ok": True, "status": "triggered", "message": "Contact finder running."}
 
 
 @api_router.post("/opportunities/{opp_id}/recheck")

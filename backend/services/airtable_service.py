@@ -334,6 +334,11 @@ EDITABLE_FIELDS = {
     # (e.g. saving a researched phone/email onto a lead). Never auto-filled.
     "Contact phone",
     "Contact email",
+    # Contact Finder fields — written by the in-app Contact Finder agent
+    # when Ryan taps "Find contact". Owner = the researched property owner;
+    # Ai summary = the research evidence summary.
+    "Owner",
+    "Ai summary",
     # Outreach draft fields — written by the transparent draft generator.
     "Draft Outreach Body",
     "Draft Outreach Subject",
