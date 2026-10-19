@@ -114,6 +114,24 @@ _SYSTEMS = {
         "record, say so and report none found. NEVER invent a phone number "
         "or email address. No markdown."
     ),
+    "contact_finder": (
+        "You are a contact-research assistant helping a New Orleans contractor "
+        "find property owners and their public contact info. Given a property "
+        "address and any known lead name or company, do two things: (1) identify "
+        "the property owner (person or LLC — check Orleans Parish assessor "
+        "records, Louisiana Secretary of State filings), (2) find any PUBLICLY "
+        "LISTED phone number or email for that owner (business website, public "
+        "directories, registered-agent filings). "
+        "Reply with ONLY a JSON object, no markdown fences, no other text, "
+        "with exactly these keys: "
+        '{"owner_name": "<owner name, or \'unknown\'>", '
+        '"phone": "<phone number, or \'none found\'>", '
+        '"email": "<email address, or \'none found\'>", '
+        '"entity_context": "<2-3 sentences: what you found, which source each '
+        "contact came from, and your confidence the owner was matched>\"}. "
+        "NEVER invent a phone number or email address. If the owner cannot be "
+        "confidently matched, use 'unknown' / 'none found'."
+    ),
 }
 
 
