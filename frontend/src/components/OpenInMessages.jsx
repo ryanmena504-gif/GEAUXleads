@@ -137,8 +137,8 @@ const buildFollowUpDraft = (opp, sender) => {
       return { kind: "text", subject: "", body: staged, airtable_rejected: false, airtable_reject_reason: null };
     }
     const body = isLandlord
-      ? `${salutation} it's ${senderName} with The Shirtless Handyman — tried calling about ${address}. I do turnovers and punch-list work between tenants, one call. Worth a quick chat this week? — ${senderName} ${senderPhone}`
-      : `${salutation} it's ${senderName} with The Shirtless Handyman — tried giving you a call. Worth a quick chat this week? — ${senderName} ${senderPhone}`;
+      ? `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling about ${address}. Between tenants I'm one call for the whole list — text me what's needed and I'll give you a straight price. Worth two minutes this week? — ${senderName} ${senderPhone}`
+      : `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling. I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, goes over existing tile. Open to a quick chat this week? — ${senderName} ${senderPhone}`;
     return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
   }
 
@@ -148,8 +148,8 @@ const buildFollowUpDraft = (opp, sender) => {
       ? `Should I close this out?`
       : `Should I close this out?`;
     const rec = isLandlord
-      ? "I don't want to keep pestering you — should I close this out on my end? If anything needs attention between tenants down the road, just text me a photo."
-      : `I don't want to keep pestering you — should I close out ${project} on my end? If it's still on your radar, just reply and I'll make time this week.`;
+      ? "Last note from me — should I close this out on my end? If a unit needs attention between tenants down the road, just text me a photo and I'll shoot you a straight price."
+      : `Last note from me on ${project} — should I close this out on my end? If a shower or wet area ever needs a seamless, waterproof finish with zero grout, just reply and I'll make time.`;
     const body = [salutation, "", rec].filter(Boolean).join("\n");
     return {
       kind: "email",
@@ -163,10 +163,10 @@ const buildFollowUpDraft = (opp, sender) => {
   // Touch 3 — the plain follow-up email.
   const subject = isLandlord
     ? `Turnover check-in · ${address}`
-    : `Following up · ${project}`;
+    : `Quick thought · ${project}`;
   const rec = isLandlord
-    ? "Checking in — anything need attention between tenants? Send me a photo and I'll tell you what it'll cost and when I can be there."
-    : `Circling back on my note from last week about ${project}. If the timing wasn't right, no worries — happy to take a look whenever it is.`;
+    ? "Quick check-in — anything need attention between tenants? Text me a photo and I'll tell you straight what it'll cost and when I can be there."
+    : `Sent a note last week and figured I'd try once more with something concrete: I do seamless microcement and Venetian plaster for showers and wet areas — zero grout, fully waterproof, goes right over existing tile. If a project ever calls for that spa look without the tile upkeep, I'd love to be the call. Happy to bring samples by.`;
   const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {
     kind: "email",
