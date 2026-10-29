@@ -2644,6 +2644,103 @@ async def create_gmail_draft(opp_id: str, request: Request):
     return {"ok": True, **result}
 
 
+@api_router.post("/opportunities/{opp_id}/send-email")
+async def send_email_now(opp_id: str, request: Request):
+    """One-press email send from Ryan's Gmail, logged as a touch automatically.
+
+    The app posts the exact copy shown on screen (WYSIWYG, same as the
+    gmail-draft endpoint). The backend sends it via SMTP with the stored
+    Gmail App Password — no mail app opens on Ryan's phone. ONLY after
+    SMTP accepts the message does the endpoint apply the same Airtable
+    updates as the /result "sent" / "followup_sent" events (attempt + 1,
+    next follow-up, touch 4 closes as Lost). An SMTP failure returns 502
+    and logs nothing, so a failed send can never look like a sent touch.
+    Refuses with 422 once all 4 touches are used, same as /result.
+    """
+    from services.followup_sequence import advance as _advance_touch, coerce_attempt as _coerce_attempt
+    from services.gmail_send_service import send_email as gmail_send
+
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    posted = {}
+    try:
+        posted = await request.json()
+    except Exception:  # noqa: BLE001
+        posted = {}
+    if not isinstance(posted, dict):
+        posted = {}
+    posted_body = (posted.get("body") or "").strip()
+    posted_subject = (posted.get("subject") or "").strip()
+
+    body = posted_body or (
+        opp.get("draft_outreach_body")
+        or opp.get("first_message")
+        or opp.get("first_contact_message")
+        or ""
+    ).strip()
+    subject = posted_subject or (
+        opp.get("draft_outreach_subject") or f"Quick intro — {opp.get('name') or 'your project'}"
+    ).strip()
+    # Mirror the frontend's pickEmail: it renders the button when any of
+    # these hold an address, so the backend must accept the same set.
+    to_email = opp.get("email") or opp.get("email_alt") or opp.get("contact_email") or ""
+    if not body:
+        raise HTTPException(status_code=400, detail="No draft text available — generate one first")
+    if not to_email or not is_valid_email(to_email):
+        raise HTTPException(status_code=400, detail="No email address on this record")
+
+    attempt = _coerce_attempt(opp.get("outreach_attempt"))
+    if attempt >= 4:
+        raise HTTPException(status_code=422, detail="All 4 outreach touches are used — the sequence is complete")
+
+    try:
+        sent = await _bg(gmail_send, to_email, subject, body, True)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("gmail send failed")
+        raise HTTPException(status_code=502, detail=f"Email send failed: {e}")
+
+    # SMTP accepted the message — now log the touch, mirroring /result.
+    touch = _advance_touch(attempt)
+    now = datetime.now(timezone.utc).isoformat()
+    updates: Dict[str, Any] = {
+        "outreach_status": "Sent",
+        "outreach_channel": "Email",
+        "message_sent_date": now,
+        "outreach_attempt": touch["outreach_attempt"],
+        "next_follow_up": touch["next_follow_up"] or "",
+    }
+    if attempt == 0:
+        updates["date_contacted"] = now
+    if touch["closes_lead"]:
+        updates["status"] = "Lost"
+
+    try:
+        updated = await _bg(svc.update_fields, opp_id, updates) if hasattr(svc, "update_fields") else None
+    except AirtableWriteError as e:
+        # The email went out but the log write failed — say so honestly
+        # instead of pretending the touch was recorded.
+        raise HTTPException(status_code=502, detail=f"Email sent, but logging the touch failed: {e}")
+    if not updated:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    try:
+        get_audit_log().record(
+            action="email_sent",
+            entity_id=opp_id,
+            outcome="accepted",
+            reason=f"One-press Gmail send to {to_email} (touch {touch['outreach_attempt']})",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"ok": True, "sent": sent, "opportunity": updated}
+
+
 # Registered last: include_router copies api_router's routes at call time,
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).

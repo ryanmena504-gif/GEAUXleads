@@ -11,20 +11,19 @@ import { api } from "@/lib/api";
  * OpenInMessages — the single Email Now / Follow Up Email button.
  *
  *   • Current Queue = "Ready to Contact" → one primary button "Email Now"
- *     that opens the device-native email app via a plain mailto:. The mailto
- *     includes the verified public business email, the playbook subject, and
- *     the personalized playbook body.
+ *     that sends from Ryan's Gmail in the background via the backend
+ *     send-email endpoint. No mail app opens, no separate log tap.
  *   • Current Queue = "Contacted"        → one primary button "Follow Up
- *     Email" that opens the device-native email app with a preloaded
- *     follow-up message.
+ *     Email" that sends the follow-up the same way.
  *   • Current Queue = "All Projects"     → NOTHING is rendered.
  *
  * If there is no verified public business email on file, NOTHING is rendered.
  * SMS is never substituted merely because a phone number exists.
  *
- * Clicking either button writes nothing to the backend. There is no
- * intermediate modal, drawer, template picker, copy button, or preview —
- * one tap → mailto → Ryan presses Send in his own email app.
+ * There is no intermediate modal, drawer, template picker, copy button, or
+ * preview — one tap sends the composed copy and logs the touch. The press
+ * IS the send: the button must never fire without Ryan tapping it, and the
+ * draft-safety guard below still blocks AI-plumbing copy from ever sending.
  */
 
 // Default sender identity — used only for the plain-text signature that
@@ -203,8 +202,8 @@ const secondary = {
  */
 export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const { settings } = useUserSettings();
-  const [creatingDraft, setCreatingDraft] = useState(false);
-  const [draftCreated, setDraftCreated] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
   const senderIdentity = {
     sender_name: settings?.sender_name,
     sender_phone: settings?.sender_phone,
@@ -241,27 +240,29 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const finalCheck = looksLikeAIPrompt(draft.body);
   const composerBroken = finalCheck.trip;
 
-  const createGmailDraft = async () => {
-    setCreatingDraft(true);
+  const sendEmailNow = async () => {
+    setSending(true);
     try {
-      // WYSIWYG: post the exact copy shown on screen (the composed draft),
-      // so the Gmail draft matches what Ryan just read. The backend falls
-      // back to the stored first-touch fields only when nothing is posted.
+      // WYSIWYG: post the exact copy composed on screen, so the sent email
+      // matches the draft the panel built. The backend falls back to the
+      // stored first-touch fields only when nothing is posted. On SMTP
+      // success the backend logs the touch itself — no separate log tap.
+      // On failure nothing is logged, so a failed send never looks sent.
       const res = await api.post(
-        `/opportunities/${opportunity?.id}/gmail-draft`,
+        `/opportunities/${opportunity?.id}/send-email`,
         { body: draft.body, subject: draft.subject }
       );
       if (res?.ok) {
-        setDraftCreated(true);
-        toast.success("Draft ready in your mail app — open it and hit Send");
+        setSent(true);
+        toast.success("Sent from your Gmail — touch logged automatically");
       } else {
-        toast.error(`Couldn't create the draft: ${res?.detail || "unknown error"}`);
+        toast.error(`Couldn't send: ${res?.detail || "unknown error"}`);
       }
     } catch (err) {
       const detail = err?.response?.data?.detail || err?.message || "network error";
-      toast.error(`Draft failed: ${detail}`);
+      toast.error(`Send failed: ${detail}`);
     } finally {
-      setCreatingDraft(false);
+      setSending(false);
     }
   };
   const testid = isFollowup
@@ -321,17 +322,17 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   ) : (
     <button
       type="button"
-      onClick={createGmailDraft}
-      disabled={creatingDraft || draftCreated}
+      onClick={sendEmailNow}
+      disabled={sending || sent}
       data-testid={testid}
       className={`${btnBase} ${SIZE[size]}`}
       style={styleOverride}
     >
       <Icon size={size === "sm" ? 13 : 14} />{" "}
-      {draftCreated
-        ? "Draft ready — check your mail app"
-        : creatingDraft
-          ? "Creating draft…"
+      {sent
+        ? "Sent — logged automatically"
+        : sending
+          ? "Sending…"
           : `${label} with photo`}
     </button>
   );
@@ -414,16 +415,17 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
       <div className="text-[11.5px] leading-relaxed text-[var(--bh-ink-2)]">
         {isTextTouch
           ? "Call them from your phone, then copy the text above into Messages. Nothing is logged until you tap it below."
-          : "Creates a draft in your Gmail with the bathroom photo in the email body. Nothing sends until you press Send yourself."}
+          : "Sends from your Gmail in the background with the bathroom photo in the email body. One press sends it and logs the touch — you never leave the app."}
       </div>
       <div className="text-[11px] text-[var(--bh-ink-3)] inline-flex items-center gap-1.5">
         <ShieldCheck size={11} style={{ color: "var(--bh-olive)" }} />
         {isTextTouch
           ? "Touch 2 of 4. Log it in the results panel once the call + text are done."
           : isFollowup
-            ? "Follow-up draft only. First-contact controls stay hidden on Contacted records."
-            : "Draft only — you review and send from your mail app."}
+            ? "Sends immediately on press. First-contact controls stay hidden on Contacted records."
+            : "Sends immediately on press — no mail-app trip, no separate log tap."}
       </div>
+      {isTextTouch && (
       <div className="pt-1">
         <div className="text-[11.5px] font-medium text-[var(--bh-ink-2)] mb-1.5">
           Attach this photo with your message
@@ -444,6 +446,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
           Tap the photo to save it, then attach it in Messages alongside your text.
         </div>
       </div>
+      )}
     </div>
   );
 };
