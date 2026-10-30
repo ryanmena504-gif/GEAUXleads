@@ -2485,10 +2485,16 @@ async def trigger_find_contact(opp_id: str):
         if result.get("owner_name"):
             updates["owner"] = result["owner_name"]
         # Always record what the research concluded, even when nothing found.
-        # (evidence_summary is in the frontend's watchFields, so the button
-        # detects completion either way.)
+        # Do NOT write it to evidence_summary: "Ai summary" is read-only in
+        # the Airtable schema, so that write is silently dropped and the
+        # button looks dead when no phone/email is found. Notes is writable
+        # and is also in the frontend's watchFields, so appending here both
+        # preserves the result and lets the button detect completion.
+        # Existing notes are preserved, never overwritten.
         context = result.get("entity_context") or "Contact Finder ran: no public contact found."
-        updates["evidence_summary"] = context
+        existing_notes = (opp.get("notes") or "").strip()
+        note_line = f"Contact Finder: {context}"
+        updates["notes"] = f"{existing_notes}\n\n{note_line}" if existing_notes else note_line
 
         try:
             await _bg(svc.update_fields, opp_id, updates)
