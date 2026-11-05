@@ -30,7 +30,7 @@ def test_eligible_lead_restates_the_recipient(approvable_lead):
     assert recipient.channel == "phone"
     assert recipient.phone == "(504) 231-8890"
     assert recipient.email == "marie.ashby@ashbyhome.net"
-    assert recipient.category == "Roof Replacement"
+    assert recipient.category == "Shower Remodel"
 
 
 # ------------------------------------------------- impossible combinations
