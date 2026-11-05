@@ -5,6 +5,13 @@ Perplexity identifies the property owner and finds publicly listed
 contact info, then the result is written back to the lead's Airtable
 record. No webhook, no Make, no JSON-module mapping to break.
 
+End goal: a found contact is only useful if it moves a real surface job
+one step closer to a reply — replies, then booked in-person estimates,
+then won jobs. A name with no verifiable person or property behind it is
+not a lead. Real-lead screen: the research prompt flags overpayment,
+forwarding money to a third party, printed/emailed checks, and payee or
+bank-detail requests instead of treating them as contact leads.
+
 Research only — nothing is ever sent to the lead.
 """
 
