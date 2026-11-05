@@ -65,7 +65,7 @@ const buildFirstDraft = (opp, sender) => {
   const landlordFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I saw you own ${opp?.project_address || "properties around the area"} and wanted to reach out.`,
     "",
-    "I'm a one-call fix. No coordinating three trades, no waiting on estimates. Text me a photo of what needs attention and I'll tell you what it'll cost and when I can be there.",
+    "I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, goes over existing tile. If a unit between tenants needs that kind of finish, text me a photo and I'll tell you straight whether it's my kind of job and when I can be there.",
   ].join("\n");
   const projectFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across your ${opp?.project_type || "project"} and wanted to reach out.`,
@@ -76,7 +76,7 @@ const buildFirstDraft = (opp, sender) => {
   const subject =
     opp?.first_message_subject ||
     (isLandlord
-      ? `Turnovers, punch-list, and everything between tenants`
+      ? `Seamless finishes between tenants`
       : isPartner
         ? `${senderName} at The Shirtless Handyman — quick intro`
         : `Quick note about your ${opp?.project_type || "project"}`);
@@ -136,7 +136,7 @@ const buildFollowUpDraft = (opp, sender) => {
       return { kind: "text", subject: "", body: staged, airtable_rejected: false, airtable_reject_reason: null };
     }
     const body = isLandlord
-      ? `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling about ${address}. Between tenants I'm one call for the whole list — text me what's needed and I'll give you a straight price. Worth two minutes this week? — ${senderName} ${senderPhone}`
+      ? `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling about ${address}. Between tenants, if a unit's shower or wet area needs a seamless, waterproof finish — zero grout to scrub — text me a photo and I'll tell you straight whether it's my kind of job and when I can be there. Worth two minutes this week? — ${senderName} ${senderPhone}`
       : `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling. I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, goes over existing tile. Open to a quick chat this week? — ${senderName} ${senderPhone}`;
     return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
   }
@@ -147,7 +147,7 @@ const buildFollowUpDraft = (opp, sender) => {
       ? `Should I close this out?`
       : `Should I close this out?`;
     const rec = isLandlord
-      ? "Last note from me — should I close this out on my end? If a unit needs attention between tenants down the road, just text me a photo and I'll shoot you a straight price."
+      ? "Last note from me — should I close this out on my end? If a unit needs a seamless, waterproof finish between tenants down the road, just text me a photo and I'll make time to take a look."
       : `Last note from me on ${project} — should I close this out on my end? If a shower or wet area ever needs a seamless, waterproof finish with zero grout, just reply and I'll make time.`;
     const body = [salutation, "", rec].filter(Boolean).join("\n");
     return {
@@ -164,7 +164,7 @@ const buildFollowUpDraft = (opp, sender) => {
     ? `Turnover check-in · ${address}`
     : `Quick thought · ${project}`;
   const rec = isLandlord
-    ? "Quick check-in — anything need attention between tenants? Text me a photo and I'll tell you straight what it'll cost and when I can be there."
+    ? "Quick check-in — anything need attention between tenants? Text me a photo and I'll tell you straight what I can do and when I can be there."
     : `Sent a note last week and figured I'd try once more with something concrete: I do seamless microcement and Venetian plaster for showers and wet areas — zero grout, fully waterproof, goes right over existing tile. If a project ever calls for that spa look without the tile upkeep, I'd love to be the call. Happy to bring samples by.`;
   const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {

@@ -6,6 +6,11 @@ These tables (Property Manager Discovery Queue, Real Estate Agent Outreach,
 Investor Intelligence, etc.) are owned by Claude + Make on the data side.
 Bloodhound is strictly a read-only viewer. No writes.
 
+End goal these queues serve: turn strangers into booked estimates — replies,
+then booked in-person estimates, then won jobs. A record here only matters
+if it can lead to a real surface job (floors, walls, countertops, showers,
+wet rooms — a bathroom is never required).
+
 Rather than duplicate the full AirtableOpportunityService (schema loading,
 write allowlist, field maps), each discovery reader:
   • Reads every field on every record as-is
@@ -318,8 +323,9 @@ def property_manager_status_counts() -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # Real Estate Agent Outreach
 # ---------------------------------------------------------------------------
-# 10 curated real-estate agents for a pre-listing "photo-ready bathroom"
-# pitch. None have verified contact info yet — Contact Enrichment Status
+# 10 curated real-estate agents for a pre-listing "seamless, photo-ready
+# surfaces" pitch — bathrooms, kitchens, living rooms, any room with a
+# surface to coat. None have verified contact info yet — Contact Enrichment Status
 # is uniformly "Needs Public Contact" and Outreach Gate is uniformly
 # "Locked — no outreach". Bloodhound respects the gate: no mailto/sms
 # button renders while an agent is locked. When Make flips the gate to

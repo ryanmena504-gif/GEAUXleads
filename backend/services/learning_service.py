@@ -14,6 +14,12 @@ Rules honored:
 Data source: the opportunity list itself. Each record already carries
 `outreach_status`, `date_replied`, `status`, and the 17 governed fields.
 Nothing new is stored — this is a read-through.
+
+End goal this loop serves: turn strangers into booked estimates — success
+is replies, then booked in-person estimates, then won jobs. Finding is only
+the feeder; a lead that never replies is not a win. Never learn
+"no bathroom = reject": a bathroom is never required, what matters is a
+surface to coat.
 """
 
 from __future__ import annotations

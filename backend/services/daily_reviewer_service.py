@@ -5,6 +5,11 @@ contact changes), flags them via the three New info fields, and auto-runs
 the portfolio check on at most 3 per day. Everything else appears in the
 Fresh Intel digest for Ryan to tap.
 
+End goal: turn strangers into booked estimates — success is replies, then
+booked in-person estimates, then won jobs. Flagging fresh info is only the
+feeder; a lead that never replies is not a win. Only flag news that could
+move a real surface job one step closer to a reply.
+
 Design (from blueprint):
 - Skip already-flagged leads (no duplicate work)
 - Skip contacted/dead leads (reviewer handles the research bottleneck)
@@ -23,7 +28,7 @@ log = logging.getLogger(__name__)
 MAX_SCAN_PER_RUN = 25
 MAX_AUTO_ENHANCE_PER_DAY = 3
 
-REVIEW_PROMPT = """You are reviewing a lead for new information.
+REVIEW_PROMPT = """You are reviewing a lead for new information for The Shirtless Handyman — Ryan Mena, a microcement and Venetian plaster specialist in New Orleans (NOT a general handyman). His rule is "surface to coat": floors, walls, countertops, showers, wet rooms — a bathroom is never required.
 
 Lead details:
 {business_info}
@@ -33,7 +38,9 @@ Existing summary on record:
 
 Search for genuinely NEW information about this business: new permits filed,
 new completed projects, new locations, changed phone/email/website, new key
-people. Compare against the existing summary above.
+people. Compare against the existing summary above. Only flag news that could move a real surface job one step closer to a reply — replies, then booked in-person estimates, are the goal; finding is only the feeder.
+
+Do NOT flag permits for pure plumbing, electrical, or roofing work with no surface to coat. Real-lead screen: if the new information looks like a scam pattern (overpayment, forwarding money to a third party, printed or emailed checks, requests for payee forms or bank details), do not flag it as a lead — report it in one sentence starting with "SCAM PATTERN:" instead.
 
 Report ONLY genuinely new information in 1-2 plain-English sentences.
 If nothing new, output exactly: NOTHING_NEW

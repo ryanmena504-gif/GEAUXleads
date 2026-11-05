@@ -25,13 +25,18 @@ log = logging.getLogger("bloodhound.rejection")
 
 # key → select value written to Rejection reason, the longer wording shown on
 # the button and written to Activity Log, and the legacy option to fall back to.
+# "No bathroom scope" used to be a reason here. It is gone on purpose: Ryan
+# banned learning "no bathroom = reject" — a bathroom is never required,
+# what matters is a surface to coat. The replacement reason says exactly
+# that. (Old Airtable records keep the old "No bathroom scope" label as
+# history; nothing in code reads that key any more.)
 REJECTION_REASONS: List[Dict[str, str]] = [
     {"key": "wrong_trade", "label": "Wrong trade",
      "detail": "Wrong trade (roof, solar, HVAC, flooring, foundation…)", "fallback": "Wrong project type"},
-    {"key": "no_bath_scope", "label": "No bathroom scope",
-     "detail": "Whole-house / new construction / addition (no shower or bathroom scope)", "fallback": "Wrong project type"},
+    {"key": "no_surface", "label": "No surface to coat",
+     "detail": "No surface to coat (pure plumbing / electrical / roofing, or no surface work at all)", "fallback": "Wrong project type"},
     {"key": "commercial", "label": "Commercial",
-     "detail": "Commercial — not a home bathroom", "fallback": "Wrong project type"},
+     "detail": "Commercial — not a home surface job", "fallback": "Wrong project type"},
     {"key": "not_my_trade", "label": "Not my trade",
      "detail": "Not my trade (general handyman / odd jobs)", "fallback": "Wrong Fit"},
     {"key": "no_remodel_intent", "label": "No remodel intent",

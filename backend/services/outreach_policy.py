@@ -5,6 +5,10 @@ write route that approves a lead or dispatches a message evaluates this module
 first; the UI calls the same evaluation read-only so the button state and the
 server decision can never disagree.
 
+The gate serves one goal: turn strangers into booked estimates — replies,
+then booked in-person estimates, then won jobs. A lead with no surface to
+coat can never get there, so it is blocked here, not warmed.
+
 Two design rules:
 
 1. **Live fields only.** Eligibility is computed from the record's current
@@ -89,6 +93,32 @@ STATUS_DNC_TOKENS: Tuple[str, ...] = ("do not contact", "do-not-contact", "dnc",
 STATUS_SENT_TOKENS: Tuple[str, ...] = ("sent", "contacted", "replied", "closed", "complete")
 
 
+# ---- Surface to coat -------------------------------------------------------
+# Ryan's rule: the filter is "surface to coat", not "bathroom". A lead whose
+# category is purely plumbing / electrical / roofing work — no surface work
+# at all — is not his trade and must not be approved for outreach.
+# The match is deliberately narrow: a category only counts as "no surface"
+# when it names a pure non-surface trade AND names no surface at all, so
+# "Bathroom Remodel", "Historic Restoration", and "Addition" still pass —
+# a remodel, a restoration, and an addition all have surfaces to coat.
+_NON_SURFACE_TOKENS: Tuple[str, ...] = ("plumb", "electric", "roof", "hvac", "solar", "sewer")
+_SURFACE_TOKENS: Tuple[str, ...] = (
+    "shower", "bath", "kitchen", "floor", "wall", "counter", "plaster",
+    "microcement", "tadelakt", "tile", "wet room", "pool", "venetian",
+    "remodel", "restoration", "renovation", "addition", "paint",
+)
+
+
+def _has_surface_to_coat(category: Optional[str]) -> bool:
+    """True unless the category is purely non-surface trade work."""
+    text = (category or "").lower()
+    if not text.strip():
+        return False  # missing category is already blocked as no_category
+    if any(tok in text for tok in _SURFACE_TOKENS):
+        return True
+    return not any(tok in text for tok in _NON_SURFACE_TOKENS)
+
+
 def _env_float(name: str, default: float) -> float:
     try:
         return float(os.environ.get(name, "").strip() or default)
@@ -115,6 +145,7 @@ class PolicyThresholds:
     require_address: bool = True
     require_category: bool = True
     require_counterparty: bool = True
+    require_surface: bool = True
     block_on_risk: bool = True
     block_duplicates: bool = True
     block_already_sent: bool = True
@@ -128,6 +159,7 @@ class PolicyThresholds:
             require_address=_env_bool("OUTREACH_REQUIRE_ADDRESS", True),
             require_category=_env_bool("OUTREACH_REQUIRE_CATEGORY", True),
             require_counterparty=_env_bool("OUTREACH_REQUIRE_COUNTERPARTY", True),
+            require_surface=_env_bool("OUTREACH_REQUIRE_SURFACE", True),
             block_on_risk=_env_bool("OUTREACH_BLOCK_ON_RISK", True),
             block_duplicates=_env_bool("OUTREACH_BLOCK_DUPLICATES", True),
             block_already_sent=_env_bool("OUTREACH_BLOCK_ALREADY_SENT", True),
@@ -389,6 +421,27 @@ def evaluate(
     else:
         check("category", "Project or service category (not enforced)", bool(category))
 
+    # ---- 4b. surface to coat ----
+    # A category is required above; here we check what it says. Pure
+    # plumbing / electrical / roofing has no surface to coat, so approving
+    # it would send Ryan after work he does not do — and teach the
+    # classifier that no-surface leads are fine.
+    if category:
+        if thresholds.require_surface:
+            if not check("surface_to_coat", "Surface to coat",
+                         _has_surface_to_coat(category), category):
+                findings.append(Finding(
+                    code="no_surface_to_coat",
+                    severity=BLOCKER,
+                    field="Opportunity type",
+                    message=(f"Category “{clean_text(category)}” is pure plumbing / electrical / "
+                             "roofing work with no surface to coat — not Ryan's trade."),
+                    remediation="Pass this lead (reason: No surface to coat) instead of approving outreach.",
+                ))
+        else:
+            check("surface_to_coat", "Surface to coat (not enforced)",
+                  _has_surface_to_coat(category), category)
+
     # ---- 5. score threshold ----
     score, score_source = readiness_score(record)
     if not check("score_threshold",
@@ -539,6 +592,7 @@ def evaluate(
             "require_address": thresholds.require_address,
             "require_category": thresholds.require_category,
             "require_counterparty": thresholds.require_counterparty,
+            "require_surface": thresholds.require_surface,
             "block_on_risk": thresholds.block_on_risk,
             "block_duplicates": thresholds.block_duplicates,
             "block_already_sent": thresholds.block_already_sent,

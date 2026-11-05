@@ -14,6 +14,10 @@ Sections:
     "Ready to Contact"` in the last 24 hours.
   • Estimate deadlines — records with outreach_status in {Estimate
     requested, Estimate sent} whose last reply is ≥ 7 days ago.
+
+End goal this brief serves: turn strangers into booked estimates — replies,
+then booked in-person estimates, then won jobs. Every section below is a
+step toward a reply; a lead that never replies is not a win.
 """
 
 from __future__ import annotations
