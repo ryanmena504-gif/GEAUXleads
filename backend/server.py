@@ -2074,7 +2074,7 @@ from services import research_cache_service as _research_cache
 
 
 class ResearchRequest(BaseModel):
-    research_type: str  # decision_maker | permit_explainer | landlord_background | re_agent_background | owner_contact
+    research_type: str  # decision_maker | permit_explainer | landlord_background | re_agent_background | owner_contact | general
     record_id: str
     query: str
     force_refresh: Optional[bool] = False
@@ -2098,6 +2098,7 @@ async def create_research(req: ResearchRequest):
         "landlord_background",
         "re_agent_background",
         "owner_contact",
+        "general",
     ):
         raise HTTPException(status_code=400, detail="unknown research_type")
 
