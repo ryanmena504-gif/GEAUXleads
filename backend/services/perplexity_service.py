@@ -18,6 +18,11 @@ Design rules baked in:
     second tap on the same "Who runs this?" button is free.
   - Errors are converted to typed exceptions so the FastAPI layer can
     map them to 401 / 429 / 503 without leaking the key or a stacktrace.
+    The conversion classifies by exception type (connection vs timeout
+    vs HTTP status) instead of collapsing everything into one generic
+    "request failed" — a connection error that already survived the
+    SDK's own retries is a route problem, not a key problem, and the
+    caller needs to be able to say so in plain English.
 """
 from __future__ import annotations
 
@@ -42,21 +47,154 @@ except ImportError:  # pragma: no cover
 class PerplexityError(Exception):
     """Application-level error with an HTTP status hint. `retry_after`
     carries the upstream Retry-After header verbatim when Perplexity
-    rate-limits us so the FastAPI layer can pass it through."""
+    rate-limits us so the FastAPI layer can pass it through. `error_kind`
+    names the failure in plain terms ("connection", "timeout", "auth",
+    "forbidden", "rate_limit", "bad_request", "upstream") so callers can
+    write a human-readable note about it instead of a raw SDK message."""
 
     def __init__(self, message: str, status_code: int = 503,
-                 retry_after: Optional[str] = None):
+                 retry_after: Optional[str] = None,
+                 error_kind: str = "upstream"):
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after
+        self.error_kind = error_kind
 
 
-# The three research features Ryan asked for. Each carries the
+# Fail fast instead of hanging on the SDK's long default timeout: a hung
+# Perplexity call should surface as a clear timeout, not stall the
+# background task for minutes.
+_REQUEST_TIMEOUT_SECS = 120.0
+
+
+def _redact(text: str) -> str:
+    """Strip the API key from a message if it ever appears in one.
+    (Guard the empty-key case: replacing "" would mangle every string.)"""
+    key = os.environ.get("PERPLEXITY_API_KEY", "")
+    return text.replace(key, "***") if key else text
+
+
+def _upstream_detail(exc: Exception) -> str:
+    """Short upstream detail for logs: the error message from Perplexity's
+    response body when the SDK carried one."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict) and err.get("message"):
+            return str(err["message"])[:160]
+        if isinstance(err, str):
+            return err[:160]
+    return ""
+
+
+def _classify_error(exc: Exception) -> PerplexityError:
+    """Turn an SDK / transport exception into a typed PerplexityError with
+    a plain-English message and an error_kind callers can render.
+
+    Classification is by exception class name + status_code, not by
+    importing SDK error classes, so it works with the real SDK
+    (APIConnectionError, APITimeoutError, APIStatusError, ...) and with
+    fakes in tests. Never echoes the API key, even if the SDK put it in
+    the message.
+    """
+    name = type(exc).__name__
+    status = getattr(exc, "status_code", None)
+    retry_after = None
+    resp_obj = getattr(exc, "response", None)
+    if resp_obj is not None:
+        try:
+            retry_after = resp_obj.headers.get("retry-after")
+        except Exception:  # noqa: BLE001
+            pass
+    raw = _redact(str(exc)[:240])
+    detail = _upstream_detail(exc)
+
+    if "Timeout" in name:
+        return PerplexityError(
+            "Perplexity took too long to answer (over 2 minutes) — "
+            "try again shortly.",
+            status_code=503, error_kind="timeout",
+        )
+    if "ConnectionError" in name or "ConnectError" in name:
+        return PerplexityError(
+            "Could not reach Perplexity at all — the request never got an "
+            "answer (connection error). This is not a key or credit problem; "
+            "the app's route to Perplexity failed. Try again later; if it "
+            "keeps happening, the connection needs a look.",
+            status_code=503, error_kind="connection",
+        )
+    if status == 401:
+        return PerplexityError(
+            "Perplexity authentication failed — rotate the key in "
+            "the console and update PERPLEXITY_API_KEY.",
+            status_code=401, error_kind="auth",
+        )
+    if status == 403:
+        return PerplexityError(
+            "Perplexity refused this key for the Agent API (HTTP 403) — "
+            "the key may not have Agent API access, or the account may be "
+            "restricted. Check the key's permissions in the Perplexity "
+            "console; re-pasting the same key will not help.",
+            status_code=403, error_kind="forbidden",
+        )
+    if status == 429:
+        return PerplexityError(
+            "Perplexity rate limit reached — try again shortly.",
+            status_code=429, retry_after=retry_after,
+            error_kind="rate_limit",
+        )
+    if status == 400:
+        suffix = f": {detail}" if detail else ""
+        return PerplexityError(
+            f"Perplexity rejected the request (HTTP 400){suffix}",
+            status_code=400, error_kind="bad_request",
+        )
+    if isinstance(status, int) and status >= 500:
+        suffix = f": {detail}" if detail else ""
+        return PerplexityError(
+            f"Perplexity's own service failed (HTTP {status}){suffix} — "
+            "try again shortly.",
+            status_code=502, error_kind="upstream",
+        )
+    log.warning(
+        "Perplexity call failed: kind=upstream status=%s type=%s msg=%s detail=%s",
+        status, name, raw, detail,
+    )
+    return PerplexityError(
+        f"Perplexity request failed: {raw or 'unknown error'}",
+        status_code=status if isinstance(status, int) else 502,
+        retry_after=retry_after, error_kind="upstream",
+    )
+
+
+# Shared context every research prompt below carries: who Ryan is, what
+# winning looks like, and what counts as a real lead. The individual
+# prompts used to say only "a New Orleans contractor" — the research came
+# back generic and bathroom-centric, and nothing said what the answer was
+# for. Keep this prefix short: it is instruction text, not answer text,
+# so it does not disturb the strict output formats some prompts demand
+# (bare JSON for contact_finder, PHONE:/EMAIL: lines for owner_contact).
+_TRADE_PREFIX = (
+    "Context: you are researching for The Shirtless Handyman — Ryan Mena, "
+    "a microcement and Venetian plaster specialist in New Orleans, NOT a "
+    "general handyman. His rule is 'surface to coat': floors, walls, "
+    "countertops, showers, wet rooms — a bathroom is never required. He "
+    "never spot-repairs failed microcement and never gives a firm price on "
+    "the phone. The goal is replies, then booked in-person estimates, then "
+    "won jobs — finding a name is only the feeder. "
+    "Real-lead screen: only treat a lead as real when the person and the "
+    "property are verifiable and the ask is coherent. Flag instead of "
+    "passing on overpayment, forwarding money to a third party, printed or "
+    "emailed checks, or requests for payee forms or bank details. "
+)
+
+# The research features Ryan asked for. Each carries the
 # system-prompt fragment that shapes Perplexity's answer for its
 # specific use case.
 _SYSTEMS = {
     "decision_maker": (
-        "You are a lead-research assistant helping a New Orleans contractor "
+        _TRADE_PREFIX
+        + "You are a lead-research assistant helping Ryan "
         "identify decision makers at businesses and properties. Given the "
         "lead context, answer WHO runs this business or owns this property, "
         "their role (owner/GM/manager), and any verified contact leads. "
@@ -65,7 +203,8 @@ _SYSTEMS = {
         "plain-text short paragraphs, no markdown."
     ),
     "permit_explainer": (
-        "You are a lead-research assistant helping a New Orleans contractor "
+        _TRADE_PREFIX
+        + "You are a lead-research assistant helping Ryan "
         "read building/renovation permits. Given a permit description, "
         "explain in plain English what work the permit covers, typical "
         "scope and duration for that permit type, and any red flags (e.g. "
@@ -74,8 +213,10 @@ _SYSTEMS = {
         "Reply in plain-text short paragraphs, no markdown."
     ),
     "landlord_background": (
-        "You are a lead-research assistant helping a New Orleans contractor "
-        "vet rental-property owners for turnover-work outreach. Given the "
+        _TRADE_PREFIX
+        + "You are a lead-research assistant helping Ryan "
+        "vet rental-property owners whose units may need seamless finishes "
+        "between tenants. Given the "
         "owner name and address, surface public records: LLC filings, "
         "additional properties they own in NOLA (rough count is fine), "
         "any news mentions, and how large their portfolio appears. Cite "
@@ -83,22 +224,24 @@ _SYSTEMS = {
         "paragraphs, no markdown."
     ),
     "re_agent_background": (
-        "You are a lead-research assistant helping a New Orleans contractor "
-        "target real estate agents for a 'photo-ready bathroom before the "
-        "listing hits MLS' pitch. Given the agent's name and brokerage, "
+        _TRADE_PREFIX
+        + "You are a lead-research assistant helping Ryan "
+        "target real estate agents for a 'seamless, photo-ready surfaces "
+        "before the listing hits MLS' pitch. Given the agent's name and brokerage, "
         "surface: verified public business email + phone (from the "
         "brokerage's site, agent's own site, or Realtor.com/Zillow profile "
         "— NEVER a personal-looking number), recent NOLA listings and "
         "approximate 12-month sold volume, brokerage tenure, and whether "
         "they specialize in flips / historic renos / higher-end listings. "
-        "Prioritize any signal that they list homes where a bathroom would "
-        "drag the price. Cite every source URL. If a phone or email cannot "
+        "Prioritize any signal that they list homes where dated surfaces — "
+        "bathrooms, kitchens, living rooms — would drag the price. Cite every source URL. If a phone or email cannot "
         "be verified from a public business source, say so — do not "
         "invent contact details. Reply in plain-text short paragraphs, "
         "no markdown."
     ),
     "owner_contact": (
-        "You are a contact-research assistant helping a New Orleans contractor "
+        _TRADE_PREFIX
+        + "You are a contact-research assistant helping Ryan "
         "reach property owners about renovation work. Given the owner's name "
         "and the property address, find any PUBLICLY LISTED phone number or "
         "email address for that owner. Check: Orleans Parish assessor records, "
@@ -115,7 +258,8 @@ _SYSTEMS = {
         "or email address. No markdown."
     ),
     "contact_finder": (
-        "You are a contact-research assistant helping a New Orleans contractor "
+        _TRADE_PREFIX
+        + "You are a contact-research assistant helping Ryan "
         "find property owners and their public contact info. Given a property "
         "address and any known lead name or company, do two things: (1) identify "
         "the property owner (person or LLC — check Orleans Parish assessor "
@@ -131,6 +275,24 @@ _SYSTEMS = {
         "contact came from, and your confidence the owner was matched>\"}. "
         "NEVER invent a phone number or email address. If the owner cannot be "
         "confidently matched, use 'unknown' / 'none found'."
+    ),
+    # The daily reviewer (Fresh Intel picker) calls research_async("general")
+    # with its own review prompt as the query. This type did not exist until
+    # now: every reviewer check raised "Unknown research_type 'general'",
+    # was swallowed, and returned nothing — the picker could never flag
+    # anything. Do not remove this entry without updating
+    # daily_reviewer_service.py.
+    "general": (
+        _TRADE_PREFIX
+        + "You are reviewing a lead for genuinely NEW information. Only "
+        "report news that matters to Ryan's trade: new permits or projects "
+        "involving a surface to coat (floors, walls, countertops, showers, "
+        "wet rooms — a bathroom is never required), new locations, changed "
+        "phone/email/website, or new key people. Do NOT flag permits for "
+        "pure plumbing, electrical, or roofing work with no surface to "
+        "coat. Ground every claim in a cited web source with a date when "
+        "possible. If evidence is thin, say so — do not invent facts. "
+        "Reply in plain-text short paragraphs, no markdown."
     ),
 }
 
@@ -148,7 +310,16 @@ class PerplexityResearchService:
                 "perplexityai package is not installed — run "
                 "`pip install perplexityai`"
             )
-        self._client = Perplexity(api_key=api_key)  # type: ignore
+        # Explicit timeout so a hung call fails fast as a clear timeout
+        # instead of stalling for the SDK's long default. No custom
+        # base_url: the SDK default (https://api.perplexity.ai) is the
+        # right endpoint — the "connection error" seen in production was
+        # the request never getting a response, not a wrong URL.
+        # The SDK's own max_retries (default 2) already retries connection
+        # errors, so a connection error reaching us already survived those
+        # retries — it is persistent, not a blip. Do not add another
+        # retry layer here.
+        self._client = Perplexity(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECS)  # type: ignore
         self._preset = preset
 
     def research(self, research_type: str, query: str) -> Dict[str, Any]:
@@ -176,34 +347,16 @@ class PerplexityResearchService:
                 input=query,
             )
         except Exception as e:  # noqa: BLE001
-            # Try to extract a meaningful status without leaking the key
-            status = getattr(e, "status_code", None) or 502
-            retry_after = None
-            resp_obj = getattr(e, "response", None)
-            if resp_obj is not None:
-                try:
-                    retry_after = resp_obj.headers.get("retry-after")
-                except Exception:  # noqa: BLE001
-                    pass
-            msg = str(e)[:240]
-            # Never echo the API key even if the SDK included it in the message
-            msg = msg.replace(os.environ.get("PERPLEXITY_API_KEY", ""), "***")
-            if status == 401:
-                raise PerplexityError(
-                    "Perplexity authentication failed — rotate the key in "
-                    "the console and update PERPLEXITY_API_KEY.",
-                    status_code=401,
-                ) from e
-            if status == 429:
-                raise PerplexityError(
-                    "Perplexity rate limit reached — try again shortly.",
-                    status_code=429,
-                    retry_after=retry_after,
-                ) from e
-            log.warning("Perplexity call failed: %s", msg)
-            raise PerplexityError(
-                f"Perplexity request failed: {msg}", status_code=502,
-            ) from e
+            # Classify instead of collapsing: callers need to tell a
+            # connection failure apart from an auth / rate-limit / upstream
+            # failure, in plain English, on the lead itself.
+            err = _classify_error(e)
+            log.warning(
+                "Perplexity call failed: kind=%s status=%s type=%s msg=%s",
+                err.error_kind, err.status_code, type(e).__name__,
+                _redact(str(e)[:240]),
+            )
+            raise err from e
 
         # Extract answer + sources without depending on SDK version quirks.
         answer = getattr(resp, "output_text", None) or ""
