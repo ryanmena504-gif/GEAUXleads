@@ -38,14 +38,14 @@ class FakeTable:
 
 
 APPROVABLE_FIELDS = {
-    "Leads Name": "Ashby Residence Roof Replacement",
-    "recommended action": "Call Marie about the Prytania roof permit",
+    "Leads Name": "Ashby Residence Shower Remodel",
+    "recommended action": "Call Marie about the Prytania shower remodel",
     "Contact name": "Marie Ashby",
     "Contact phone": "504-231-8890",
     "Contact email": "marie.ashby@ashbyhome.net",
     "Address": "1428 Prytania St",
     "City": "New Orleans",
-    "Opportunity type": "Roof Replacement",
+    "Opportunity type": "Shower Remodel",
     "contact confidence": "High",
     "Lead score": 78,
     "First message": "Hi Marie — saw the permit filing on Prytania.",
