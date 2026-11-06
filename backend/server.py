@@ -2453,7 +2453,9 @@ async def trigger_find_contact(opp_id: str):
 
     Runs in-app (Perplexity research + Airtable write) — no Make webhook.
     Returns immediately; the frontend polls the record until the contact
-    fields change, same UX as before.
+    fields change, same UX as before. A failed research run is also
+    written to the lead's Notes in plain English, so a failed tap is
+    visible instead of silent.
     """
     from services.contact_finder_service import run_contact_finder
 
@@ -2467,12 +2469,36 @@ async def trigger_find_contact(opp_id: str):
             result = await run_contact_finder(opp)
         except Exception as e:  # noqa: BLE001
             logger.exception("Contact Finder research failed for %s", opp_id)
+            # A failed tap must be VISIBLE on the lead, not silent: the
+            # button polls the record, and Notes is writable and watched,
+            # so appending here both preserves the failure and lets the
+            # button detect completion (same pattern as the success path).
+            # The reason is plain English from the classified error, so
+            # Ryan can tell a connection problem apart from a key problem.
+            from services.perplexity_service import PerplexityError
+
+            kind = getattr(e, "error_kind", "upstream")
+            reason = str(e) if isinstance(e, PerplexityError) else f"unexpected error: {e}"
+            note_line = (
+                f"Contact Finder: research failed — {reason} "
+                "No contact was found or changed. Try the button again later."
+            )
+            try:
+                fresh = await _bg(svc.get, opp_id)
+                existing_notes = ((fresh or {}).get("notes") or "").strip()
+                await _bg(
+                    svc.update_fields,
+                    opp_id,
+                    {"notes": f"{existing_notes}\n\n{note_line}" if existing_notes else note_line},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Contact Finder failure-note write failed for %s", opp_id)
             try:
                 get_audit_log().record(
                     action="find_contact_failed",
                     entity_id=opp_id,
                     outcome="error",
-                    reason=f"Contact Finder research failed: {e}",
+                    reason=f"Contact Finder research failed ({kind}): {e}",
                 )
             except Exception:  # noqa: BLE001
                 pass
