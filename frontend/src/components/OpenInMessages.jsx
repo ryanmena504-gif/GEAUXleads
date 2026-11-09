@@ -83,7 +83,17 @@ const buildFirstDraft = (opp, sender) => {
   // Trust ONLY safe strings from Airtable — a stored value that looks like
   // a raw AI prompt / unfilled template / empty stub is REJECTED and we
   // fall back to the hardcoded safe copy. Never send AI plumbing.
-  const airtableBody = opp?.first_message || opp?.first_contact_message || null;
+  // Prefer Draft Outreach Body: that is where the outreach writer and the
+  // morning staging actually store the personalised draft. first_message /
+  // first_contact_message are older fields and are empty on Lane-1 records
+  // (Rosa, 2026-11-09: both null, so the composer silently sent the generic
+  // fallback instead of the stored Rosa draft). Touch 2 already prefers
+  // draft_outreach_body — touch 1 now matches it.
+  const airtableBody =
+    opp?.draft_outreach_body ||
+    opp?.first_message ||
+    opp?.first_contact_message ||
+    null;
   const airtableCheck = airtableBody ? looksLikeAIPrompt(airtableBody) : { trip: true, reason: "empty" };
   const usedFallback = airtableCheck.trip;
   const rawBody = usedFallback ? fallbackBody : airtableBody;
