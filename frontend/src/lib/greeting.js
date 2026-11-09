@@ -97,6 +97,19 @@ export const buildSalutation = (candidates, opts = {}) => {
 const LEADING_GREETING_RE =
   /^\s*(?:Hi|Hey|Hello|Dear|Good\s+(?:morning|afternoon|evening))\b[^\n]{0,80}[,.!:]?\s*(?:\n+|$)/i;
 
+// Inline greeting: "Hi Jeff — Ryan, ..." — the greeting and the first
+// sentence share one line, so the line pattern below can't match (it needs
+// a newline or end-of-string within 80 chars — and on a SHORT single-line
+// body it would eat the whole sentence instead). Draft Outreach Body copy
+// from the outreach writer is written this way, so without this the
+// composer would prepend its own greeting and send a doubled "Hi Jeff,
+// Hi Jeff — ...". Strip just the greeting token (verb + optional name +
+// dash / comma / colon / bang), leaving the sentence intact. Runs BEFORE
+// the line pattern: on a greeting line ("Hi Jeff,\n...") it strips the
+// same text, so the line pattern then has nothing left to do.
+const INLINE_GREETING_RE =
+  /^\s*(?:Hi|Hey|Hello|Dear|Good\s+(?:morning|afternoon|evening))\b(?:\s+[^\n,;:!—–-]{1,40})?\s*(?:[—–-]|,|:|!)\s+/i;
+
 /**
  * stripLeadingGreeting — remove any greeting line the classifier already
  * added to the body, so the builder can prepend a single well-formed
@@ -104,6 +117,6 @@ const LEADING_GREETING_RE =
  */
 export const stripLeadingGreeting = (body) => {
   if (!body || typeof body !== "string") return body || "";
-  const trimmed = body.replace(LEADING_GREETING_RE, "");
+  const trimmed = body.replace(INLINE_GREETING_RE, "").replace(LEADING_GREETING_RE, "");
   return trimmed.replace(/^\s+/, "");
 };
