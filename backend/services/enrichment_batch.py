@@ -61,12 +61,6 @@ def max_consecutive_failures() -> int:
     return _env_int("ENRICHMENT_MAX_CONSECUTIVE_FAILURES", 3, 1, 10)
 
 
-def auto_enrichment_enabled() -> bool:
-    return (os.environ.get("ENRICHMENT_AUTO_ENABLED") or "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-
-
 def _sort_key(opp: Dict[str, Any]):
     has_address = 0 if (opp.get("project_address") or "").strip() else 1
     days = -(opp.get("days_on_table") or 0)
@@ -453,43 +447,3 @@ async def run_for_service(
         )
 
 
-async def enrichment_scheduler() -> None:
-    """Daily loop. Off unless ENRICHMENT_AUTO_ENABLED is true.
-
-    The first pass waits ENRICHMENT_START_DELAY_SECONDS (default 10 minutes)
-    so a crash loop cannot spend the day's cap on every boot.
-    """
-    if not auto_enrichment_enabled():
-        log.info(
-            "Contact enrichment scheduler is off. "
-            "Set ENRICHMENT_AUTO_ENABLED=true to run it once a day."
-        )
-        return
-    delay = _env_int("ENRICHMENT_START_DELAY_SECONDS", 600, 0, 86400)
-    interval = _env_int("ENRICHMENT_INTERVAL_HOURS", 24, 1, 168) * 3600
-    log.info(
-        "Contact enrichment scheduler on: first run in %ss, then every %ss, cap %s",
-        delay, interval, daily_cap(),
-    )
-    try:
-        await asyncio.sleep(delay)
-        while True:
-            try:
-                from services.opportunity_service import get_opportunity_service
-                svc = get_opportunity_service()
-                if svc is None:
-                    log.warning("scheduled enrichment skipped — no opportunity service")
-                else:
-                    stats = await run_for_service(svc)
-                    log.info(
-                        "scheduled enrichment: processed=%s found=%s failed=%s stopped=%s",
-                        stats.get("processed"),
-                        stats.get("contact_found"),
-                        stats.get("failed"),
-                        stats.get("stopped_early"),
-                    )
-            except Exception:
-                log.exception("scheduled enrichment failed")
-            await asyncio.sleep(interval)
-    except asyncio.CancelledError:
-        raise

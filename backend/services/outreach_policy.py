@@ -600,6 +600,50 @@ def evaluate(
     )
 
 
+# Status cells the send button checks, including the raw Airtable value that
+# sits behind a derived `status`. Approve's lookup stops at the first
+# non-blank alias, so a derived status can hide "Do Not Contact" on the raw
+# cell. Sending must still see it.
+_SEND_DNC_FIELDS = (
+    "status",
+    "status_raw",
+    "approval_status",
+    "outreach_status",
+    "hunt_status",
+    "risk_flags",
+)
+
+
+def _text_has_dnc(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_text_has_dnc(item) for item in value)
+    text = " ".join(str(value).lower().replace("_", " ").replace("-", " ").split())
+    needles = tuple(
+        " ".join(token.lower().replace("_", " ").replace("-", " ").split())
+        for token in STATUS_DNC_TOKENS
+    )
+    return any(needle in text for needle in needles)
+
+
+def do_not_contact_message(record: Dict[str, Any]) -> Optional[str]:
+    """Why Email Now must refuse, or None when this lead is not off-limits.
+
+    The same Do Not Contact rule approve uses (`marked_do_not_contact`),
+    plus the raw status fields that rule can miss. Other approve blockers
+    (score, category, already contacted) do not apply here: a follow-up
+    Ryan taps is still a send he chose.
+    """
+    for key in _SEND_DNC_FIELDS:
+        if _text_has_dnc(record.get(key)):
+            return "This lead is marked Do Not Contact. Nothing was sent."
+    result = evaluate(record, duplicate_of=record.get("duplicate_of"))
+    if any(f.code == "marked_do_not_contact" for f in result.blockers):
+        return "This lead is marked Do Not Contact. Nothing was sent."
+    return None
+
+
 def computed_readiness(record: Dict[str, Any],
                        duplicate_of: Optional[str] = None) -> Dict[str, Any]:
     """Live-field readiness summary for the detail UI.

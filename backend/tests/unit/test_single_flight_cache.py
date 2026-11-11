@@ -75,3 +75,18 @@ def test_opportunity_cache_refreshes_once_under_concurrency():
     svc._ingestion = _Ingest()
     _hammer(svc._refresh_cache)
     assert svc._table.calls == 1
+
+
+def test_leads_cache_refreshes_once_under_concurrency():
+    from services.leads_service import LeadsAirtableService as Svc
+    svc = Svc.__new__(Svc)
+    svc._table = SlowTable()
+    svc._cache_ttl = 60.0
+    svc._lock = threading.Lock()
+    svc._refresh_gate = threading.Lock()
+    svc._cache = {}
+    svc._last_refresh = 0.0
+    svc._duplicate_index = {}
+    svc._record_to_dto = lambda r: {"id": r["id"], "name": "A"}
+    _hammer(svc._refresh_cache)
+    assert svc._table.calls == 1

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import TopHeader from "@/components/TopHeader";
 import PlaybookEditor from "@/components/PlaybookEditor";
 import { api } from "@/lib/api";
+import { LOCK_EVENT, authHeaders, clearPassword } from "@/lib/password";
 import { Database, Zap, ShieldCheck, Radio, RefreshCw, Command, BookMarked, Mail, Save, Phone, Tags } from "lucide-react";
 import { SOURCES } from "@/lib/constants";
 import { sourceLabel } from "@/lib/formatters";
@@ -289,6 +290,7 @@ const Settings = () => {
     try {
       const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/admin/reload`, {
         method: "POST",
+        headers: authHeaders(),
       });
       const data = await res.json();
       toast.success(`Backend reloaded — now on ${data.backend}`);
@@ -321,6 +323,17 @@ const Settings = () => {
             Data sources
           </div>
           <div className="flex items-baseline justify-end mb-3">
+            <button
+              type="button"
+              onClick={() => {
+                clearPassword();
+                window.dispatchEvent(new CustomEvent(LOCK_EVENT, { detail: { code: "unauthorized" } }));
+              }}
+              data-testid="settings-sign-out"
+              className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-3)] hover:text-[var(--bh-ink)] mr-4"
+            >
+              Sign out of this phone
+            </button>
             <button
               onClick={reload}
               disabled={reloading}

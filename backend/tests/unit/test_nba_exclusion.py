@@ -184,8 +184,12 @@ def test_next_best_action_route_returns_json_pick(monkeypatch):
 
     svc = make_service({"rec1": {**BASE, "Lead score": 80}})
     monkeypatch.setattr(server, "get_leads_service", lambda: svc)
+    monkeypatch.setenv("APP_PASSWORD", "test-password")
     with TestClient(server.app) as client:
-        response = client.get("/api/leads/next-best-action")
+        response = client.get(
+            "/api/leads/next-best-action",
+            headers={"X-App-Password": "test-password"},
+        )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     body = response.json()

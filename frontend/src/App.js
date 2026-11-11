@@ -2,6 +2,7 @@ import "@/App.css";
 import { lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
+import LockScreen from "@/components/LockScreen";
 
 import AppLayout from "@/layouts/AppLayout";
 import CommandCenter from "@/pages/CommandCenter";
@@ -25,6 +26,7 @@ const WarmupScoreboard = lazy(() => import("@/pages/WarmupScoreboard"));
 
 function App() {
   return (
+    <LockScreen>
     <div className="App">
       <BrowserRouter>
         <Routes>
@@ -51,6 +53,7 @@ function App() {
       </BrowserRouter>
       <Toaster richColors position="top-right" theme="light" />
     </div>
+    </LockScreen>
   );
 }
 

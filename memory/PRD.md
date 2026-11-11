@@ -274,9 +274,10 @@ Ryan's daily 7am glance — one email + an in-app panel from the same source.
   Estimate deadlines (`outreach_status ∈ {Estimate requested, Estimate sent}` ≥ 7 days).
 - Endpoints: `GET /api/morning-brief/preview` (frontend + testing) and
   `POST /api/morning-brief/send-now` (Settings "test send" hook).
-- Cron: `.emergent/crons.yml` fires `POST /api/cron/morning-brief` at
-  07:00 America/Chicago; the endpoint requires `Bearer WEBHOOK_CRON_SECRET`
-  and background-schedules the send so the platform gets an immediate 2xx.
+- The old Emergent schedule file has been removed. It does not run on Render.
+  `POST /api/cron/morning-brief` still exists. A caller must send
+  `X-App-Password` and `X-Cron-Secret`. Nothing in the repo schedules it.
+  Morning research is the Render cron in `docs/RENDER_SETUP.md`.
 - Delivery: Emergent-managed Resend via the guardrail-gated
   `send_outreach_email` helper (G2 + G3 structural checks on every send).
   Recipient is `user_settings.sender_email` — currently

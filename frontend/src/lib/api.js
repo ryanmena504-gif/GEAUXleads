@@ -1,9 +1,28 @@
 import axios from "axios";
+import { getPassword, noteUnauthorized } from "@/lib/password";
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BASE}/api`;
 
 const client = axios.create({ baseURL: API, timeout: 30000 });
+
+client.interceptors.request.use((config) => {
+  const password = getPassword();
+  if (password) {
+    config.headers["X-App-Password"] = password;
+  }
+  return config;
+});
+
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const body = error?.response?.data;
+    if (status) noteUnauthorized(status, body);
+    return Promise.reject(error);
+  },
+);
 
 export const api = {
   post: (path, data = {}) => client.post(path, data).then((r) => r.data),
@@ -67,16 +86,16 @@ export const api = {
   research: (payload) =>
     client.post("/research", payload).then((r) => r.data),
   researchStatus: () =>
-    axios.get(`${BASE}/api/research/status`).then((r) => r.data),
+    client.get("/research/status").then((r) => r.data),
 
   // Twilio Number Lookup — read-only carrier / line type / caller name.
   // Feature-flagged; returns 503 when TWILIO_ACCOUNT_SID / TOKEN missing.
   twilioLookup: (number) =>
-    axios
-      .get(`${BASE}/api/lookup/twilio/${encodeURIComponent(number)}`)
+    client
+      .get(`/lookup/twilio/${encodeURIComponent(number)}`)
       .then((r) => r.data),
   twilioLookupStatus: () =>
-    axios.get(`${BASE}/api/lookup/twilio/status`).then((r) => r.data),
+    client.get("/lookup/twilio/status").then((r) => r.data),
 
   // On-demand portfolio check (Make webhook; returns 503 when not configured)
   portfolioCheck: (id) =>

@@ -1,6 +1,11 @@
 # RESTORE.md — merge the best of both versions
 
-**Goal:** MERGE, don't overwrite. The Railway app keeps its newer pages and gets back the
+This file is a September 2026 snapshot. The live site is on Render now
+(`https://geauxleads.onrender.com` and `https://geauxleads-1.onrender.com`),
+not Railway. The steps below describe that old merge. Do not treat them as
+the current deploy instructions. Current setup is `docs/RENDER_SETUP.md`.
+
+**Goal:** MERGE, don't overwrite. The app at the time kept its newer pages and got back the
 parts that worked on the Emergent version (https://hound-priorities.emergent.host, captured
 Sep 25, 2026). **Do not delete, hide, or replace any existing Railway page, feature, or
 component.** If two things conflict, stop and ask Ryan which one wins.

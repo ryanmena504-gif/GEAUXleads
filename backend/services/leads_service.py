@@ -201,6 +201,10 @@ class LeadsAirtableService:
         self._table_id: Optional[str] = None
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
+        # One download at a time. A second overlapping read waits, or
+        # serves the copy it already has. Two full-table downloads at
+        # once tripped Airtable's 5-per-second limit on 2026-10-03.
+        self._refresh_gate = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
         self._last_refresh: float = 0.0
@@ -240,6 +244,21 @@ class LeadsAirtableService:
         now = time.time()
         if not force and (now - self._last_refresh) < self._cache_ttl and self._cache:
             return
+        have_stale = bool(self._cache)
+        gate = getattr(self, "_refresh_gate", None)
+        if gate is None:
+            gate = threading.Lock()
+            self._refresh_gate = gate
+        if not gate.acquire(blocking=force or not have_stale):
+            return
+        try:
+            if not force and (time.time() - self._last_refresh) < self._cache_ttl and self._cache:
+                return
+            self._refresh_cache_locked()
+        finally:
+            gate.release()
+
+    def _refresh_cache_locked(self) -> None:
         try:
             records = self._table.all()
         except Exception:
@@ -254,7 +273,7 @@ class LeadsAirtableService:
         with self._lock:
             self._cache = new_cache
             self._duplicate_index = index
-            self._last_refresh = now
+            self._last_refresh = time.time()
 
     def _record_to_dto(self, record: Dict[str, Any]) -> Dict[str, Any]:
         fields = record.get("fields", {}) or {}
