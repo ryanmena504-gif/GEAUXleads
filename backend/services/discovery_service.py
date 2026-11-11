@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 
 log = logging.getLogger("bloodhound.discovery")
 
@@ -127,7 +128,8 @@ class DiscoveryReader:
         self._table = self._api.table(base_id, table_name)
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
-        # Single-flight: only one thread downloads the table at a time.
+        # This reader's gate. The download goes through the shared list guard
+        # so it cannot page Airtable beside the leads or dashboard readers.
         self._refresh_lock = threading.Lock()
         self._cache: List[Dict[str, Any]] = []
         self._last_refresh: float = 0.0
@@ -154,10 +156,8 @@ class DiscoveryReader:
             if not self._needs_refresh():
                 return list(self._cache)
             have_stale = self._last_refresh > 0
-        # Single-flight: concurrent callers must not each download the whole
-        # table — that trips Airtable's 5 req/s limit (30s lockout). If a
-        # refresh is already running, serve the stale copy when there is one,
-        # otherwise wait for that refresh instead of starting another.
+        # If a refresh is already running, serve the stale copy when there is
+        # one, otherwise wait for that refresh instead of starting another.
         if not self._refresh_lock.acquire(blocking=not have_stale):
             with self._lock:
                 return list(self._cache)
@@ -171,7 +171,11 @@ class DiscoveryReader:
 
     def _fetch(self) -> List[Dict[str, Any]]:
         try:
-            records = self._table.all()
+            records = fetch_all(
+                key_for_reader(self, self._table),
+                self._table.all,
+                ttl=self._cache_ttl,
+            )
             items = [self._record_to_dict(r) for r in records]
             with self._lock:
                 self._cache = items
@@ -213,6 +217,7 @@ class DiscoveryReader:
                 msg,
             )
             raise RuntimeError(f"Airtable patch failed: {msg}") from e
+        invalidate_reader(self, self._table)
         with self._lock:
             # Force refresh next .all()
             self._last_refresh = 0.0

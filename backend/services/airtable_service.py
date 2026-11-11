@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 
 from services import aggregations, dedupe, ingestion_diagnostics
 from services.field_norm import publish_opportunity_contacts, resolved_email, resolved_phone
@@ -1143,21 +1144,20 @@ class AirtableOpportunityService:
         now = time.time()
         if not force and (now - self._last_refresh) < self._cache_ttl and self._cache:
             return
-        # Single-flight: concurrent requests must not each re-download the
-        # whole Leads table — that trips Airtable's 5 req/s limit (30s
-        # lockout) and froze prod on 2026-10-03. If a refresh is running,
-        # serve the stale cache when there is one, else wait for it.
+        # This reader's gate: if a refresh is running, serve the stale cache
+        # when there is one, else wait. The download itself is shared with
+        # the leads reader so the two cannot page the table in parallel.
         have_stale = bool(self._cache)
         if not self._refresh_gate.acquire(blocking=force or not have_stale):
             return
         try:
             if not force and (time.time() - self._last_refresh) < self._cache_ttl and self._cache:
                 return  # another thread refreshed while we waited
-            self._refresh_cache_locked(now)
+            self._refresh_cache_locked(now, force)
         finally:
             self._refresh_gate.release()
 
-    def _refresh_cache_locked(self, now: float) -> None:
+    def _refresh_cache_locked(self, now: float, force: bool = False) -> None:
         with self._lock:
             self._refreshing = True
             self._refresh_started = now
@@ -1167,7 +1167,12 @@ class AirtableOpportunityService:
             if delay:
                 time.sleep(delay)
             try:
-                records = self._table.all()
+                records = fetch_all(
+                    key_for_reader(self, self._table),
+                    self._table.all,
+                    ttl=self._cache_ttl,
+                    force=force,
+                )
                 new_cache: Dict[str, Dict[str, Any]] = {}
                 self._ingestion.start()
                 for r in records:
@@ -1432,6 +1437,7 @@ class AirtableOpportunityService:
             # typecast=True lets Airtable auto-add new single-select options when
             # the PAT is base-editor. Falls back to normal 422 otherwise.
             self._table.update(opp_id, allowed, typecast=True)
+            invalidate_reader(self, self._table)
         except Exception as e:
             log.exception("Airtable: update failed for %s", opp_id)
             status = 422

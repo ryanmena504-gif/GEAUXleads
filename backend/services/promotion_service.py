@@ -25,6 +25,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 from services.rejection_service import reason_for
 
 log = logging.getLogger("bloodhound.promotion")
@@ -201,6 +202,8 @@ class PromotionService:
 
     def __init__(self, api_key: str, base_id: str, leads_table: str):
         api = make_api(api_key)
+        self._base_id = base_id
+        self._table_name = RAW_SIGNALS_TABLE
         self._raw = api.table(base_id, RAW_SIGNALS_TABLE)
         self._leads = api.table(base_id, leads_table)
         self._lock = threading.Lock()
@@ -211,13 +214,27 @@ class PromotionService:
         with self._lock:
             if self._cache is not None and time.time() - self._cached_at < self.CACHE_TTL:
                 return list(self._cache)
-            records = self._raw.all(formula=WAITING_FORMULA, fields=list(R.values()),
-                                    use_field_ids=True)
+            records = fetch_all(
+                key_for_reader(
+                    self,
+                    self._raw,
+                    formula=WAITING_FORMULA,
+                    fields=tuple(R.values()),
+                    use_field_ids=True,
+                ),
+                lambda: self._raw.all(
+                    formula=WAITING_FORMULA,
+                    fields=list(R.values()),
+                    use_field_ids=True,
+                ),
+                ttl=self.CACHE_TTL,
+            )
             items = sorted((signal_dto(r) for r in records), key=_rank)
             self._cache, self._cached_at = items, time.time()
             return list(items)
 
     def _invalidate(self) -> None:
+        invalidate_reader(self, self._raw)
         with self._lock:
             self._cache = None
 
