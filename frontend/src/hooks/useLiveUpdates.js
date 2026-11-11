@@ -6,6 +6,7 @@
  * connection drops.
  */
 import { useEffect, useRef } from "react";
+import { authHeaders, getPassword } from "@/lib/password";
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
 
@@ -20,7 +21,10 @@ export const useLiveUpdates = (onUpdate) => {
     let closed = false;
 
     const connect = () => {
-      es = new EventSource(`${BASE}/api/live/stream`);
+      const password = getPassword();
+      const stream = new URL(`${BASE}/api/live/stream`);
+      if (password) stream.searchParams.set("access_key", password);
+      es = new EventSource(stream.toString());
       es.addEventListener("ready", () => {
         retryDelay = 1500;
       });
@@ -46,7 +50,7 @@ export const useLiveUpdates = (onUpdate) => {
     // will only ever return 503. Skip the reconnect loop entirely so we
     // don't hammer the server with retries.
     let cancelled = false;
-    fetch(`${BASE}/api/live/status`)
+    fetch(`${BASE}/api/live/status`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : { registered: false }))
       .then((s) => {
         if (cancelled) return;

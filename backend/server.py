@@ -5,7 +5,6 @@ from starlette.middleware.cors import CORSMiddleware
 import os
 import json
 import asyncio
-import hmac
 import httpx
 import logging
 from contextlib import asynccontextmanager
@@ -43,7 +42,7 @@ load_dotenv(ROOT_DIR / '.env')
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Worker pool for _bg(): the default is min(32, cpu+4), which on a small
-    # Railway container is ~5 threads — a few slow Airtable reads can starve
+    # Render container is ~5 threads — a few slow Airtable reads can starve
     # every other request. Airtable calls are I/O-bound, so a wider pool is cheap.
     from concurrent.futures import ThreadPoolExecutor
     asyncio.get_running_loop().set_default_executor(
@@ -58,31 +57,26 @@ async def lifespan(_app: FastAPI):
         get_slack_alerter()
     except Exception:
         logging.getLogger("bloodhound").exception("Slack alerter init failed at startup")
-    # Daily contact enrichment. Off unless ENRICHMENT_AUTO_ENABLED=true,
-    # so a deploy does not spend Perplexity credits until Ryan turns it on.
-    enrichment_task = None
-    try:
-        from services.enrichment_batch import enrichment_scheduler
-        enrichment_task = asyncio.create_task(enrichment_scheduler())
-    except Exception:
-        logging.getLogger("bloodhound").exception("Enrichment scheduler failed to start")
+    # Research does not start from this process. A restart used to arm a
+    # 24-hour timer and could spend the day's cap ten minutes after every
+    # deploy. The morning cron calls POST /api/enrichment/run instead.
     yield
     # Shutdown: best-effort webhook cleanup.
-    if enrichment_task is not None:
-        enrichment_task.cancel()
-        try:
-            await enrichment_task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logging.getLogger("bloodhound").exception("Enrichment scheduler shutdown failed")
     try:
         await shutdown_webhook_manager()
     except Exception:
         pass
 
 
-app = FastAPI(title="GEAUXleads Intelligence API", lifespan=lifespan)
+# The public /docs map listed every button, including send and research.
+# Ryan uses the website, not the schema browser.
+app = FastAPI(
+    title="GEAUXleads Intelligence API",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO,
@@ -137,8 +131,53 @@ async def root():
 
 @api_router.get("/health")
 async def health():
+    """Cheap liveness check. Stays open, and does not load the leads list.
+
+    A deleted line once crashed every /api/leads route while this check
+    still returned ok. Use /api/health/deep after a deploy to prove the
+    leads path. Do not poll deep on a timer: each miss re-reads Airtable.
+    """
     svc = get_opportunity_service()
     return {"ok": True, "backend": svc.backend_name, "count": await _bg(svc.count, )}
+
+
+@api_router.get("/health/deep")
+async def health_deep():
+    """Load the leads list. Open on purpose, and it returns counts only.
+
+    A NameError in the leads service (the deleted `_singleton` line)
+    shows up here as ok: false. Lead names, phones, and emails do not.
+    """
+    errors = []
+    opp_count = None
+    lead_count = None
+    backend = None
+    try:
+        svc = get_opportunity_service()
+        backend = svc.backend_name
+        opp_count = await _bg(svc.count)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("deep health: opportunities failed")
+        errors.append(f"opportunities: {type(exc).__name__}")
+    try:
+        leads = get_leads_service()
+        if leads is None:
+            errors.append("leads: service is not available")
+        else:
+            lead_count = len(await _bg(leads.all))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("deep health: leads failed")
+        errors.append(f"leads: {type(exc).__name__}")
+    body = {
+        "ok": not errors,
+        "backend": backend,
+        "opportunities": opp_count,
+        "leads": lead_count,
+        "errors": errors,
+    }
+    if errors:
+        return JSONResponse(status_code=503, content=body)
+    return body
 
 
 @api_router.get("/opportunities")
@@ -1689,36 +1728,35 @@ async def _deliver_morning_brief(force: bool = False) -> Dict[str, Any]:
 
 
 @api_router.post("/morning-brief/send-now")
-async def morning_brief_send_now(authorization: Optional[str] = Header(None)):
-    """Trigger a live send immediately. Bearer-gated so a stranger who
-    knows the backend URL cannot fire real Resend emails against Ryan's
-    inbox or burn his Resend quota. Same secret as `/api/cron/morning-brief`.
+async def morning_brief_send_now():
+    """Send the brief now. The phone password (checked on every route)
+    is what keeps a stranger from firing it. Ryan taps this while signed in.
     """
-    if not _bearer_matches(authorization):
-        raise HTTPException(status_code=401, detail="Unauthorized")
     # Manual test-fire bypasses the hour gate so Ryan can preview delivery
     # regardless of what time it is.
     return await _deliver_morning_brief(force=True)
 
 
-def _bearer_matches(auth_header: Optional[str]) -> bool:
-    expected = os.environ.get("WEBHOOK_CRON_SECRET") or ""
-    if not expected or not auth_header:
-        return False
-    if not auth_header.lower().startswith("bearer "):
-        return False
-    token = auth_header.split(" ", 1)[1].strip()
-    return hmac.compare_digest(token, expected)
+def _cron_guard(supplied: Optional[str]) -> None:
+    """Refuse the morning job unless WEBHOOK_CRON_SECRET matches.
+
+    The phone password is checked separately, on every route. This is
+    the second key, so signing into the website cannot start the batch.
+    """
+    from services.access_control import cron_failure
+    failure = cron_failure(supplied)
+    if failure:
+        status = 503 if failure.get("error") == "cron_secret_not_configured" else 401
+        raise HTTPException(status_code=status, detail=failure["detail"])
 
 
 @api_router.post("/cron/morning-brief")
 async def cron_morning_brief(
     background: BackgroundTasks,
-    authorization: Optional[str] = Header(None),
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
 ):
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
-    if not _bearer_matches(authorization):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _cron_guard(x_cron_secret)
     background.add_task(_deliver_morning_brief)
     return {"accepted": True}
 
@@ -2512,15 +2550,21 @@ async def _trigger_record_agent(opp_id: str, env_name: str, label: str,
 
 
 @api_router.post("/enrichment/run")
-async def run_enrichment(dry_run: bool = False):
+async def run_enrichment(
+    dry_run: bool = False,
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+):
     """Research leads that are Ready for research or Needs Public Contact.
 
-    One Perplexity call per lead, up to ENRICHMENT_DAILY_CAP per day
-    (default 10). A failed call is not retried; three failures in a row
-    stop the run. `dry_run=true` lists who would be researched and
+    The morning cron is the caller. It must send the phone password and
+    X-Cron-Secret. One Perplexity call per lead, up to ENRICHMENT_DAILY_CAP
+    per day (default 10). A failed call is not retried; three failures in
+    a row stop the run. `dry_run=true` lists who would be researched and
     spends nothing. Drafts a first message when a lead becomes Contact
-    Ready. Nothing is sent.
+    Ready. Nothing is sent. The 25-lead Fresh Intel scan is not on this
+    schedule.
     """
+    _cron_guard(x_cron_secret)
     from services.enrichment_batch import run_for_service
 
     svc = get_opportunity_service()
@@ -2738,6 +2782,8 @@ async def send_email_now(opp_id: str, request: Request):
     next follow-up, touch 4 closes as Lost). An SMTP failure returns 502
     and logs nothing, so a failed send can never look like a sent touch.
     Refuses with 422 once all 4 touches are used, same as /result.
+    Refuses with 409 when the lead is marked Do Not Contact, the same
+    rule approve uses. Nothing is sent in that case.
     """
     from services.followup_sequence import advance as _advance_touch, coerce_attempt as _coerce_attempt
     from services.gmail_send_service import send_email as gmail_send
@@ -2746,6 +2792,11 @@ async def send_email_now(opp_id: str, request: Request):
     opp = await _bg(svc.get, opp_id)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    from services.outreach_policy import do_not_contact_message
+    banned = do_not_contact_message(opp)
+    if banned:
+        raise HTTPException(status_code=409, detail=banned)
 
     posted = {}
     try:
@@ -2827,6 +2878,29 @@ async def send_email_now(opp_id: str, request: Request):
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).
 app.include_router(api_router)
+
+
+@app.middleware("http")
+async def require_app_password(request: Request, call_next):
+    """Lock every route except the health checks.
+
+    Missing APP_PASSWORD fails closed (503) so a deploy without the
+    setting cannot leave the lead list public. The phone screen reads
+    that 503 and shows the Render steps.
+    """
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    path = request.url.path
+    if not path.startswith("/api/") or path.rstrip("/") in ("/api/health", "/api/health/deep"):
+        return await call_next(request)
+    from services.access_control import password_failure, presented_app_password
+    supplied = presented_app_password(request.headers, request.query_params, path)
+    failure = password_failure(supplied)
+    if failure:
+        status = 503 if failure.get("error") == "password_not_configured" else 401
+        return JSONResponse(status_code=status, content=failure)
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

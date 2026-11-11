@@ -1,6 +1,8 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { Flame, Snowflake, Sparkles, Clock, Plus, Download } from "lucide-react";
+import { toast } from "sonner";
+import { authHeaders, noteUnauthorized } from "@/lib/password";
 
 /**
  * URL-driven saved-view chips. Bookmarkable. Does not create a second
@@ -21,6 +23,25 @@ export const SavedViewsBar = ({ scope = "opportunities", exportHref, testId = "s
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get("view") || "";
   const views = VIEWS[scope] || [];
+
+  const exportCsv = async (event) => {
+    event.preventDefault();
+    try {
+      const res = await fetch(exportHref, { headers: authHeaders() });
+      const body = await res.clone().json().catch(() => ({}));
+      if (noteUnauthorized(res.status, body)) return;
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "opportunities.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Couldn't download the CSV");
+    }
+  };
 
   const applyView = (params) => {
     const next = new URLSearchParams(searchParams);
@@ -70,14 +91,14 @@ export const SavedViewsBar = ({ scope = "opportunities", exportHref, testId = "s
         );
       })}
       {exportHref && (
-        <a
-          href={exportHref}
+        <button
+          type="button"
+          onClick={exportCsv}
           data-testid={`${testId}-export`}
           className="ml-auto inline-flex items-center gap-1.5 h-11 sm:h-8 px-3 rounded-md text-[12px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)]"
-          download
         >
           <Download size={11} strokeWidth={1.75} /> Export CSV
-        </a>
+        </button>
       )}
     </div>
   );

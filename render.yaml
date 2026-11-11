@@ -1,0 +1,28 @@
+# Morning research only.
+#
+# This file does not describe the website or the API. Those already exist
+# in the Render dashboard. Applying this blueprint should add one cron job.
+# If Render offers to change or recreate the existing web services, stop
+# and create the cron by hand instead. The click path is in
+# docs/RENDER_SETUP.md.
+#
+# The schedule is hourly on purpose. Render's clock is UTC. The script
+# exits immediately unless it is 7am in America/Chicago, so daylight
+# saving time does not move the run to 8am. Outside that hour it does
+# not call the API and does not spend research money.
+
+services:
+  - type: cron
+    name: geauxleads-morning-research
+    runtime: python
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: python --version
+    startCommand: python backend/scripts/morning_enrichment.py
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: WEBHOOK_CRON_SECRET
+        sync: false
+      - key: PUBLIC_BACKEND_URL
+        sync: false

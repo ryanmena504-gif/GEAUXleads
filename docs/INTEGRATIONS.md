@@ -1,15 +1,18 @@
 # Integration boundaries
 
-## Messaging dispatch — not connected
+## Messaging
 
-**This application does not send messages.** Approving a lead writes
-`Approval status` and `Outreach status` on the Airtable record and nothing else.
-No SMS, email, or webhook leaves the process.
+**Approving a lead does not send a message.** Approve writes
+`Approval status` on the Airtable record. No SMS, email, or webhook leaves
+the process for that action.
 
-This is stated explicitly because the UI wording ("Approve & Send") reads as if
-it dispatches, and an operator who believes a message went out will behave
-differently from one who knows it did not. The approve response carries the
-disclaimer verbatim:
+**Email Now does send, and only when Ryan taps it.** `POST /api/opportunities/{id}/send-email`
+sends that draft from Ryan's Gmail and then logs the touch. It refuses, and
+sends nothing, when the lead is marked Do Not Contact. That is the same
+Do Not Contact rule approve uses. Nothing on a timer sends mail to a lead.
+
+The UI wording "Approve & Send" can still be read as if approve itself
+dispatches. It does not. The approve response carries the disclaimer verbatim:
 
 ```json
 {
@@ -23,8 +26,9 @@ Downstream delivery, if it happens, is a Make.com scenario watching the
 
 ## The contract a future dispatcher must honour
 
-When dispatch is wired up — here or in Make — it must satisfy the following.
-The pieces are already in place; only the send call is missing.
+Approve still does not send. If a dispatcher is later wired to that approve
+action, here or in Make, it must satisfy the following. Email Now is a
+different path: Ryan taps it, one email goes out, and it is not this dispatcher.
 
 ### 1. Idempotency key
 

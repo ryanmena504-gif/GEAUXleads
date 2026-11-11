@@ -4,7 +4,7 @@
  * page throws (ReferenceError from a dropped import, a crash caught by
  * RouteErrorBoundary, or an uncaught error in the console).
  *
- * Needs Playwright (not a project dependency, so Railway builds stay lean):
+ * Needs Playwright (not a project dependency, so the Render frontend build stays lean):
  *   npx -p playwright@1 node scripts/smoke-routes.js
  *
  * Usage:

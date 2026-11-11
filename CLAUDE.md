@@ -38,9 +38,11 @@ kind usually have in-house maintenance and are weak targets.
   surface class `bh-surface`)
 - **Database:** Airtable (live). No local DB. Sample-data fallback exists but production runs
   on the real base.
-- **Deploy:** Railway, two services from this repo's `main` branch —
-  `geauxleads-frontend-production` (static React build) and `geauxleads-production` (FastAPI).
-  Pushes to `main` auto-deploy. **Treat every push to `main` as a production release.**
+- **Deploy:** Render, two services from this repo's `main` branch —
+  the static website at `https://geauxleads-1.onrender.com` and the API at
+  `https://geauxleads.onrender.com`. Pushes to `main` auto-deploy.
+  **Treat every push to `main` as a production release.** The morning
+  research job is a separate Render cron, described in `docs/RENDER_SETUP.md`.
 
 ## Airtable — shared base, many writers
 
@@ -96,17 +98,23 @@ on the same failure, and it is not allowed to send anything.
   public permit and assessor records.
 - Deleting live records is not part of research. Don't delete them from a batch.
 
-Automatic research is `POST /api/enrichment/run` (and the same batch at the end of
-`POST /api/digest/fresh-intel/run`, unless that review just died on consecutive
-failures). It runs on a timer only when `ENRICHMENT_AUTO_ENABLED=true`. The daily
-cap is `ENRICHMENT_DAILY_CAP` (default 10). See `docs/MAKE_FIXES.md` for the Make
-steps this repo cannot do.
+Automatic research is `POST /api/enrichment/run`. A Render cron runs
+`backend/scripts/morning_enrichment.py` every hour, and that script calls
+the route only when it is 7am in America/Chicago. The website process does
+not start research on its own. `ENRICHMENT_AUTO_ENABLED` is no longer read.
+The route requires the phone password and `X-Cron-Secret`
+(`WEBHOOK_CRON_SECRET`). The daily cap is `ENRICHMENT_DAILY_CAP` (default 10).
+`POST /api/digest/fresh-intel/run` can still run the same batch at the end of
+a review, but nothing on a schedule calls it. See `docs/RENDER_SETUP.md` and
+`docs/MAKE_FIXES.md`.
 
 ## Outreach policy (non-negotiable)
 
-Nothing in GEAUXleads sends messages automatically. The app may generate drafts and open
-draft links (SMS/email/iPhone Messages); Ryan sends manually. `Outreach Gate` fields,
-Campaign approval, and the Suppression List all have to pass.
+Nothing in GEAUXleads sends messages on its own. The app may generate drafts and open
+draft links (SMS/email/iPhone Messages). Tapping **Email Now** sends that draft from
+Ryan's Gmail and then logs the touch. That button refuses a lead marked Do Not Contact,
+using the same rule as approve. Research and the morning batch only write drafts.
+`Outreach Gate` fields, Campaign approval, and the Suppression List all have to pass.
 - Frontend gate: `outreachAllowed(opp)` in `frontend/src/lib/queue.js` — the single global gate
   for all messaging/draft controls.
 - Backend mirror: `backend/services/outreach_policy.py`. Keep both in sync.
@@ -188,16 +196,19 @@ Nav labels live in `frontend/src/components/Sidebar.jsx`. The `/` route is label
 
 Backend (Render): `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`, `AIRTABLE_OPPORTUNITIES_TABLE`,
 `AIRTABLE_ENABLED=true`, `PERPLEXITY_API_KEY`, `OPENAI_API_KEY`.
+`APP_PASSWORD` locks every API route except `/api/health` and `/api/health/deep`.
+If it is missing, those routes answer 503 and the phone shows the setup steps
+in `docs/RENDER_SETUP.md`. `WEBHOOK_CRON_SECRET` is the extra header
+(`X-Cron-Secret`) the morning research job sends.
 Contact research (optional, see the research rules above):
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `ENRICHMENT_AUTO_ENABLED` | off | `true` runs the contact batch once a day inside the API process |
+| `APP_PASSWORD` | unset, and the API then stays locked | Password the phone asks for once |
+| `WEBHOOK_CRON_SECRET` | unset, and the morning job refuses to run | Second secret for the cron |
 | `ENRICHMENT_DAILY_CAP` | `10` | Max leads the automatic batch may research per day. `0` pauses it |
 | `ENRICHMENT_RECHECK_DAYS` | `14` | Skip a lead checked more recently than this, unless Ryan taps Find contact |
 | `ENRICHMENT_MAX_CONSECUTIVE_FAILURES` | `3` | Stop the batch after this many paid-call failures in a row |
-| `ENRICHMENT_INTERVAL_HOURS` | `24` | How often the in-process scheduler runs, when it is enabled |
-| `ENRICHMENT_START_DELAY_SECONDS` | `600` | Wait after boot before the first automatic run |
 
 Frontend build: `REACT_APP_BACKEND_URL` (baked at build time).
 Never commit keys. Never log the API key.
@@ -235,11 +246,12 @@ Route smoke test: `cd frontend && APP_URL=<frontend url> npx -p playwright@1 nod
 
 ## Common tasks
 
-- Run backend locally: `cd backend && uvicorn server:app --reload` (needs the four Airtable env vars).
-- Frontend dev: `cd frontend && npm start` with `REACT_APP_BACKEND_URL` pointing at the Railway
-  backend or local server.
-- Verify production: `GET /api/health` should show `{"ok":true, "backend":"airtable","count":N}`;
-  `GET /api/config` shows wiring status.
+- Run backend locally: `cd backend && uvicorn server:app --reload` (needs the Airtable env vars and `APP_PASSWORD`).
+- Frontend dev: `cd frontend && npm start` with `REACT_APP_BACKEND_URL` pointing at the Render
+  API or the local server. The phone (or the browser) asks for `APP_PASSWORD` once.
+- Verify production: `GET /api/health` should show `{"ok":true, "backend":"airtable","count":N}`
+  with no password. `GET /api/health/deep` loads the leads list and returns counts only.
+  `GET /api/config` needs the password and shows wiring status.
 
 ## Definition of done for any change
 
