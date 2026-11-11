@@ -71,7 +71,9 @@ async def generate_draft(opp: Dict[str, Any]) -> Dict[str, Any]:
 
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=api_key)
+    # max_retries=0: the SDK default is 2. A failed draft is not called
+    # again automatically; the contact we already saved stays saved.
+    client = AsyncOpenAI(api_key=api_key, max_retries=0)
     user_prompt, inputs = build_prompt(opp)
 
     resp = await client.chat.completions.create(

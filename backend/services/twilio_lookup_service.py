@@ -60,6 +60,9 @@ class TwilioLookupService:
             raise RuntimeError(
                 "twilio package is not installed — run `pip install twilio`"
             )
+        # One lookup per call. The Twilio HTTP client does not retry, and
+        # this wrapper does not add a retry loop — a failed lookup is a
+        # failed lookup.
         self._client = Client(account_sid, auth_token)  # type: ignore
 
     def lookup(self, phone_number: str) -> Dict[str, Any]:

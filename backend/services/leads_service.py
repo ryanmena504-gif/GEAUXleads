@@ -64,6 +64,8 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Estimated job value": "estimated_job_value",
     "contact confidence": "contact_confidence",
     "Contact name": "contact_name",
+    "Public Contact Evidence": "public_contact_evidence",
+    "Owner Mailing Address": "owner_mailing_address",
     "Contact phone": "contact_phone",
     "Contact email": "contact_email",
     "Contact company": "contact_company",
@@ -272,6 +274,8 @@ class LeadsAirtableService:
         # panel can label the lead consistently with the rest of the dashboard.
         dto["lane"] = _derive_lane_from_lead(dto)
         dto["lane_label"] = _LANE_LABELS.get(dto["lane"], dto["lane"])
+        from services.contact_research import annotate_contact_flags
+        annotate_contact_flags(dto)
         return dto
 
     def all(self) -> List[Dict[str, Any]]:

@@ -58,8 +58,24 @@ async def lifespan(_app: FastAPI):
         get_slack_alerter()
     except Exception:
         logging.getLogger("bloodhound").exception("Slack alerter init failed at startup")
+    # Daily contact enrichment. Off unless ENRICHMENT_AUTO_ENABLED=true,
+    # so a deploy does not spend Perplexity credits until Ryan turns it on.
+    enrichment_task = None
+    try:
+        from services.enrichment_batch import enrichment_scheduler
+        enrichment_task = asyncio.create_task(enrichment_scheduler())
+    except Exception:
+        logging.getLogger("bloodhound").exception("Enrichment scheduler failed to start")
     yield
     # Shutdown: best-effort webhook cleanup.
+    if enrichment_task is not None:
+        enrichment_task.cancel()
+        try:
+            await enrichment_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logging.getLogger("bloodhound").exception("Enrichment scheduler shutdown failed")
     try:
         await shutdown_webhook_manager()
     except Exception:
@@ -2098,22 +2114,51 @@ async def create_research(req: ResearchRequest):
         "landlord_background",
         "re_agent_background",
         "owner_contact",
+        "homeowner_lookup",
+        "contact_finder",
         "general",
     ):
         raise HTTPException(status_code=400, detail="unknown research_type")
 
+    async def _save_name(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Write a parsed name onto the lead. One attempt, no paid retry."""
+        if req.research_type not in ("decision_maker", "owner_contact"):
+            return result
+        answer = (result or {}).get("answer") or ""
+        if not answer or not req.record_id:
+            return result
+        try:
+            from services.contact_research import build_name_updates
+            svc = get_opportunity_service()
+            opp = await _bg(svc.get, req.record_id)
+            if not opp:
+                return result
+            updates = build_name_updates(
+                opp, answer, force=bool(req.force_refresh)
+            )
+            if not updates:
+                return result
+            await _bg(svc.update_fields, req.record_id, updates)
+            return {**result, "saved_fields": sorted(updates)}
+        except Exception:  # noqa: BLE001
+            logger.exception("research name save failed for %s", req.record_id)
+            return result
+
     # Serve from Mongo cache unless the caller asked for a fresh call.
+    # A cache hit is not a paid call. If the cached answer carries a
+    # DECISION_MAKER / NAME line, we still save it when the field is empty.
     if not req.force_refresh:
         try:
             cached = await _research_cache.get_cached(req.research_type, req.record_id)
             if cached:
-                return cached
+                return await _save_name(cached)
         except Exception:  # noqa: BLE001
             logger.exception("research cache read failed — falling through to Perplexity")
 
     try:
         result = await _pplx_research_async(req.research_type, req.query)
     except _PerplexityError as e:
+        # The SDK is built with max_retries=0. Do not call it again here.
         headers = {"Retry-After": e.retry_after} if e.retry_after else None
         raise HTTPException(status_code=e.status_code, detail=str(e), headers=headers)
 
@@ -2122,7 +2167,7 @@ async def create_research(req: ResearchRequest):
     except Exception:  # noqa: BLE001
         logger.exception("research cache write failed — returning result anyway")
 
-    return result
+    return await _save_name(result)
 
 
 # ─── On-demand agent triggers (Make webhooks) ──────────────────────────────
@@ -2317,18 +2362,38 @@ async def run_fresh_intel_review():
     from services.daily_reviewer_service import run_daily_review
 
     svc = get_opportunity_service()
+    from services.enrichment_batch import enrich_and_persist, run_for_service
+
+    researched: set = set()
 
     async def auto_enhance(opp_id: str):
-        # Re-use the portfolio-check trigger logic directly.
-        # For now, this clears the flag (enhancement = reviewed).
-        # Full portfolio-check integration can be wired here.
-        pass
+        # Contact Finder for this lead, under the same skip rules as the
+        # batch (ready for research / needs a public contact, not checked
+        # recently). One attempt. A failure is written on the lead.
+        opp = await _bg(svc.get, opp_id)
+        if not opp:
+            return
+        await enrich_and_persist(svc, opp, force=False, seen=researched)
 
     try:
         stats = await run_daily_review(svc, auto_enhance_fn=auto_enhance)
     except Exception as e:  # noqa: BLE001
         logger.exception("daily review failed")
         raise HTTPException(status_code=502, detail=f"Daily review failed: {e}")
+
+    # The review itself is a paid scan. If it died on consecutive
+    # failures, do not start another paid batch on top of the outage.
+    if not stats.get("stopped_early"):
+        try:
+            stats["enrichment"] = await run_for_service(svc, seen=researched)
+        except Exception:  # noqa: BLE001
+            logger.exception("enrichment batch after fresh intel failed")
+            stats["enrichment"] = {"ok": False, "error": "batch failed"}
+    else:
+        stats["enrichment"] = {
+            "ok": False,
+            "skipped": "review stopped after consecutive paid-call failures",
+        }
 
     try:
         get_audit_log().record(
@@ -2446,18 +2511,50 @@ async def _trigger_record_agent(opp_id: str, env_name: str, label: str,
     return {"ok": True, "status": "triggered", "message": f"{label} running."}
 
 
+@api_router.post("/enrichment/run")
+async def run_enrichment(dry_run: bool = False):
+    """Research leads that are Ready for research or Needs Public Contact.
+
+    One Perplexity call per lead, up to ENRICHMENT_DAILY_CAP per day
+    (default 10). A failed call is not retried; three failures in a row
+    stop the run. `dry_run=true` lists who would be researched and
+    spends nothing. Drafts a first message when a lead becomes Contact
+    Ready. Nothing is sent.
+    """
+    from services.enrichment_batch import run_for_service
+
+    svc = get_opportunity_service()
+    try:
+        stats = await run_for_service(svc, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("enrichment batch failed")
+        raise HTTPException(status_code=502, detail=f"Enrichment batch failed: {e}")
+    try:
+        get_audit_log().record(
+            action="enrichment_batch",
+            entity_id="system",
+            outcome="accepted" if stats.get("ok", True) else "error",
+            reason=(
+                f"Enrichment dry_run={dry_run} processed={stats.get('processed')} "
+                f"found={stats.get('contact_found')} failed={stats.get('failed')} "
+                f"stopped={stats.get('stopped_early')}"
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return stats
+
+
 @api_router.post("/opportunities/{opp_id}/find-contact")
 async def trigger_find_contact(opp_id: str):
-    """Contact Finder agent: searches for a verified public phone/email and
-    fills Contact phone / Contact email (or notes why none exists).
+    """Contact Finder: one lookup, then write the contact onto the lead.
 
-    Runs in-app (Perplexity research + Airtable write) — no Make webhook.
-    Returns immediately; the frontend polls the record until the contact
-    fields change, same UX as before. A failed research run is also
-    written to the lead's Notes in plain English, so a failed tap is
-    visible instead of silent.
+    Residential permits use the homeowner lookup (owner, mailing address,
+    public phone/email). A failed call is marked Research failed and is
+    not retried. Returns immediately; the button polls until Notes or
+    the contact fields change. Nothing is sent to the lead.
     """
-    from services.contact_finder_service import run_contact_finder
+    from services.enrichment_batch import enrich_and_persist
 
     svc = get_opportunity_service()
     opp = await _bg(svc.get, opp_id)
@@ -2466,75 +2563,27 @@ async def trigger_find_contact(opp_id: str):
 
     async def _run():
         try:
-            result = await run_contact_finder(opp)
+            result = await enrich_and_persist(svc, opp, force=True)
         except Exception as e:  # noqa: BLE001
-            logger.exception("Contact Finder research failed for %s", opp_id)
-            # A failed tap must be VISIBLE on the lead, not silent: the
-            # button polls the record, and Notes is writable and watched,
-            # so appending here both preserves the failure and lets the
-            # button detect completion (same pattern as the success path).
-            # The reason is plain English from the classified error, so
-            # Ryan can tell a connection problem apart from a key problem.
-            from services.perplexity_service import PerplexityError
-
-            kind = getattr(e, "error_kind", "upstream")
-            reason = str(e) if isinstance(e, PerplexityError) else f"unexpected error: {e}"
-            note_line = (
-                f"Contact Finder: research failed — {reason} "
-                "No contact was found or changed. Try the button again later."
-            )
-            try:
-                fresh = await _bg(svc.get, opp_id)
-                existing_notes = ((fresh or {}).get("notes") or "").strip()
-                await _bg(
-                    svc.update_fields,
-                    opp_id,
-                    {"notes": f"{existing_notes}\n\n{note_line}" if existing_notes else note_line},
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("Contact Finder failure-note write failed for %s", opp_id)
+            logger.exception("Contact Finder failed for %s", opp_id)
             try:
                 get_audit_log().record(
                     action="find_contact_failed",
                     entity_id=opp_id,
                     outcome="error",
-                    reason=f"Contact Finder research failed ({kind}): {e}",
+                    reason=f"Contact Finder failed: {e}",
                 )
             except Exception:  # noqa: BLE001
                 pass
             return
-
-        updates = {}
-        if result.get("phone"):
-            updates["phone"] = result["phone"]
-        if result.get("email"):
-            updates["email"] = result["email"]
-        if result.get("owner_name"):
-            updates["owner"] = result["owner_name"]
-        # Always record what the research concluded, even when nothing found.
-        # Do NOT write it to evidence_summary: "Ai summary" is read-only in
-        # the Airtable schema, so that write is silently dropped and the
-        # button looks dead when no phone/email is found. Notes is writable
-        # and is also in the frontend's watchFields, so appending here both
-        # preserves the result and lets the button detect completion.
-        # Existing notes are preserved, never overwritten.
-        context = result.get("entity_context") or "Contact Finder ran: no public contact found."
-        existing_notes = (opp.get("notes") or "").strip()
-        note_line = f"Contact Finder: {context}"
-        updates["notes"] = f"{existing_notes}\n\n{note_line}" if existing_notes else note_line
-
-        try:
-            await _bg(svc.update_fields, opp_id, updates)
-        except Exception:  # noqa: BLE001
-            logger.exception("Contact Finder Airtable write failed for %s", opp_id)
-            return
-
+        outcome = (result or {}).get("outcome")
+        action = "find_contact_failed" if outcome == "failed" else "find_contact_triggered"
         try:
             get_audit_log().record(
-                action="find_contact_triggered",
+                action=action,
                 entity_id=opp_id,
-                outcome="accepted",
-                reason=f"Contact Finder completed for {opp.get('name')}",
+                outcome="error" if outcome == "failed" else "accepted",
+                reason=f"Contact Finder {outcome} for {opp.get('name')}",
             )
         except Exception:  # noqa: BLE001
             logger.exception("audit record failed — continuing anyway")

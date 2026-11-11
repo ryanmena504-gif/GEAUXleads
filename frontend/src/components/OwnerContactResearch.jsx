@@ -27,8 +27,11 @@ const OwnerContactResearch = ({ opp, onUpdated }) => {
       const phone = extractPhone(answer);
       const email = extractEmail(answer);
       setFound({ phone, email, ran: true });
+      if (result?.saved_fields?.length && opp?.id) {
+        api.getOpportunity(opp.id, { fresh: true }).then((fresh) => onUpdated?.(fresh)).catch(() => {});
+      }
     },
-    []
+    [opp?.id, onUpdated]
   );
 
   const save = useCallback(
@@ -69,7 +72,7 @@ const OwnerContactResearch = ({ opp, onUpdated }) => {
         query={query}
         onResult={handleResult}
         label={opp?.phone || opp?.email ? "Re-check owner contact" : "Find owner contact"}
-        hint="Researches the property owner for a public phone/email. Read-only until you tap Save."
+        hint="Looks up a public phone and email. A name in the answer is saved to Contact name. Phone and email wait until you tap Save. Nothing is sent."
         testId={`research-owner-contact-${opp.id}`}
       />
       {found?.ran && (

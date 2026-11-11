@@ -6,6 +6,7 @@ import LearningStrip from "@/components/LearningStrip";
 import FreshIntel from "@/components/FreshIntel";
 import Bench from "@/components/Bench";
 import OpenInMessages from "@/components/OpenInMessages";
+import { DncCheckFlag } from "@/components/DncCheckFlag";
 import PassSheet from "@/components/PassSheet";
 import { OnePhoneAway, WaitingOnYou } from "@/components/PipelineRescue";
 import { api } from "@/lib/api";
@@ -509,6 +510,11 @@ const TicketHero = ({ opp, n, busy, onSent, onPass }) => {
           </div>
         )}
       </dl>
+      {opp.dnc_check_required && (
+        <div className="px-5 pb-2">
+          <DncCheckFlag opp={opp} />
+        </div>
+      )}
       <div className="px-5 pb-5 flex flex-wrap items-center gap-2">
         <OpenInMessages opportunity={opp} variant="pill" />
         <MarkSentButton opp={opp} busy={busy} onSent={onSent} />
@@ -546,6 +552,11 @@ const TicketStub = ({ opp, n, busy, onSent, onPass }) => {
             )}
           </div>
           {why && <div className="mt-0.5 text-[12.5px] text-[var(--bh-ink-3)] line-clamp-1">{why}</div>}
+          {opp.dnc_check_required && (
+            <div className="mt-2">
+              <DncCheckFlag opp={opp} />
+            </div>
+          )}
         </Link>
         <div className="mt-2 sm:mt-0 flex items-center gap-2 shrink-0">
           <OpenInMessages opportunity={opp} variant="pill" />
@@ -695,6 +706,7 @@ const CommandCenter = () => {
   const [open, setOpen] = useState({ more: false, parked: false, enrichment: false });
   const [passTarget, setPassTarget] = useState(null);
   const [reasonBacklog, setReasonBacklog] = useState(0);
+  const [nba, setNba] = useState(null);
   const { settings: senderSettings } = useUserSettings();
 
   const load = useCallback(() => {
@@ -718,6 +730,10 @@ const CommandCenter = () => {
       .passBacklog(1)
       .then((res) => setReasonBacklog(res.count || 0))
       .catch(() => setReasonBacklog(0));
+    api
+      .leadsNextBestAction()
+      .then((res) => setNba(res))
+      .catch(() => setNba(null));
   }, []);
 
   useEffect(() => {
@@ -802,6 +818,34 @@ const CommandCenter = () => {
           referrals={lists ? lists.referrals.length : 0}
           progress={progress}
         />
+
+        {nba?.lead && nba.lead.id !== hero?.id && (
+          <section data-testid="section-next-best-action" className="space-y-2">
+            <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
+              Next best action
+            </h2>
+            <Link
+              to={`/opportunities/${nba.lead.id}`}
+              data-testid={`nba-lead-${nba.lead.id}`}
+              className="block bh-surface rounded-md p-4 hover:bg-white/[0.03]"
+            >
+              <div className="font-display text-[18px] text-[var(--bh-ink)] tracking-tight">
+                {nba.lead.name}
+              </div>
+              {nba.lead.next_action && (
+                <p className="mt-1 text-[14px] text-[var(--bh-ink-2)]">{nba.lead.next_action}</p>
+              )}
+              {nba.lead._selection_reason && (
+                <p className="mt-1 text-[12px] text-[var(--bh-ink-mute)]">{nba.lead._selection_reason}</p>
+              )}
+              {nba.lead.dnc_check_required && (
+                <div className="mt-2">
+                  <DncCheckFlag opp={nba.lead} />
+                </div>
+              )}
+            </Link>
+          </section>
+        )}
 
         {lists === null ? (
           <EmptyCard testId="today-loading">Loading…</EmptyCard>

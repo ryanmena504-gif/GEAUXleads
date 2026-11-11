@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, Loader2, AlertCircle, MessageSquare, Check, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
+import { DncCheckFlag } from "@/components/DncCheckFlag";
 import { toast } from "sonner";
 
 /**
@@ -93,6 +94,7 @@ export const OutreachWriterButton = ({ opp }) => {
           </div>
         )}
 
+        <DncCheckFlag opp={opp} />
         <div className="flex gap-2 pt-1">
           {smsHref && (
             <a

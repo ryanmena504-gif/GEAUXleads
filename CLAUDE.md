@@ -8,8 +8,10 @@ Make.com automations, and it decides priorities across the system. Any other AI 
 in this repo (Claude Code, etc.) works under that direction:
 
 - Stick to the task you were given. Don't take on unrelated refactors, renames, or redesigns.
-- **Never** change the Airtable schema (add/rename/delete tables or fields, change select
-  options) from the app. Schema changes go through Ryan → lead Claude.
+- **Never** add, rename, or delete Airtable tables or fields from the app. Schema
+  changes go through Ryan. The one exception Ryan asked for: a failed contact
+  lookup writes Enrichment status `Research failed`. If that option is not on
+  the select yet, the existing typecast write can add it. Do not add other options.
 - **Never** delete or merge repos, drop data, or touch Make.com scenarios without Ryan's
   explicit confirmation.
 - If something you need is outside your lane, stop and write it up as a request for Ryan to
@@ -74,6 +76,31 @@ Rules for the app:
   never try to write them or re-implement them in code.
 - **Suppression List is absolute.** Anything that drafts or opens a message must respect it.
 - Some field descriptions still say "Emergent app." That's stale — the app is this repo now.
+
+## Research rules (Ryan, Nov 2026 — these replace older "never write enrichment" notes)
+
+Contact research is allowed to fill leads. It is not allowed to spend a credit twice
+on the same failure, and it is not allowed to send anything.
+
+- **No automatic retry of a paid call.** Perplexity and OpenAI clients are constructed
+  with `max_retries=0`. If a call errors or times out, log it, set the lead's
+  Enrichment status to `Research failed` (with the reason in Notes), and move on.
+  A batch stops after `ENRICHMENT_MAX_CONSECUTIVE_FAILURES` failures in a row (default 3).
+- **Don't research the same lead every day.** A lead checked inside
+  `ENRICHMENT_RECHECK_DAYS` (default 14) is skipped unless Ryan taps Find contact.
+- **Drafts only.** The outreach writer may store a first message. Nothing sends,
+  schedules, or dials. Homeowner phone numbers show a "check Do Not Call before
+  calling or texting" reminder. That reminder is not a lookup and not a dialer.
+- **No new paid vendor** without asking Ryan. Perplexity and OpenAI are the ones
+  already in use. Homeowner name and mailing address come from those, aimed at
+  public permit and assessor records.
+- Deleting live records is not part of research. Don't delete them from a batch.
+
+Automatic research is `POST /api/enrichment/run` (and the same batch at the end of
+`POST /api/digest/fresh-intel/run`, unless that review just died on consecutive
+failures). It runs on a timer only when `ENRICHMENT_AUTO_ENABLED=true`. The daily
+cap is `ENRICHMENT_DAILY_CAP` (default 10). See `docs/MAKE_FIXES.md` for the Make
+steps this repo cannot do.
 
 ## Outreach policy (non-negotiable)
 
@@ -159,9 +186,19 @@ Nav labels live in `frontend/src/components/Sidebar.jsx`. The `/` route is label
 
 ## Environment variables
 
-Backend (Railway): `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`, `AIRTABLE_OPPORTUNITIES_TABLE`
-(= `${{shared.AIRTABLE_OPPORTUNITIES}}` service reference — Railway can't rename shared vars),
-`AIRTABLE_ENABLED=true`.
+Backend (Render): `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`, `AIRTABLE_OPPORTUNITIES_TABLE`,
+`AIRTABLE_ENABLED=true`, `PERPLEXITY_API_KEY`, `OPENAI_API_KEY`.
+Contact research (optional, see the research rules above):
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `ENRICHMENT_AUTO_ENABLED` | off | `true` runs the contact batch once a day inside the API process |
+| `ENRICHMENT_DAILY_CAP` | `10` | Max leads the automatic batch may research per day. `0` pauses it |
+| `ENRICHMENT_RECHECK_DAYS` | `14` | Skip a lead checked more recently than this, unless Ryan taps Find contact |
+| `ENRICHMENT_MAX_CONSECUTIVE_FAILURES` | `3` | Stop the batch after this many paid-call failures in a row |
+| `ENRICHMENT_INTERVAL_HOURS` | `24` | How often the in-process scheduler runs, when it is enabled |
+| `ENRICHMENT_START_DELAY_SECONDS` | `600` | Wait after boot before the first automatic run |
+
 Frontend build: `REACT_APP_BACKEND_URL` (baked at build time).
 Never commit keys. Never log the API key.
 
