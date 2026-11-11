@@ -23,6 +23,7 @@ import {
 import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
 import { buildSalutation } from "@/lib/greeting";
+import { pickEmail } from "@/lib/contact";
 import {
   Check,
   ChevronRight,
@@ -162,7 +163,7 @@ const buildReferralDraft = (opp, sender) => {
  * to Airtable — this is a private nudge to Ryan only.
  */
 const ReferralRow = ({ opp, sender }) => {
-  const email = opp.email || opp.email_alt || "";
+  const email = pickEmail(opp) || "";
   const onAsk = () => {
     if (!email) return;
     const { subject, body } = buildReferralDraft(opp, sender);

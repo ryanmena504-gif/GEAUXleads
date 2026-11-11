@@ -8,6 +8,7 @@ import ContactBadge from "@/components/ContactBadge";
 import DaysOnTable from "@/components/DaysOnTable";
 import { moneyDisplay, sourceLabel, fmtMoneyOrStatus } from "@/lib/formatters";
 import { MapPin, Phone } from "lucide-react";
+import { pickPhone } from "@/lib/contact";
 
 /**
  * Project record row — plain-English: priority pill · name · what's happening ·
@@ -43,10 +44,10 @@ export const OpportunityRow = ({ opp }) => (
               {opp.project_address}
             </span>
           )}
-          {opp.phone && (
+          {pickPhone(opp) && (
             <span className="inline-flex items-center gap-1.5 tabular-nums">
               <Phone size={11} strokeWidth={1.75} />
-              {opp.phone}
+              {pickPhone(opp)}
             </span>
           )}
           {opp.project_type && (

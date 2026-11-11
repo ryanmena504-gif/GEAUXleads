@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
+from services.field_norm import resolved_phone
 from services.contact_research import (
     build_failure_updates,
     build_research_updates,
@@ -133,7 +134,7 @@ async def _persist(update: UpdateFn, opp_id: str, updates: Dict[str, Any]) -> No
 
 
 def _draft_channel(opp: Dict[str, Any], updates: Dict[str, Any]) -> str:
-    phone = updates.get("phone") or opp.get("phone") or opp.get("phone_alt")
+    phone = updates.get("phone") or resolved_phone(opp)
     return "Text" if phone else "Email"
 
 

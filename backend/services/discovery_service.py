@@ -256,6 +256,25 @@ def _normalize_status(v: Any) -> str:
     return (str(v or "").strip().lower())
 
 
+# Contact columns win. The plain phone/email columns, and the public-business
+# columns on the discovery tables, are used only when the Contact columns
+# are empty. Owner phone/email are the filled columns on the Landlords table.
+_CONTACT_PHONE_KEYS = [
+    "contact_phone",
+    "phone",
+    "phone_number",
+    "owner_phone",
+    "public_business_phone",
+    "main_phone",
+]
+_CONTACT_EMAIL_KEYS = [
+    "contact_email",
+    "email",
+    "owner_email",
+    "public_business_email",
+]
+
+
 def _pick_first(row: Dict[str, Any], keys: List[str]) -> Any:
     """Return the first non-empty value from a candidate key list.
 
@@ -292,9 +311,9 @@ def list_property_managers(status: str = "worth_a_look") -> List[Dict[str, Any]]
         out.append({
             "id": r.get("id"),
             "name": _pick_first(r, ["business_name", "name", "company_name", "company", "property_manager", "property_management_company"]),
-            "phone": _pick_first(r, ["phone", "phone_number", "contact_phone", "main_phone"]),
+            "phone": _pick_first(r, _CONTACT_PHONE_KEYS),
             "website": _pick_first(r, ["website", "url", "web", "homepage"]),
-            "email": _pick_first(r, ["email", "contact_email"]),
+            "email": _pick_first(r, _CONTACT_EMAIL_KEYS),
             "address": _pick_first(r, ["address", "office_address", "location"]),
             "notes": _pick_first(r, ["notes", "note", "why", "context", "why_worth_a_look", "why_it_matters"]),
             "portfolio_size": _pick_first(r, ["portfolio_size", "units", "portfolio", "unit_count"]),
@@ -405,8 +424,8 @@ def list_real_estate_agents(status: str = "all") -> List[Dict[str, Any]]:
             "name": _pick_first(r, ["agent_name", "name", "full_name"]),
             "brokerage": _pick_first(r, ["brokerage", "firm", "agency", "company"]),
             "why_target": _pick_first(r, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
-            "phone": _pick_first(r, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
-            "email": _pick_first(r, ["public_business_email", "email", "contact_email"]),
+            "phone": _pick_first(r, _CONTACT_PHONE_KEYS),
+            "email": _pick_first(r, _CONTACT_EMAIL_KEYS),
             "website": _pick_first(r, ["website", "url", "profile_url"]),
             "outreach_gate": gate,
             "contact_enrichment_status": _pick_first(r, ["contact_enrichment_status", "enrichment_status"]),
@@ -487,8 +506,8 @@ def enrich_real_estate_agent(
         "name": _pick_first(patched, ["agent_name", "name", "full_name"]),
         "brokerage": _pick_first(patched, ["brokerage", "firm", "agency", "company"]),
         "why_target": _pick_first(patched, ["why_theyre_a_target", "why", "why_target", "target_reason", "target_notes"]),
-        "phone": _pick_first(patched, ["public_business_phone", "phone", "phone_number", "contact_phone"]),
-        "email": _pick_first(patched, ["public_business_email", "email", "contact_email"]),
+        "phone": _pick_first(patched, _CONTACT_PHONE_KEYS),
+        "email": _pick_first(patched, _CONTACT_EMAIL_KEYS),
         "website": _pick_first(patched, ["website", "url", "profile_url"]),
         "outreach_gate": gate,
         "contact_enrichment_status": _pick_first(patched, ["contact_enrichment_status", "enrichment_status"]),
@@ -567,6 +586,8 @@ def list_landlords(status: str = "not_contacted", ids: Optional[List[str]] = Non
             "outreach_gate": r.get("outreach_gate"),
             "outreach_status": r.get("outreach_status"),
             "source": r.get("source"),
+            "phone": _pick_first(r, _CONTACT_PHONE_KEYS),
+            "email": _pick_first(r, _CONTACT_EMAIL_KEYS),
             "created_time": r.get("created_time"),
             "days_on_table": days_on_table(r.get("created_time")),
             "zip": extract_zip(_pick_first(r, ["property_address", "mailing_address", "address"])),
@@ -668,10 +689,8 @@ def list_investors(status: str = "all") -> List[Dict[str, Any]]:
             ]),
             "recommended_next_move": _pick_first(r, ["recommended_next_move", "next_move", "recommendation"]),
             "principal": _pick_first(r, ["principal", "principal_name", "primary_contact", "contact_name"]),
-            "phone": _pick_first(r, [
-                "public_business_phone", "phone", "phone_number", "contact_phone",
-            ]),
-            "email": _pick_first(r, ["public_business_email", "email", "contact_email"]),
+            "phone": _pick_first(r, _CONTACT_PHONE_KEYS),
+            "email": _pick_first(r, _CONTACT_EMAIL_KEYS),
             "website": _pick_first(r, ["public_contact_source", "website", "url"]),
             "address": _pick_first(r, ["address", "office_address", "location", "mailing_address"]),
             "service_area": r.get("service_area"),

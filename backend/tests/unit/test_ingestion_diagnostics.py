@@ -51,6 +51,28 @@ def test_iso_and_us_dates_both_parse():
             diag.validate_record({"id": "r", "date_discovered": value})), value
 
 
+def test_coverage_does_not_count_a_legacy_fallback_as_the_contact_column():
+    records = [{
+        "id": "1",
+        "email": "old@legacy.test",
+        "contact_email": None,
+        "email_alt": "old@legacy.test",
+        "phone": "(504) 416-3737",
+        "contact_phone": None,
+        "phone_alt": "(504) 416-3737",
+    }]
+    coverage = {c["airtable_field"]: c for c in diag.field_coverage(records, {
+        "Contact email": "email",
+        "Email": "email_alt",
+        "Contact phone": "phone",
+        "Phone number": "phone_alt",
+    })}
+    assert coverage["Contact email"]["populated"] == 0
+    assert coverage["Contact phone"]["populated"] == 0
+    assert coverage["Email"]["populated"] == 1
+    assert coverage["Phone number"]["populated"] == 1
+
+
 def test_coverage_flags_a_column_nothing_ever_writes():
     records = [{"id": "1", "name": "A", "permit_number": None},
                {"id": "2", "name": "B", "permit_number": None}]

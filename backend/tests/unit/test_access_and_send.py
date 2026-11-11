@@ -188,3 +188,106 @@ def test_send_still_sends_when_ryan_taps_and_the_lead_is_not_banned(client, monk
     assert response.json()["ok"] is True
     assert sent["to"] == "pat@geauxmail.net"
     assert sent["body"] == "Hello from the screen"
+
+
+def test_send_uses_contact_email_when_the_email_column_is_a_different_address(client, monkeypatch):
+    """Email Now used to read `email` before `contact_email`.
+
+    On the leads shape `email` is the empty Email column. A filled Contact
+    email must be the recipient, and a legacy address must not win when
+    both are present. Do Not Contact still refuses before any send.
+    """
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    sent = {}
+
+    class Svc:
+        def __init__(self, record):
+            self._record = record
+
+        def get(self, _opp_id):
+            return self._record
+
+        def update_fields(self, _opp_id, updates):
+            return {"id": self._record["id"], **updates}
+
+    def fake_send(to_email, subject, text_body, include_photo=True):
+        sent["to"] = to_email
+        return {"ok": True, "to": to_email, "subject": subject}
+
+    monkeypatch.setattr("services.gmail_send_service.send_email", fake_send)
+    monkeypatch.setattr(
+        "server.get_opportunity_service",
+        lambda: Svc({
+            "id": "rec3",
+            "email": "old@legacy.test",
+            "email_alt": "other@legacy.test",
+            "contact_email": "lazaro@reverealtors.com",
+            "outreach_status": "Not sent",
+            "draft_outreach_body": "Hello",
+            "name": "Lazaro",
+            "outreach_attempt": 0,
+        }),
+    )
+    response = client.post(
+        "/api/opportunities/rec3/send-email",
+        headers={"X-App-Password": "pw"},
+        json={"body": "Hello from the screen", "subject": "Hi"},
+    )
+    assert response.status_code == 200
+    assert sent["to"] == "lazaro@reverealtors.com"
+
+    sent.clear()
+    monkeypatch.setattr(
+        "server.get_opportunity_service",
+        lambda: Svc({
+            "id": "rec4",
+            "email": None,
+            "contact_email": "randy_leblanc@icloud.com",
+            "outreach_status": "Do Not Contact",
+            "draft_outreach_body": "Hello",
+            "name": "Randy",
+        }),
+    )
+    refused = client.post(
+        "/api/opportunities/rec4/send-email",
+        headers={"X-App-Password": "pw"},
+        json={"body": "Hello", "subject": "Hi"},
+    )
+    assert refused.status_code == 409
+    assert "Do Not Contact" in refused.json()["detail"]
+    assert "to" not in sent
+
+
+def test_send_falls_back_to_the_old_email_column_when_contact_email_is_blank(client, monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    sent = {}
+
+    class Svc:
+        def get(self, _opp_id):
+            return {
+                "id": "rec5",
+                "contact_email": None,
+                "email": None,
+                "email_alt": "old@legacy.test",
+                "outreach_status": "Not sent",
+                "draft_outreach_body": "Hello",
+                "name": "Pat",
+                "outreach_attempt": 0,
+            }
+
+        def update_fields(self, _opp_id, updates):
+            return {"id": "rec5", **updates}
+
+    def fake_send(to_email, subject, text_body, include_photo=True):
+        sent["to"] = to_email
+        return {"ok": True, "to": to_email, "subject": subject}
+
+    monkeypatch.setattr("server.get_opportunity_service", lambda: Svc())
+    monkeypatch.setattr("services.gmail_send_service.send_email", fake_send)
+    response = client.post(
+        "/api/opportunities/rec5/send-email",
+        headers={"X-App-Password": "pw"},
+        json={"body": "Hello", "subject": "Hi"},
+    )
+    assert response.status_code == 200
+    assert sent["to"] == "old@legacy.test"

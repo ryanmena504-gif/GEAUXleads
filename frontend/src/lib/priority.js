@@ -4,6 +4,8 @@
 // The UI Ryan sees should never expose either. This module converts both
 // into "High / Medium / Low" and short reasons a contractor can act on.
 
+import { pickEmail, pickPhone } from "./contact";
+
 const BAND_TO_LEVEL = { A: "High", B: "Medium", C: "Low", D: "Low" };
 
 /**
@@ -32,8 +34,7 @@ export const priorityReason = (opp) => {
   const parts = [];
   const fit = opp.opportunity_fit || opp.project_type;
   if (fit && String(fit).toLowerCase() !== "unknown") parts.push(`good fit (${fit})`);
-  const reachable = !!(opp.contact_phone || opp.phone || opp.phone_number ||
-    opp.contact_email || opp.email || opp.open_approved_message_iphone);
+  const reachable = !!(pickPhone(opp) || pickEmail(opp) || opp.open_approved_message_iphone);
   if (reachable) parts.push("public contact found");
   const evidence = opp.evidence_summary || opp.recommendation_reason;
   if (evidence) parts.push("likely renovation work");
@@ -66,8 +67,8 @@ export const contactState = (opp) => {
   ) {
     return { key: "not_fit", label: "Not a fit", color: "red" };
   }
-  const phone = (opp.contact_phone || opp.phone || opp.phone_number || "").toString().trim();
-  const email = (opp.contact_email || opp.email || "").toString().trim();
+  const phone = pickPhone(opp);
+  const email = pickEmail(opp) || "";
   const iphone = (opp.open_approved_message_iphone || "").toString().trim();
   const hasContact = (phone && phone.length >= 7) || (email && email.includes("@")) || iphone.toLowerCase().startsWith("sms:");
   if (hasContact) return { key: "ready", label: "Ready to contact", color: "green" };
@@ -126,10 +127,8 @@ export const contactReady = (opp) => {
     reasons.push("blocked");
   }
 
-  const phone = (opp.contact_phone || opp.phone || opp.phone_alt || opp.phone_number || "")
-    .toString()
-    .trim();
-  const email = (opp.contact_email || opp.email || opp.email_alt || "").toString().trim();
+  const phone = pickPhone(opp);
+  const email = pickEmail(opp) || "";
   const hasContact = phone.length >= 7 || email.includes("@");
   if (!hasContact) reasons.push("no_contact");
 
