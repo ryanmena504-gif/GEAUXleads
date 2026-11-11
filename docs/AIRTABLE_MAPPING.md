@@ -17,10 +17,14 @@ The app never creates, renames, or deletes an Airtable field. It reads the base
 schema at startup and maps only the columns that actually exist. Anything it
 expects but cannot find renders as *"Not available yet"* rather than a guess.
 
-Writes are limited to a small allowlist of workflow-status columns
-(`Approval status`, `Outreach status`, `Status`, `First message` for the Leads
-service; plus `Hunt status`, `Next followup`, `Rejection reason`, `Notes` for the
-opportunity service). Everything else is read-only by construction.
+Writes are an allowlist. Workflow columns (`Approval status`, `Outreach status`,
+`Status`, `Hunt status`, `Next followup`, `Rejection reason`, `Notes`) are on it.
+Contact research also writes `Contact name`, `Contact phone`, `Contact email`,
+`Owner`, `Owner Mailing Address`, `contact confidence`, `Enrichment status`,
+`Contact Readiness`, `Contact Verified Date`, `Public Contact Evidence`,
+`Source URL` (only when that cell is empty), `First message`, `First contact message`,
+and the Draft Outreach fields. Formula fields stay read-only. The app still never
+creates or renames a column.
 
 ## The silent failure this is designed to catch
 
@@ -109,18 +113,18 @@ A lead cannot be approved without all of these. Prioritize their mappings.
 ### On "decision maker"
 
 The requirement is an identified decision maker / owner / applicant / contractor.
-The live `Leads` table has **no** `Applicant`, `Contractor`, or `Owner` columns —
-they are listed in `PENDING_FIELDS` and render as "Not available yet". The
-implemented equivalent is:
+The live `Leads` table has `Contact name`, `Applicant`, `Contractor`, `Owner`,
+and `Owner Mailing Address`. Contact research writes the person it finds into
+`Contact name` and `Owner`. A homeowner lookup also writes `Owner Mailing Address`.
 
 1. A named person in `Contact name` — treated as a full match.
 2. Failing that, a named business in `Contact company` / `Business name` — accepted,
    but recorded as an `org_only_counterparty` warning so the operator knows they
    are contacting a company rather than a named individual.
 
-If Make later starts writing `Applicant` / `Contractor` / `Owner`, add those
-columns to `FIELD_ALIASES["counterparty_person"]` in
-`backend/services/outreach_policy.py`; no other change is required.
+`contact confidence` is the High / Medium / Low select. The app fills it when
+it runs Contact Finder. Make still has to fill it for leads Make enriches
+itself — see `docs/MAKE_FIXES.md`.
 
 ## Duplicate identity
 

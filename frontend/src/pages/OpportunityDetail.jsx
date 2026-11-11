@@ -20,6 +20,7 @@ import useAirtableRecordUrl from "@/hooks/useAirtableRecordUrl";
 import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import OutreachWriterButton from "@/components/OutreachWriterButton";
 import AgentRunButton from "@/components/AgentRunButton";
+import { ContactSourceChip, DncCheckFlag } from "@/components/DncCheckFlag";
 import PassSheet from "@/components/PassSheet";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -635,8 +636,9 @@ const OpportunityDetail = () => {
             {/* Contact */}
             <section className="bh-surface rounded-md p-5">
               <SectionHeading title="Who to talk to" />
-              <div className="mb-3">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
                 <ContactStatusChip record={opp} testId={`opp-contact-status-${opp.id}`} />
+                <ContactSourceChip opp={opp} />
               </div>
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
@@ -646,14 +648,19 @@ const OpportunityDetail = () => {
                 <KV label="Applicant" value={opp.applicant} />
                 <KV label="Contractor on record" value={opp.contractor} />
                 <KV label="Owner" value={opp.owner} />
+                <KV label="Owner mailing address" value={opp.owner_mailing_address} testId="kv-owner-mailing" />
+              </div>
+              <div className="mt-3">
+                <DncCheckFlag opp={opp} />
               </div>
               <div className="mt-4">
-                {/* Contact Finder agent (in-app) — fills Contact phone / email or
-                    notes why none exists. Research only; nothing is sent. */}
+                {/* Contact Finder — fills Contact name, phone, email, and
+                    for a house, the assessor owner and mailing address.
+                    Research only; nothing is sent. */}
                 <AgentRunButton
                   opp={opp}
                   trigger={api.findContact}
-                  watchFields={["phone", "email", "evidence_summary", "notes"]}
+                  watchFields={["phone", "email", "notes", "decision_maker", "owner", "owner_mailing_address", "enrichment_status", "contact_readiness"]}
                   label={opp.phone || opp.email ? "Find contact again" : "Find contact"}
                   icon={UserSearch}
                   doneMessage="Contact finder finished — contact details updated."
@@ -665,10 +672,19 @@ const OpportunityDetail = () => {
                 <ResearchPanel
                   researchType="decision_maker"
                   recordId={opp.id}
-                  query={`Who runs the business or owns the property at ${opp.project_address || opp.name}? Business/lead name: ${opp.name}. Company field: ${opp.company || "(none)"}. Any decision maker on file: ${opp.decision_maker || "(none)"}. Give verified name, role, and one-line context with citations.`}
+                  query={`Who runs the business or owns the property at ${opp.project_address || opp.name}? Business/lead name: ${opp.name}. Company field: ${opp.company || "(none)"}. Any decision maker on file: ${opp.decision_maker || "(none)"}. Give verified name, role, and one-line context with citations. End with DECISION_MAKER: and the full name, or unknown.`}
                   label={opp.decision_maker ? "Verify this decision maker" : "Who runs this?"}
-                  hint="Grounded web lookup with citations. Read-only — nothing writes back to Airtable."
+                  hint="Grounded web lookup. A verified name is saved to Contact name. Nothing is sent."
                   testId={`research-dm-${opp.id}`}
+                  onResult={async (result) => {
+                    if (!result?.saved_fields?.length) return;
+                    try {
+                      const fresh = await api.getOpportunity(opp.id, { fresh: true });
+                      setOpp(fresh);
+                    } catch {
+                      /* the answer is already on screen */
+                    }
+                  }}
                 />
               </div>
               {/* Owner contact finder — research bot for permit/homeowner leads.

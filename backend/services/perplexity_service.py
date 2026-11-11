@@ -20,9 +20,9 @@ Design rules baked in:
     map them to 401 / 429 / 503 without leaking the key or a stacktrace.
     The conversion classifies by exception type (connection vs timeout
     vs HTTP status) instead of collapsing everything into one generic
-    "request failed" — a connection error that already survived the
-    SDK's own retries is a route problem, not a key problem, and the
-    caller needs to be able to say so in plain English.
+    "request failed". The SDK is constructed with max_retries=0, so a
+    connection error has not been retried — it is logged once and the
+    caller moves on.
 """
 from __future__ import annotations
 
@@ -200,7 +200,10 @@ _SYSTEMS = {
         "their role (owner/GM/manager), and any verified contact leads. "
         "Ground every claim in a cited web source with a date when possible. "
         "If evidence is thin, say so — do not invent names. Reply in "
-        "plain-text short paragraphs, no markdown."
+        "plain-text short paragraphs, no markdown. End with one final line "
+        "and nothing after it, exactly in this form: "
+        "DECISION_MAKER: <full name, or unknown>. "
+        "That line is a name only — no title, no sentence, no URL."
     ),
     "permit_explainer": (
         _TRADE_PREFIX
@@ -248,9 +251,11 @@ _SYSTEMS = {
         "Louisiana Secretary of State business filings (for LLC-owned property "
         "report the registered agent's contact), the owner's own business "
         "website, and public directories. Start your reply with exactly these "
-        "two lines and nothing else:\n"
+        "four lines:\n"
         "PHONE: <the number, or 'none found'>\n"
         "EMAIL: <the address, or 'none found'>\n"
+        "NAME: <the owner's name, or 'none found'>\n"
+        "MAILING: <the assessor mailing address on one line, or 'none found'>\n"
         "Then 2-4 short plain-text paragraphs: what you found, which source "
         "each contact came from, and your confidence the owner was correctly "
         "matched. If the owner cannot be confidently matched to a public "
@@ -268,13 +273,42 @@ _SYSTEMS = {
         "directories, registered-agent filings). "
         "Reply with ONLY a JSON object, no markdown fences, no other text, "
         "with exactly these keys: "
+        '{"owner_name": "<owner or decision maker, or \'unknown\'>", '
+        '"phone": "<phone number, or \'none found\'>", '
+        '"email": "<email address, or \'none found\'>", '
+        '"mailing_address": "<mailing address, or \'none found\'>", '
+        '"contact_source": "<homeowner or business>", '
+        '"source_url": "<one https URL for the contact, or \'none found\'>", '
+        '"confidence": "<High, Medium, or Low>", '
+        '"entity_context": "<2-3 sentences: what you found, which source each '
+        "contact came from, and why the owner match is or isn't confident>\"}. "
+        "contact_source is homeowner when the owner is a person, and business "
+        "when the owner is a company or LLC. "
+        "NEVER invent a phone number, email, name, or mailing address. If the "
+        "owner cannot be confidently matched, use 'unknown' / 'none found'."
+    ),
+    "homeowner_lookup": (
+        _TRADE_PREFIX
+        + "You are looking up the owner of a residential property in the "
+        "New Orleans area for Ryan. Use public records only: the permit, "
+        "the Orleans Parish assessor (owner of record and mailing address), "
+        "and Louisiana Secretary of State filings when the owner is an LLC. "
+        "Return the owner's name, the mailing address on the assessor or "
+        "tax roll, and a phone or email only when it is publicly listed. "
+        "contact_source is homeowner when the owner is a person, and "
+        "business when the owner is a company or LLC. "
+        "Reply with ONLY a JSON object, no markdown fences, no other text, "
+        "with exactly these keys: "
         '{"owner_name": "<owner name, or \'unknown\'>", '
         '"phone": "<phone number, or \'none found\'>", '
         '"email": "<email address, or \'none found\'>", '
-        '"entity_context": "<2-3 sentences: what you found, which source each '
-        "contact came from, and your confidence the owner was matched>\"}. "
-        "NEVER invent a phone number or email address. If the owner cannot be "
-        "confidently matched, use 'unknown' / 'none found'."
+        '"mailing_address": "<mailing address on one line, or \'none found\'>", '
+        '"contact_source": "<homeowner or business>", '
+        '"source_url": "<one https URL for the record you used, or \'none found\'>", '
+        '"confidence": "<High, Medium, or Low>", '
+        '"entity_context": "<2-3 sentences: which record, what it shows, and '
+        "how sure you are the owner matches this address>\"}. "
+        "NEVER invent a phone number, email, name, or mailing address."
     ),
     # The daily reviewer (Fresh Intel picker) calls research_async("general")
     # with its own review prompt as the query. This type did not exist until
@@ -313,13 +347,15 @@ class PerplexityResearchService:
         # Explicit timeout so a hung call fails fast as a clear timeout
         # instead of stalling for the SDK's long default. No custom
         # base_url: the SDK default (https://api.perplexity.ai) is the
-        # right endpoint — the "connection error" seen in production was
-        # the request never getting a response, not a wrong URL.
-        # The SDK's own max_retries (default 2) already retries connection
-        # errors, so a connection error reaching us already survived those
-        # retries — it is persistent, not a blip. Do not add another
-        # retry layer here.
-        self._client = Perplexity(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECS)  # type: ignore
+        # right endpoint.
+        # max_retries=0: the SDK default is 2, and a retried call spends
+        # another credit. A timeout or connection error is logged once
+        # and the lead is marked Research failed. Ryan can tap again.
+        self._client = Perplexity(  # type: ignore
+            api_key=api_key,
+            timeout=_REQUEST_TIMEOUT_SECS,
+            max_retries=0,
+        )
         self._preset = preset
 
     def research(self, research_type: str, query: str) -> Dict[str, Any]:

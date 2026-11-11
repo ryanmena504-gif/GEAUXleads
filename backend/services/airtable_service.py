@@ -83,6 +83,9 @@ LIVE_FIELDS: Dict[str, str] = {
 
     # Contact block
     "Contact name": "decision_maker",
+    # Assessor / tax-roll mailing address for a homeowner. Written by the
+    # in-app homeowner lookup. Distinct from the property Address.
+    "Owner Mailing Address": "owner_mailing_address",
     "Contact phone": "phone",
     "Contact email": "email",
     "Contact company": "company",
@@ -266,10 +269,8 @@ EXPLICIT_READONLY: set = {
     "recommended action",
     "Recommended offer",
     "Outreach angle",
-    "First message",
     "Confidence score",
     "Lead score",
-    "Enrichment status",
     "Verified opportunity",
     "Qualified opportunity",
     "Closed revenue",
@@ -278,7 +279,6 @@ EXPLICIT_READONLY: set = {
     # Governed current-state layer — owned by Airtable + Make. NEVER written
     # from the app.
     "Current Queue",
-    "Contact Readiness",
     "Contact State",
     "Money Signal",
     "Operator Activity",
@@ -289,8 +289,11 @@ EXPLICIT_READONLY: set = {
     "Score Basis",
     "Priority Explanation",
     "Current Recommendation",
-    "Public Contact Evidence",
-    "Contact Verified Date",
+    # Contact Readiness, Public Contact Evidence, and Contact Verified Date
+    # used to be frozen here. Contact research writes them: readiness when
+    # a public phone or email is found, the evidence block (including
+    # "Contact source: homeowner|business"), and the date of the check.
+    # Current Queue, Contact State, and the score fields stay with Make.
     "Project Fit Reason",
     "Last Classified At",
     "Classification Version",
@@ -330,10 +333,21 @@ EDITABLE_FIELDS = {
     # Ryan-owned override/journal fields (see LIVE_FIELDS).
     "Mission Override",
     "Activity Log",
-    # Contact fields — written only via explicit Ryan-confirmed actions
-    # (e.g. saving a researched phone/email onto a lead). Never auto-filled.
+    # Contact fields. Find contact, the daily enrichment batch, and
+    # "Who runs this?" write these. Drafts are stored; nothing is sent.
     "Contact phone",
     "Contact email",
+    "Contact name",
+    "Owner Mailing Address",
+    "contact confidence",
+    "Enrichment status",
+    "Contact Readiness",
+    "Contact Verified Date",
+    "Source URL",
+    "Public Contact Evidence",
+    "First message",
+    "First contact message",
+    "First contact channel",
     # Contact Finder fields — written by the in-app Contact Finder agent
     # when Ryan taps "Find contact". Owner = the researched property owner;
     # Ai summary = the research evidence summary.
@@ -371,6 +385,18 @@ WRITE_ALIAS: Dict[str, str] = {
     "activity_log": "Activity Log",
     "phone": "Contact phone",
     "email": "Contact email",
+    "decision_maker": "Contact name",
+    "owner": "Owner",
+    "owner_mailing_address": "Owner Mailing Address",
+    "contact_confidence": "contact confidence",
+    "enrichment_status": "Enrichment status",
+    "contact_readiness": "Contact Readiness",
+    "contact_verified_date": "Contact Verified Date",
+    "source_url": "Source URL",
+    "public_contact_evidence": "Public Contact Evidence",
+    "first_message": "First message",
+    "first_contact_message": "First contact message",
+    "first_contact_channel": "First contact channel",
     "draft_outreach_body": "Draft Outreach Body",
     "draft_outreach_subject": "Draft Outreach Subject",
     "draft_outreach_generated_at": "Draft Outreach Generated At",
@@ -1046,6 +1072,10 @@ class AirtableOpportunityService:
         opp["activity_timeline"] = self._synthesize_activity(opp)
         # Days on table — how long the record has lived in the queue.
         opp["days_on_table"] = _days_on_table(opp.get("created_time"))
+        # Homeowner vs business, and the Do Not Call reminder. Derived
+        # from the contact-source line research writes. Not a dialer.
+        from services.contact_research import annotate_contact_flags
+        annotate_contact_flags(opp)
         return opp
 
     def _synthesize_activity(self, opp: Dict[str, Any]) -> List[Dict[str, Any]]:

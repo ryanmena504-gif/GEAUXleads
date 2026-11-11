@@ -18,6 +18,7 @@ Design (from blueprint):
 - Nothing reaches a lead without Ryan's tap
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -78,15 +79,19 @@ async def _check_for_new_info(opp: Dict[str, Any]) -> Optional[str]:
         business_info=business_info,
         existing_summary=opp.get("evidence_summary") or opp.get("ai_summary") or "(none)",
     )
-    try:
-        result = await research_async("general", prompt)
-        text = (result.get("answer") or result.get("summary") or "").strip()
-        if not text or "NOTHING_NEW" in text.upper():
-            return None
-        return text[:500]
-    except Exception:
-        log.exception("daily reviewer: research failed for %s", opp.get("id"))
+    # A failed paid call raises. The batch loop counts it and does not
+    # call research_async again for this lead.
+    result = await research_async("general", prompt)
+    text = (result.get("answer") or result.get("summary") or "").strip()
+    if not text or "NOTHING_NEW" in text.upper():
         return None
+    return text[:500]
+
+
+async def _maybe_await(value):
+    if asyncio.iscoroutine(value):
+        return await value
+    return value
 
 
 async def run_daily_review(
@@ -95,17 +100,42 @@ async def run_daily_review(
     max_scan: int = MAX_SCAN_PER_RUN,
     max_enhance: int = MAX_AUTO_ENHANCE_PER_DAY,
 ) -> Dict[str, Any]:
-    """Run one daily review pass. Returns stats."""
-    all_opps = await svc.list()
+    """Run one daily review pass. Returns stats.
+
+    `svc.list` is synchronous on the live service. Awaiting it used to
+    raise TypeError before a single lead was scanned. Paid research
+    calls are not retried: three failures in a row stop the pass.
+    """
+    all_opps = await _maybe_await(svc.list())
     eligible = [o for o in all_opps if _is_eligible(o)][:max_scan]
 
     flagged = 0
     enhanced = 0
+    failures = 0
+    stopped_early = False
     today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        failure_limit = max(1, int(os.environ.get("ENRICHMENT_MAX_CONSECUTIVE_FAILURES", "3")))
+    except ValueError:
+        failure_limit = 3
 
     for opp in eligible:
+        if failures >= failure_limit:
+            stopped_early = True
+            break
         opp_id = opp.get("id")
-        summary = await _check_for_new_info(opp)
+        try:
+            summary = await _check_for_new_info(opp)
+        except Exception as exc:
+            failures += 1
+            # Type name only. The SDK message can echo request details, and
+            # a paid-call failure is not retried from this log line.
+            log.warning(
+                "daily reviewer: research failed for %s (%s)",
+                opp_id, type(exc).__name__,
+            )
+            continue
+        failures = 0
         if not summary:
             continue
 
@@ -129,10 +159,14 @@ async def run_daily_review(
             except Exception:
                 log.exception("daily reviewer: auto-enhance failed for %s", opp_id)
 
+    if failures >= failure_limit:
+        stopped_early = True
     return {
         "scanned": len(eligible),
         "flagged": flagged,
         "auto_enhanced": enhanced,
         "cap": max_enhance,
+        "consecutive_failures": failures,
+        "stopped_early": stopped_early,
         "ran_at": datetime.now(timezone.utc).isoformat(),
     }
