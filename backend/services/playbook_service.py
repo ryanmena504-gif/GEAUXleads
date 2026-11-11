@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 
 log = logging.getLogger("bloodhound.playbooks")
 
@@ -59,6 +60,8 @@ class PlaybookService:
     def __init__(self, api_key: str, base_id: str, table_id: str = PLAYBOOKS_TABLE_ID,
                  cache_ttl: float = 60.0):
         self._api = make_api(api_key)
+        self._base_id = base_id
+        self._table_name = table_id
         self._table = self._api.table(base_id, table_id)
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
@@ -70,7 +73,12 @@ class PlaybookService:
         if not force and (now - self._last_refresh) < self._cache_ttl and self._cache:
             return
         try:
-            records = self._table.all()
+            records = fetch_all(
+                key_for_reader(self, self._table),
+                self._table.all,
+                ttl=self._cache_ttl,
+                force=force,
+            )
         except Exception:
             log.exception("Playbooks: refresh failed")
             return
@@ -130,6 +138,7 @@ class PlaybookService:
         except Exception:
             log.exception("Playbooks: Airtable update failed for %s", record_id)
             raise
+        invalidate_reader(self, self._table)
         # Bust cache so the next read serves the fresh copy.
         with self._lock:
             self._last_refresh = 0.0

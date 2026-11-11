@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 
 from services import dedupe
 from services.audit import derive_idempotency_key, get_audit_log
@@ -201,9 +202,9 @@ class LeadsAirtableService:
         self._table_id: Optional[str] = None
         self._cache_ttl = cache_ttl
         self._lock = threading.Lock()
-        # One download at a time. A second overlapping read waits, or
-        # serves the copy it already has. Two full-table downloads at
-        # once tripped Airtable's 5-per-second limit on 2026-10-03.
+        # One refresh of this reader's own cache at a time. The download
+        # itself goes through the shared list guard, so the dashboard
+        # reader cannot page the same table in parallel.
         self._refresh_gate = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._duplicate_index: Dict[str, Any] = {"by_record": {}, "groups": {}}
@@ -254,13 +255,18 @@ class LeadsAirtableService:
         try:
             if not force and (time.time() - self._last_refresh) < self._cache_ttl and self._cache:
                 return
-            self._refresh_cache_locked()
+            self._refresh_cache_locked(force)
         finally:
             gate.release()
 
-    def _refresh_cache_locked(self) -> None:
+    def _refresh_cache_locked(self, force: bool = False) -> None:
         try:
-            records = self._table.all()
+            records = fetch_all(
+                key_for_reader(self, self._table),
+                self._table.all,
+                ttl=self._cache_ttl,
+                force=force,
+            )
         except Exception:
             log.exception("Leads: refresh failed")
             return
@@ -479,6 +485,7 @@ class LeadsAirtableService:
             return False
         try:
             self._table.update(lead_id, {at_field: value})
+            invalidate_reader(self, self._table)
             return True
         except Exception:
             log.exception("Leads: update %s=%s failed on %s", at_field, value, lead_id)

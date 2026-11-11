@@ -5,6 +5,8 @@ Without a timeout, a single stalled Airtable response blocks its worker
 forever (requests' default read timeout is None). On 2026-10-03 that froze
 the whole backend: every request queued behind it and the app stopped
 loading. Every Airtable client in the backend goes through make_api().
+Record lists (Table.all) go through services.airtable_lists so concurrent
+readers share one download.
 """
 from __future__ import annotations
 

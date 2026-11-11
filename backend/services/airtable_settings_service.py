@@ -23,6 +23,7 @@ import time
 from typing import Any, Dict, Optional
 
 from services.airtable_client import make_api
+from services.airtable_lists import fetch_all, invalidate_reader, key_for_reader
 
 from services.user_settings_service import DEFAULTS, validate_patch
 
@@ -106,6 +107,15 @@ class AirtableSettingsService:
         self._ensure_table()
         return self._api.table(self._base_id, self._table_id or self._table_name)
 
+    def _list_records(self, force: bool = False):
+        table = self._table()
+        return fetch_all(
+            key_for_reader(self, table),
+            table.all,
+            ttl=CACHE_TTL,
+            force=force,
+        )
+
     # ----- interface -----
     async def get(self) -> Dict[str, Any]:
         merged = dict(DEFAULTS)
@@ -119,7 +129,7 @@ class AirtableSettingsService:
             return merged
         try:
             # pyairtable is sync — keep it off the event loop.
-            records = await asyncio.to_thread(lambda: self._table().all())
+            records = await asyncio.to_thread(self._list_records)
         except AirtableSettingsError as e:
             # Missing table: never create it, never crash — use defaults.
             log.warning("Airtable settings unavailable — returning defaults: %s", e)
@@ -146,7 +156,8 @@ class AirtableSettingsService:
         def _write() -> None:
             table = self._table()
             existing = {}
-            for rec in table.all():
+            # force=True: a save must see the current keys, not a cached list.
+            for rec in self._list_records(force=True):
                 k = rec.get("fields", {}).get("Key")
                 if k:
                     existing[k] = rec["id"]
@@ -157,6 +168,7 @@ class AirtableSettingsService:
                     table.update(existing[k], {"Value": value})
                 else:
                     table.create({"Key": k, "Value": value})
+            invalidate_reader(self, table)
 
         try:
             # pyairtable is sync — keep it off the event loop.
