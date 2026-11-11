@@ -6,6 +6,9 @@ import { outreachAllowed } from "@/lib/queue";
 import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import { looksLikeAIPrompt } from "@/lib/draftSafety";
 import { api } from "@/lib/api";
+import { pickEmail } from "@/lib/contact";
+
+export { pickEmail };
 
 /**
  * OpenInMessages — the single Email Now / Follow Up Email button.
@@ -184,11 +187,6 @@ const buildFollowUpDraft = (opp, sender) => {
     airtable_rejected: false,
     airtable_reject_reason: null,
   };
-};
-
-export const pickEmail = (opp) => {
-  const raw = (opp?.email || opp?.email_alt || opp?.contact_email || "").toString().trim();
-  return raw && raw.includes("@") ? raw : null;
 };
 
 const btnBase =

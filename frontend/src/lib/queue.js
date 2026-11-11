@@ -15,6 +15,8 @@
 //
 // Opening an email or text draft writes nothing and changes no state.
 
+import { hasContactChannel, pickEmail } from "./contact";
+
 // The exact governed values that place a record into the Ready / Contacted
 // lists. Anything else (including empty, unclassified, "Watch", "Not Ready")
 // lands in All Projects.
@@ -131,7 +133,7 @@ export const sortForQueue = (items) =>
 export const allowedAction = (opp) => {
   const bucket = queueBucket(opp);
   if (bucket === "all") return null;
-  const hasEmail = /@/.test(opp?.email || opp?.email_alt || "");
+  const hasEmail = Boolean(pickEmail(opp));
   if (!hasEmail) return null;
   return bucket === "ready" ? "email_first" : "email_followup";
 };
@@ -158,12 +160,7 @@ export const whyReady = (opp) => {
  * but combined with the score presence it separates enriched records from
  * ones the enrichment pipeline hasn't touched yet.
  */
-export const hasChannel = (opp) => {
-  const trim = (v) => (typeof v === "string" ? v.trim() : v ? String(v).trim() : "");
-  return Boolean(
-    trim(opp?.email) || trim(opp?.email_alt) || trim(opp?.phone) || trim(opp?.phone_alt),
-  );
-};
+export const hasChannel = (opp) => hasContactChannel(opp);
 
 /**
  * hasGovernedScore — the classifier has emitted a numeric Governed Priority

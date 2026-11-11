@@ -125,6 +125,25 @@ def validate_record(record: Dict[str, Any]) -> List[Dict[str, Any]]:
     return issues
 
 
+# After a record is published for display, `phone` and `email` are the
+# Contact column with a fallback to the old column. Coverage has to count
+# the column itself, not that fallback, or an empty Contact email would
+# look filled whenever the deprecated Email column had a value.
+_COVERAGE_KEY = {
+    "Contact email": "contact_email",
+    "Contact phone": "contact_phone",
+    "Email": "email_alt",
+    "Phone number": "phone_alt",
+}
+
+
+def _column_value(record: Dict[str, Any], airtable_name: str, internal: str) -> Any:
+    raw_key = _COVERAGE_KEY.get(airtable_name)
+    if raw_key and raw_key in record:
+        return record.get(raw_key)
+    return record.get(internal)
+
+
 def field_coverage(records: Sequence[Dict[str, Any]],
                    field_map: Dict[str, str]) -> List[Dict[str, Any]]:
     """Populated-row percentage for every mapped Airtable column.
@@ -135,7 +154,9 @@ def field_coverage(records: Sequence[Dict[str, Any]],
     total = len(records) or 1
     coverage: List[Dict[str, Any]] = []
     for airtable_name, internal in sorted(field_map.items()):
-        populated = sum(1 for r in records if not is_blank(r.get(internal)))
+        populated = sum(
+            1 for r in records if not is_blank(_column_value(r, airtable_name, internal))
+        )
         coverage.append({
             "airtable_field": airtable_name,
             "internal_key": internal,

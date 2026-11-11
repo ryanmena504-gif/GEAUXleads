@@ -70,6 +70,89 @@ def first_present(record: dict, keys: Iterable[str]) -> Optional[str]:
     return None
 
 
+# Contact phone / Contact email are the columns that actually hold numbers
+# and addresses. Phone number / Email are the deprecated columns and are
+# empty on the live Leads table. Readers consult the Contact columns first
+# and use the old columns only when the Contact columns are blank.
+#
+# The two DTOs name those columns differently:
+#   opportunity: phone/email ARE Contact phone/email; phone_alt/email_alt
+#                are Phone number/Email
+#   leads:       contact_phone/contact_email ARE the Contact columns;
+#                phone_number/email are Phone number/Email
+PHONE_READ_KEYS: tuple = ("contact_phone", "phone", "phone_number", "phone_alt")
+EMAIL_READ_KEYS: tuple = ("contact_email", "email", "email_alt")
+
+
+def resolved_phone(record: Optional[dict]) -> Optional[str]:
+    """Phone to show, dial, or match. Contact phone wins over Phone number."""
+    if not record:
+        return None
+    return first_present(record, PHONE_READ_KEYS)
+
+
+def resolved_email(record: Optional[dict]) -> Optional[str]:
+    """Email to show or send. Contact email wins over Email."""
+    if not record:
+        return None
+    return first_present(record, EMAIL_READ_KEYS)
+
+
+def publish_opportunity_contacts(opp: dict) -> None:
+    """Collapse the opportunity DTO onto one phone and one email.
+
+    Call once, immediately after the Airtable field map is copied.
+    Before this runs, `phone`/`email` are the Contact columns and
+    `phone_alt`/`email_alt` are the legacy columns. After it, `phone`
+    and `email` are the value every reader should use, and
+    `contact_phone`/`contact_email` remain the raw Contact columns so a
+    later write can tell an empty Contact cell from a legacy fallback.
+    """
+    contact_phone = clean_text(opp.get("phone"))
+    legacy_phone = clean_text(opp.get("phone_alt"))
+    contact_email = clean_text(opp.get("email"))
+    legacy_email = clean_text(opp.get("email_alt"))
+    opp["contact_phone"] = contact_phone
+    opp["phone_number"] = legacy_phone
+    opp["contact_email"] = contact_email
+    opp["phone"] = contact_phone or legacy_phone
+    opp["email"] = contact_email or legacy_email
+
+
+def publish_leads_contacts(lead: dict) -> None:
+    """Collapse the leads DTO onto one phone and one email.
+
+    Call once, after the leads field map is copied. Before this runs,
+    `email` is the legacy Email column and `contact_email` is Contact
+    email. After it, `email`/`phone` prefer the Contact columns, and
+    `email_alt`/`phone_alt` keep the legacy values.
+    """
+    contact_phone = clean_text(lead.get("contact_phone"))
+    legacy_phone = clean_text(lead.get("phone_number"))
+    contact_email = clean_text(lead.get("contact_email"))
+    legacy_email = clean_text(lead.get("email"))
+    lead["contact_phone"] = contact_phone
+    lead["phone_number"] = legacy_phone
+    lead["phone_alt"] = legacy_phone
+    lead["contact_email"] = contact_email
+    lead["email_alt"] = legacy_email
+    lead["phone"] = contact_phone or legacy_phone
+    lead["email"] = contact_email or legacy_email
+
+
+def contact_column_filled(record: dict, write_key: str) -> bool:
+    """Whether the Contact column a research write would fill is already set.
+
+    `phone` and `email` on a published DTO can be a legacy fallback. That
+    fallback must not block a write into an empty Contact phone / Contact
+    email cell. Records that were never published only have `phone`/`email`.
+    """
+    raw_key = {"phone": "contact_phone", "email": "contact_email"}.get(write_key)
+    if raw_key and raw_key in record:
+        return bool(clean_text(record.get(raw_key)))
+    return bool(clean_text(record.get(write_key)))
+
+
 # ---------------------------------------------------------------- phone
 def phone_digits(value: Any) -> Optional[str]:
     """Digits of a phone number, normalized to NANP national form."""

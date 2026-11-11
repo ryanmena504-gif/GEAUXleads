@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import ResearchPanel from "@/components/ResearchPanel";
 import { api } from "@/lib/api";
 import { extractEmail, extractPhone } from "@/lib/contactExtract";
+import { pickEmail, pickPhone } from "@/lib/contact";
 
 /**
  * Owner-contact research for permit/homeowner leads.
@@ -61,8 +62,8 @@ const OwnerContactResearch = ({ opp, onUpdated }) => {
     `Contractor on record: ${opp?.contractor || "(none)"}. ` +
     `Find any publicly listed phone number or email for this owner.`;
 
-  const showPhoneSave = found?.phone && found.phone !== opp?.phone;
-  const showEmailSave = found?.email && found.email !== opp?.email;
+  const showPhoneSave = found?.phone && found.phone !== pickPhone(opp);
+  const showEmailSave = found?.email && found.email !== pickEmail(opp);
 
   return (
     <div className="mt-4">
@@ -71,7 +72,7 @@ const OwnerContactResearch = ({ opp, onUpdated }) => {
         recordId={opp.id}
         query={query}
         onResult={handleResult}
-        label={opp?.phone || opp?.email ? "Re-check owner contact" : "Find owner contact"}
+        label={pickPhone(opp) || pickEmail(opp) ? "Re-check owner contact" : "Find owner contact"}
         hint="Looks up a public phone and email. A name in the answer is saved to Contact name. Phone and email wait until you tap Save. Nothing is sent."
         testId={`research-owner-contact-${opp.id}`}
       />

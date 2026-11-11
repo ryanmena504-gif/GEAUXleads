@@ -3,6 +3,7 @@ import { Check, MessageCircle, ClipboardList, XCircle, Clock3, PhoneCall } from 
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { outreachAllowed, nextTouch } from "@/lib/queue";
+import { pickEmail, pickPhone } from "@/lib/contact";
 
 // Every button on this panel is a POST-outreach outcome, NOT a messaging or
 // draft action. The "I sent it" button is the one exception — it records an
@@ -18,8 +19,8 @@ const RESULT_ACTIONS = [
 const ContactResults = ({ opportunity, onSaved }) => {
   const [busy, setBusy] = useState("");
   const options = [
-    ...(opportunity?.contact_phone || opportunity?.phone ? ["Text"] : []),
-    ...(opportunity?.contact_email || opportunity?.email ? ["Email"] : []),
+    ...(pickPhone(opportunity) ? ["Text"] : []),
+    ...(pickEmail(opportunity) ? ["Email"] : []),
   ];
   const [channel, setChannel] = useState(options[0] || "Other");
   const mode = outreachAllowed(opportunity);

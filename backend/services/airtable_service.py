@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 from services.airtable_client import make_api
 
 from services import aggregations, dedupe, ingestion_diagnostics
+from services.field_norm import publish_opportunity_contacts, resolved_email, resolved_phone
 
 log = logging.getLogger("bloodhound.airtable")
 
@@ -519,11 +520,8 @@ def _says_needs_enrichment(v: Any) -> bool:
 
 
 def _has_channel(o: Dict[str, Any]) -> bool:
-    for k in ("email", "email_alt", "phone", "phone_alt"):
-        v = o.get(k)
-        if isinstance(v, str) and v.strip():
-            return True
-    return False
+    """A reachable phone or email, preferring Contact phone / Contact email."""
+    return bool(resolved_phone(o) or resolved_email(o))
 
 
 def _apply_view(items: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
@@ -935,6 +933,13 @@ class AirtableOpportunityService:
         for at_name, snake in self._field_map.items():
             opp[snake] = fields.get(at_name)
 
+        # Contact phone / Contact email are the live columns. Phone number
+        # and Email are the deprecated ones and are empty on the live base.
+        # Publish one phone and one email so display, send, and counts do
+        # not read the empty columns. The raw Contact cells stay on
+        # contact_phone / contact_email for the research write check.
+        publish_opportunity_contacts(opp)
+
         # created_time: prefer Airtable metadata (guaranteed present) over the
         # user-visible "Created time" field which may be re-typed.
         opp["created_time"] = opp.get("created_time") or record.get("createdTime")
@@ -1050,7 +1055,7 @@ class AirtableOpportunityService:
         opp["lane"] = _derive_lane(opp)
         opp["lane_label"] = LANE_LABELS.get(opp["lane"], opp["lane"])
 
-        if opp.get("phone") or opp.get("email") or opp.get("phone_alt") or opp.get("email_alt"):
+        if resolved_phone(opp) or resolved_email(opp):
             opp["reachability"] = "Direct"
         elif opp.get("company") or opp.get("website"):
             opp["reachability"] = "Indirect"

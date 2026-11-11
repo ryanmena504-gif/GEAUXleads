@@ -3,6 +3,7 @@ import { PenLine, Loader2, AlertCircle, MessageSquare, Check, ChevronDown } from
 import { api } from "@/lib/api";
 import { DncCheckFlag } from "@/components/DncCheckFlag";
 import { toast } from "sonner";
+import { pickPhone } from "@/lib/contact";
 
 /**
  * OutreachWriterButton — direct draft generation with transparency.
@@ -47,8 +48,8 @@ export const OutreachWriterButton = ({ opp }) => {
   }, [opp.id]);
 
   const hasMessage = Boolean(opp.first_message || opp.first_contact_message);
-  const smsHref = state.draft && opp.phone
-    ? `sms:${opp.phone}?body=${encodeURIComponent(state.draft)}`
+  const smsHref = state.draft && pickPhone(opp)
+    ? `sms:${pickPhone(opp)}?body=${encodeURIComponent(state.draft)}`
     : null;
 
   if (state.status === "running") {

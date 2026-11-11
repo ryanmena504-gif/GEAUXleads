@@ -1,13 +1,14 @@
 import React from "react";
 import { Mail, Phone, Search, Sparkles, Circle } from "lucide-react";
+import { pickEmail, pickPhone } from "@/lib/contact";
 
 /**
  * Renders one of six contact-status chips derived purely from existing
  * DTO fields. No backend call; no fabrication.
  */
 export const ContactStatusChip = ({ record, twilioEnabled = false, testId }) => {
-  const hasEmail = Boolean((record?.email || record?.email_alt || "").toString().trim());
-  const hasPhone = Boolean((record?.phone || record?.phone_alt || "").toString().trim());
+  const hasEmail = Boolean(pickEmail(record));
+  const hasPhone = Boolean(pickPhone(record));
   const isReAgent = record?._feed === "re_agents";
 
   let variant;

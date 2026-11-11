@@ -27,7 +27,15 @@ from services.airtable_client import make_api
 
 from services import dedupe
 from services.audit import derive_idempotency_key, get_audit_log
-from services.field_norm import clean_text, coerce_number, is_valid_email, is_valid_phone
+from services.field_norm import (
+    clean_text,
+    coerce_number,
+    is_valid_email,
+    is_valid_phone,
+    publish_leads_contacts,
+    resolved_email,
+    resolved_phone,
+)
 from services.outreach_policy import (
     EligibilityResult,
     PolicyThresholds,
@@ -286,6 +294,10 @@ class LeadsAirtableService:
         # Guarantee every mapped key exists so the UI never reads undefined.
         for snake in LEADS_FIELD_MAP.values():
             dto.setdefault(snake, None)
+        # `email` was the empty Email column and `contact_email` was the
+        # real address. Readers that look at `email` (display, send, counts)
+        # now see Contact email, and fall back to Email only when that is blank.
+        publish_leads_contacts(dto)
         # Compose a stable Airtable URL for "Open Full Lead"
         if self._table_id and dto["id"]:
             dto["_airtable_url"] = f"https://airtable.com/{self._base_id}/{self._table_id}/{dto['id']}"
@@ -391,10 +403,8 @@ class LeadsAirtableService:
         here, which let a lead with no phone and no email look contactable.
         """
         return (
-            is_valid_phone(lead.get("contact_phone"))
-            or is_valid_phone(lead.get("phone_number"))
-            or is_valid_email(lead.get("contact_email"))
-            or is_valid_email(lead.get("email"))
+            is_valid_phone(resolved_phone(lead))
+            or is_valid_email(resolved_email(lead))
         )
 
     def _explain(self, lead: Dict[str, Any], result: EligibilityResult) -> str:

@@ -9,6 +9,7 @@ import { contactState } from "@/lib/priority";
 import { api } from "@/lib/api";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import { outreachAllowed } from "@/lib/queue";
+import { pickEmail, pickPhone } from "@/lib/contact";
 import {
   ExternalLink,
   Globe,
@@ -98,6 +99,14 @@ const PartnerCard = ({ person, linkedProjects, onDraft }) => {
               </span>
             )}
           </div>
+          {(pickPhone(person) || pickEmail(person)) && (
+            <div
+              className="mt-1 text-[12px] text-[var(--bh-ink-2)]"
+              data-testid={`partner-contact-${person.id}`}
+            >
+              {[pickPhone(person), pickEmail(person)].filter(Boolean).join(" · ")}
+            </div>
+          )}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>

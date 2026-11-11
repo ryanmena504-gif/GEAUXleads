@@ -27,7 +27,13 @@ from services.user_settings_service import (
     DEFAULTS as USER_SETTINGS_DEFAULTS,
 )
 from services.airtable_settings_service import AirtableSettingsError
-from services.field_norm import is_valid_email, is_valid_phone, normalize_email
+from services.field_norm import (
+    is_valid_email,
+    is_valid_phone,
+    normalize_email,
+    resolved_email,
+    resolved_phone,
+)
 from services.webhook_service import (
     init_webhook_manager,
     shutdown_webhook_manager,
@@ -1319,8 +1325,8 @@ async def follow_ups_due(limit: int = 20):
                 "priority_band": opp.get("priority_band"),
                 "priority_score": opp.get("priority_score"),
                 "estimated_value": opp.get("estimated_value"),
-                "contact_phone": opp.get("contact_phone") or opp.get("phone"),
-                "contact_email": opp.get("contact_email") or opp.get("email"),
+                "contact_phone": resolved_phone(opp),
+                "contact_email": resolved_email(opp),
                 "first_message": opp.get("first_message") or opp.get("first_contact_message"),
                 "outreach_attempt": opp.get("outreach_attempt"),
                 "next_follow_up": opp.get("next_follow_up"),
@@ -1367,7 +1373,7 @@ async def find_by_phone(number: str):
 
     matches = []
     for o in all_ops:
-        for key in ("phone", "phone_alt", "contact_phone"):
+        for key in ("contact_phone", "phone", "phone_number", "phone_alt"):
             candidate = _digits(o.get(key))
             if candidate and (candidate.endswith(tail) or tail.endswith(candidate[-10:])):
                 matches.append(o)
@@ -1431,25 +1437,18 @@ async def landlord_portfolio(opp_id: str):
             "unpriced_count": 0,
         }
 
-    current_email = _norm_email(current.get("email") or current.get("email_alt"))
-    current_phone_tail = (
-        _digits_tail(current.get("phone"))
-        or _digits_tail(current.get("phone_alt"))
-    )
+    current_email = _norm_email(resolved_email(current))
+    current_phone_tail = _digits_tail(resolved_phone(current))
     current_name = _norm_name(current.get("decision_maker"))
 
     def _is_sibling(o: Dict[str, Any]) -> Optional[str]:
         """Returns the match-key type ("email", "phone", "name") or None."""
         if (o.get("lane") or "").lower() != "landlord":
             return None
-        if current_email:
-            for key in ("email", "email_alt"):
-                if _norm_email(o.get(key)) == current_email:
-                    return "email"
-        if current_phone_tail:
-            for key in ("phone", "phone_alt"):
-                if _digits_tail(o.get(key)) == current_phone_tail:
-                    return "phone"
+        if current_email and _norm_email(resolved_email(o)) == current_email:
+            return "email"
+        if current_phone_tail and _digits_tail(resolved_phone(o)) == current_phone_tail:
+            return "phone"
         if current_name and _norm_name(o.get("decision_maker")) == current_name:
             return "name"
         return None
@@ -2285,8 +2284,8 @@ def _outreach_write_payload(opp: Dict[str, Any]) -> Dict[str, Any]:
         "project_address": opp.get("project_address"),
         "project_type": opp.get("project_type"),
         "permit_description": opp.get("permit_description"),
-        "phone": opp.get("phone"),
-        "email": opp.get("email"),
+        "phone": resolved_phone(opp),
+        "email": resolved_email(opp),
         "evidence_summary": opp.get("evidence_summary"),
         "outreach_angle": opp.get("outreach_angle"),
         "triggered_at": datetime.now(timezone.utc).isoformat(),
@@ -2469,8 +2468,8 @@ async def trigger_portfolio_check(opp_id: str):
         "project_address": opp.get("project_address"),
         "project_type": opp.get("project_type"),
         "permit_number": opp.get("permit_number"),
-        "phone": opp.get("phone"),
-        "email": opp.get("email"),
+        "phone": resolved_phone(opp),
+        "email": resolved_email(opp),
         "triggered_at": datetime.now(timezone.utc).isoformat(),
         "triggered_by": "geauxleads-app",
     }
@@ -2741,9 +2740,9 @@ async def create_gmail_draft(opp_id: str, request: Request):
     subject = posted_subject or (
         opp.get("draft_outreach_subject") or f"Quick intro — {opp.get('name') or 'your project'}"
     ).strip()
-    # Mirror the frontend's pickEmail: it renders the button when any of
-    # these hold an address, so the backend must accept the same set.
-    to_email = opp.get("email") or opp.get("email_alt") or opp.get("contact_email") or ""
+    # Contact email first. The deprecated Email column is the fallback,
+    # and only when Contact email is blank. Same order as the button.
+    to_email = resolved_email(opp) or ""
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
     if not to_email:
@@ -2817,9 +2816,9 @@ async def send_email_now(opp_id: str, request: Request):
     subject = posted_subject or (
         opp.get("draft_outreach_subject") or f"Quick intro — {opp.get('name') or 'your project'}"
     ).strip()
-    # Mirror the frontend's pickEmail: it renders the button when any of
-    # these hold an address, so the backend must accept the same set.
-    to_email = opp.get("email") or opp.get("email_alt") or opp.get("contact_email") or ""
+    # Contact email first. The deprecated Email column is the fallback,
+    # and only when Contact email is blank. Same order as the button.
+    to_email = resolved_email(opp) or ""
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
     if not to_email or not is_valid_email(to_email):

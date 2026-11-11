@@ -80,6 +80,14 @@ const CheckboxRow = ({ item, checked, onToggle, researchOpen, onToggleResearch }
             <MapPin size={10} strokeWidth={1.75} /> {item.property_address}
           </div>
         )}
+        {(item.phone || item.email) && (
+          <div
+            className="mt-0.5 text-[12px] text-[var(--bh-ink-2)] truncate"
+            data-testid={`landlord-contact-${item.id}`}
+          >
+            {[item.phone, item.email].filter(Boolean).join(" · ")}
+          </div>
+        )}
         <div className="mt-1 flex items-center gap-2 flex-wrap text-[10.5px] text-[var(--bh-ink-mute)] tabular-nums">
           {item.neighborhood && (
             <span
@@ -295,9 +303,10 @@ const DiscoveryLandlords = () => {
       </h1>
       <p className="mt-1 text-[13px] text-[var(--bh-ink-3)] max-w-3xl">
         {state.counts.all || 63} property owners from the New Orleans
-        Commercial Short-Term Rental license registry. No phone or email yet
-        — pick a batch and GEAUXleads prints them as USPS-ready letters.
-        Every letter is a page break, so Cmd+P produces one letter per page.
+        Commercial Short-Term Rental license registry. A phone or email is
+        shown when one is already on the record. Pick a batch and GEAUXleads
+        prints them as USPS-ready letters. Nothing on this page sends a
+        message. Every letter is a page break, so Cmd+P produces one letter per page.
       </p>
 
       {/* Search + ZIP quick-filter row */}

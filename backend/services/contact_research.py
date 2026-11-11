@@ -19,10 +19,13 @@ from typing import Any, Dict, Optional
 
 from services.field_norm import (
     clean_text,
+    contact_column_filled,
     format_phone,
     is_valid_email,
     is_valid_phone,
     normalize_email,
+    resolved_email,
+    resolved_phone,
 )
 
 # Enrichment status values. "Research failed" is not in the base select
@@ -176,11 +179,10 @@ def is_residential_permit(opp: Dict[str, Any]) -> bool:
 
 
 def _has_reachable(opp: Dict[str, Any]) -> bool:
+    """Contact phone / Contact email count. Legacy columns count only as fallback."""
     return bool(
-        is_valid_phone(opp.get("phone"))
-        or is_valid_phone(opp.get("phone_alt"))
-        or is_valid_email(opp.get("email"))
-        or is_valid_email(opp.get("email_alt"))
+        is_valid_phone(resolved_phone(opp))
+        or is_valid_email(resolved_email(opp))
     )
 
 
@@ -307,7 +309,10 @@ def _append_note(existing: Any, line: str) -> str:
 def _fill(updates: Dict[str, Any], opp: Dict[str, Any], key: str, value: Optional[str], force: bool) -> None:
     if not value:
         return
-    if force or not clean_text(opp.get(key)):
+    # Phone and email writes land on Contact phone / Contact email. A legacy
+    # Phone number / Email copied onto the display key must not look like
+    # the Contact column is already filled.
+    if force or not contact_column_filled(opp, key):
         updates[key] = value
 
 
@@ -348,10 +353,10 @@ def build_research_updates(
         _fill(updates, opp, "email", email, force)
 
     has_phone = bool(
-        (not scam and (updates.get("phone") or is_valid_phone(opp.get("phone")) or is_valid_phone(opp.get("phone_alt"))))
+        not scam and (updates.get("phone") or is_valid_phone(resolved_phone(opp)))
     )
     has_email = bool(
-        (not scam and (updates.get("email") or is_valid_email(opp.get("email")) or is_valid_email(opp.get("email_alt"))))
+        not scam and (updates.get("email") or is_valid_email(resolved_email(opp)))
     )
     found = has_phone or has_email
     already_ready = (opp.get("contact_readiness") or "").strip() == READINESS_CONTACT_READY
@@ -450,7 +455,7 @@ def annotate_contact_flags(opp: Dict[str, Any]) -> Dict[str, Any]:
     dial, text, or block anything by itself.
     """
     source = extract_contact_source(opp)
-    phone = clean_text(opp.get("phone")) or clean_text(opp.get("phone_alt")) or clean_text(opp.get("contact_phone"))
+    phone = resolved_phone(opp)
     opp["contact_source"] = source
     opp["dnc_check_required"] = bool(source == "homeowner" and phone)
     return opp

@@ -25,6 +25,7 @@ import PassSheet from "@/components/PassSheet";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
+import { pickEmail, pickPhone } from "@/lib/contact";
 import { queueBucket, outreachAllowed } from "@/lib/queue";
 import {
   ArrowLeft,
@@ -642,8 +643,8 @@ const OpportunityDetail = () => {
               </div>
               <div className="grid sm:grid-cols-2 gap-x-6">
                 <KV label="Decision maker" value={opp.decision_maker} testId="kv-decision-maker" />
-                <KV label="Phone" value={opp.phone} mono testId="kv-phone" />
-                <KV label="Email" value={opp.email} testId="kv-email" />
+                <KV label="Phone" value={pickPhone(opp)} mono testId="kv-phone" />
+                <KV label="Email" value={pickEmail(opp)} testId="kv-email" />
                 <KV label="Company" value={opp.company} testId="kv-company" />
                 <KV label="Applicant" value={opp.applicant} />
                 <KV label="Contractor on record" value={opp.contractor} />
@@ -661,7 +662,7 @@ const OpportunityDetail = () => {
                   opp={opp}
                   trigger={api.findContact}
                   watchFields={["phone", "email", "notes", "decision_maker", "owner", "owner_mailing_address", "enrichment_status", "contact_readiness"]}
-                  label={opp.phone || opp.email ? "Find contact again" : "Find contact"}
+                  label={pickPhone(opp) || pickEmail(opp) ? "Find contact again" : "Find contact"}
                   icon={UserSearch}
                   doneMessage="Contact finder finished — contact details updated."
                   onUpdated={setOpp}
