@@ -27,7 +27,7 @@ from services.airtable_client import make_api
 
 from services import dedupe
 from services.audit import derive_idempotency_key, get_audit_log
-from services.field_norm import clean_text, is_valid_email, is_valid_phone
+from services.field_norm import clean_text, coerce_number, is_valid_email, is_valid_phone
 from services.outreach_policy import (
     EligibilityResult,
     PolicyThresholds,
@@ -104,11 +104,12 @@ EDITABLE_FIELDS = {
 # Includes Paused (hold) so a backend restart cannot resurrect held leads.
 _EXCLUDE_HUNT = ("rejected", "closed", "disqualified", "paused")
 
-# Exact Status / Outreach / Approval values that remove a lead from the NBA
-# queue. Prefer exact matches over bare substring "sent" — otherwise
-# "Not sent" falsely excludes every fresh lead.
+# Whole-value Status / Outreach / Approval matches. "sent" is not a substring
+# check — "Not sent", "Consent", and "Presentation" all contain those letters
+# and stay eligible.
 _EXCLUDE_STATUS_EXACT = {
     "sent",
+    "sent by ryan",
     "closed",
     "complete",
     "duplicate",
@@ -118,6 +119,25 @@ _EXCLUDE_STATUS_EXACT = {
     "do not contact",
 }
 _EXCLUDE_STATUS_SUBSTRING = ("do not contact", "duplicate")
+
+
+def _status_tokens(value: Any) -> List[str]:
+    """Normalize a Status / Outreach / Hunt cell to whole lowercase values.
+
+    Single-selects arrive as strings. Lookups and multi-selects arrive as
+    lists. Compare each entry as a whole value — never as one stringified list.
+    """
+    if value is None or value is False:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        out: List[str] = []
+        for item in value:
+            out.extend(_status_tokens(item))
+        return out
+    if isinstance(value, dict):
+        return []
+    text = " ".join(str(value).lower().split())
+    return [text] if text else []
 
 # Written to Approval status on approve. Live options on that single-select:
 # Needs draft, Ready for review, Approved, Rejected.
@@ -291,17 +311,34 @@ class LeadsAirtableService:
     # ---------- selection logic ----------
     @staticmethod
     def _workflow_field_excluded(value: Any) -> bool:
-        """True when a Status / Outreach / Approval value means leave it alone."""
-        if value is None or value is False:
-            return False
-        low = (value if isinstance(value, str) else str(value)).lower().strip()
-        if not low:
-            return False
-        if low in _EXCLUDE_STATUS_EXACT:
-            return True
-        if any(tok in low for tok in _EXCLUDE_STATUS_SUBSTRING):
-            return True
+        """True when a Status / Outreach / Approval value means leave it alone.
+
+        Outreach "Sent", "Sent by Ryan", and "Replied" are whole-value matches.
+        "Not sent" stays eligible because it is not one of those values.
+        """
+        for low in _status_tokens(value):
+            if low in _EXCLUDE_STATUS_EXACT:
+                return True
+            if any(tok in low for tok in _EXCLUDE_STATUS_SUBSTRING):
+                return True
         return False
+
+    def _has_public_source_url(self, lead: Dict[str, Any]) -> bool:
+        url = clean_text(lead.get("source_url"))
+        if not url:
+            return False
+        low = url.lower()
+        return low.startswith("http://") or low.startswith("https://")
+
+    def _is_contact_ready(self, lead: Dict[str, Any]) -> bool:
+        """NBA gate: a public business phone or email, a source URL, and a next action."""
+        if not clean_text(lead.get("name")) or not clean_text(lead.get("next_action")):
+            return False
+        if not self._has_usable_contact(lead):
+            return False
+        if not self._has_public_source_url(lead):
+            return False
+        return True
 
     def _is_excluded(self, lead: Dict[str, Any]) -> bool:
         if lead["id"] in self._held:
@@ -312,16 +349,12 @@ class LeadsAirtableService:
             return True
         # Hunt status is the canonical hold / DNC signal. Without this check,
         # Rejected / Paused leads reappear in NBA after a process restart.
-        hunt = lead.get("hunt_status")
-        if isinstance(hunt, str) and hunt.strip():
-            hunt_l = hunt.lower()
-            if any(tok in hunt_l for tok in _EXCLUDE_HUNT):
-                return True
+        hunt_tokens = _status_tokens(lead.get("hunt_status"))
+        if any(tok in low for low in hunt_tokens for tok in _EXCLUDE_HUNT):
+            return True
         # A lead is not actionable without a name AND a recommended next action.
         # Empty/skeleton rows in Airtable must never surface as the NBA.
-        name = clean_text(lead.get("name"))
-        next_action = clean_text(lead.get("next_action"))
-        if not name or not next_action:
+        if not self._is_contact_ready(lead):
             return True
         for key in ("status", "outreach_status", "approval_status"):
             if self._workflow_field_excluded(lead.get(key)):
@@ -366,17 +399,31 @@ class LeadsAirtableService:
             return None
         # Canonical: `Lead score` DESC first — the single primary priority.
         # Ties: freshness DESC, then id ASC. Unscored records land LAST.
+        # Coerce keys so a lookup list, a text formula, or a bool cannot
+        # raise TypeError during the sort.
         def _score(l):
             s = l.get("lead_score")
-            return s if isinstance(s, (int, float)) else None
+            if isinstance(s, bool):
+                return None
+            n = coerce_number(s)
+            if n is None or n != n or n in (float("inf"), float("-inf")):
+                return None
+            return n
         def _date(l):
-            return l.get("date_discovered") or l.get("created_time") or ""
+            raw = l.get("date_discovered") or l.get("created_time") or ""
+            if isinstance(raw, (list, tuple)):
+                raw = next((v for v in raw if v not in (None, "", [])), "")
+            if isinstance(raw, dict):
+                raw = ""
+            return str(raw or "")
+        def _id(l):
+            return str(l.get("id") or "")
         scored   = [l for l in candidates if _score(l) is not None]
         unscored = [l for l in candidates if _score(l) is None]
-        scored.sort(key=lambda l: l["id"])
-        scored.sort(key=lambda l: _date(l), reverse=True)
+        scored.sort(key=_id)
+        scored.sort(key=_date, reverse=True)
         scored.sort(key=lambda l: -_score(l))
-        unscored.sort(key=lambda l: l["id"])
+        unscored.sort(key=_id)
         ordered = scored + unscored
         pick = ordered[0]
         result = self.eligibility(pick)
@@ -573,6 +620,11 @@ class LeadsAirtableService:
                            outcome="accepted", actor=actor,
                            changes={"First message": {"from": previous, "to": message}})
         return self.get(lead_id)
+
+
+# Must exist before the first read. A health-pass edit dropped this line and
+# every /api/leads/* request raised NameError → HTTP 500 before any pick ran.
+_singleton: Optional[LeadsAirtableService] = None
 
 
 def get_leads_service() -> Optional[LeadsAirtableService]:

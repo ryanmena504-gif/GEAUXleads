@@ -50,6 +50,7 @@ APPROVABLE_FIELDS = {
     "Lead score": 78,
     "First message": "Hi Marie — saw the permit filing on Prytania.",
     "Status": "New",
+    "Source URL": "https://permits.nola.gov/ashby",
 }
 
 
@@ -222,12 +223,25 @@ def test_next_best_action_carries_the_verdict_for_the_ui(service):
 
 
 def test_queue_stats_separate_approvable_from_merely_queued():
-    unreachable = {"Leads Name": "No contact", "recommended action": "Research"}
-    svc = make_service({"rec1": dict(APPROVABLE_FIELDS), "rec2": unreachable})
+    # Contact-ready (phone + source URL + next action) but missing address
+    # and category, so the outreach policy still blocks approval.
+    blocked = {
+        "Leads Name": "No address",
+        "recommended action": "Research the owner",
+        "Contact phone": "504-301-7788",
+        "Source URL": "https://permits.nola.gov/no-address",
+    }
+    no_contact = {"Leads Name": "No contact", "recommended action": "Research"}
+    svc = make_service({
+        "rec1": dict(APPROVABLE_FIELDS),
+        "rec2": blocked,
+        "rec3": no_contact,
+    })
     stats = svc.queue_stats()
     assert stats["eligible"] == 2
     assert stats["approvable"] == 1
     assert stats["blocked_by_policy"] == 1
+    assert svc.pick_next_best_action()["id"] == "rec1"
 
 
 def test_hold_and_skip_remove_a_lead_from_the_queue(service):
