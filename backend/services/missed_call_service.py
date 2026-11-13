@@ -43,6 +43,7 @@ import logging
 import os
 import re
 import threading
+import unicodedata
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from xml.sax.saxutils import escape
@@ -59,12 +60,14 @@ DEFAULT_GREETING = (
     "Sorry I missed you. This is Ryan with The Shirtless Handyman. "
     "I got your number and will call you back shortly."
 )
-SMS_MAX_CHARS = 320  # two GSM segments; keeps each text at 1-2 billed segments
+SMS_MAX_CHARS = 306  # two GSM-7 segments (153 each); keeps each text at <= 2 billed segments
 
 _PHONE_KEYS = ("contact_phone", "phone", "phone_number", "phone_alt")
 _QUEUE_RANK = {"Ready to Contact": 0, "Contacted": 1}
 _CALLER_LINE = re.compile(r"^\s*CALLER:\s*(.+?)\s*$", re.I | re.M)
 _UNKNOWN_CALLER = {"unknown", "none", "n/a", "not found", "none found"}
+_ASCII_SWAP = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+                             "\u2013": "-", "\u2014": "-", "\u00b7": "|", "\u2026": "..."})
 _WITHHELD = ("anonymous", "unknown", "restricted", "private", "unavailable")
 
 
@@ -267,8 +270,12 @@ def _first(lead: Dict[str, Any], *keys: str) -> str:
 
 
 def _clip(text: str, limit: int = SMS_MAX_CHARS) -> str:
+    # Plain ASCII keeps the text in GSM-7 (153 chars a segment). One curly
+    # quote or emoji flips it to UCS-2 (67 a segment) and triples the bill.
+    text = unicodedata.normalize("NFKD", text.translate(_ASCII_SWAP))
+    text = text.encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[ \t]+", " ", text).strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
 def build_sms(
@@ -297,7 +304,7 @@ def build_sms(
             _first(lead, "status", "current_queue"),
         ) if b]
         if bits:
-            lines.append(" · ".join(bits))
+            lines.append(" | ".join(bits))
         if extra_matches:
             lines.append(f"+{extra_matches} more lead(s) with this number")
     else:

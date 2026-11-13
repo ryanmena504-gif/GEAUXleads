@@ -248,3 +248,12 @@ def test_route_refuses_when_not_configured(client, monkeypatch):
     monkeypatch.delenv("MISSED_CALL_NOTIFY_NUMBER")
     r = client.post("/api/twilio/voice/missed-call", data={"From": "+15045557777"})
     assert r.status_code == 503
+
+
+def test_sms_stays_plain_ascii_and_two_segments_max(env):
+    lead = dict(LEADS[0], decision_maker="Jos\u00e9 \u201cJoe\u201d D\u2019Amico \U0001F600",
+                project_address="9" * 400)
+    body = mcs.build_sms(caller="+15045550142", digits="5045550142", when=NOW, lead=lead)
+    assert body.isascii()
+    assert len(body) <= 306 and body.endswith("...")
+    assert 'Jose "Joe" D\'Amico' in body
