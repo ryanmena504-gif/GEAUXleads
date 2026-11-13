@@ -135,6 +135,12 @@ def get_twilio_lookup_service() -> Optional[TwilioLookupService]:
     global _service_singleton, _service_init_error
     if _service_singleton is not None:
         return _service_singleton
+    # Opt-in: the Lookup page's Number intel card fetches on every open
+    # (~1-2 cents each). Adding Twilio keys for the missed-call text must
+    # not switch that paid call on by itself.
+    if os.environ.get("TWILIO_LOOKUP_ENABLED", "").strip().lower() not in ("1", "true", "yes"):
+        _service_init_error = "Twilio Lookup is off (set TWILIO_LOOKUP_ENABLED=true to turn it on)"
+        return None
     sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
     token = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
     if not sid or not token:

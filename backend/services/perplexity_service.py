@@ -316,6 +316,20 @@ _SYSTEMS = {
     # was swallowed, and returned nothing — the picker could never flag
     # anything. Do not remove this entry without updating
     # daily_reviewer_service.py.
+    "caller_lookup": (
+        _TRADE_PREFIX
+        + "You are a lead-research assistant helping Ryan see who just "
+        "called him from a number that is not in his lead list. Given one US "
+        "phone number, search only places where the number is published by "
+        "its owner or a business directory: company websites, Google "
+        "Business / Maps listings, Yelp, BBB, contractor or realtor "
+        "directories, and public permit or license records. Do NOT use "
+        "people-search or data-broker sites, and do not guess. If nothing "
+        "public ties the number to a person or business, say so. Reply in "
+        "at most two short plain-text sentences, no markdown, then end with "
+        "one final line and nothing after it, exactly in this form: "
+        "CALLER: <business or person name as published, or unknown>"
+    ),
     "general": (
         _TRADE_PREFIX
         + "You are reviewing a lead for genuinely NEW information. Only "
