@@ -68,7 +68,6 @@ L = {
     "risk_flags": "fld7TAIyY2204PgBU",      # Risk flags
     "opportunity_type": "fld8XeP3Wrg4HXvsb",
     "estimated_job_value": "fldAHk6I3yfiJ6WCB",
-    "ai_summary": "fldAVQlqxBakvH7ie",
     "permit_value": "fldB1wORNDOxu8t6t",
     "permit_status": "fldFTF3g8O4GP7iV8",
     "source_url": "fldK77qr5LqnAKj8I",
@@ -138,7 +137,6 @@ def lead_fields_from_signal(raw_id: str, f: Dict[str, Any]) -> Dict[str, Any]:
         L["risk_flags"]: RISK_FLAGS,
         L["opportunity_type"]: g("ai_project_type"),
         L["estimated_job_value"]: g("ai_value"),
-        L["ai_summary"]: g("ai_reasons"),
         L["permit_value"]: g("estimated_value"),
         L["permit_status"]: g("status_raw"),
         L["source_url"]: g("source_url"),
