@@ -257,3 +257,11 @@ def test_sms_stays_plain_ascii_and_two_segments_max(env):
     assert body.isascii()
     assert len(body) <= 306 and body.endswith("...")
     assert 'Jose "Joe" D\'Amico' in body
+
+
+def test_twilio_keys_alone_do_not_turn_on_paid_lookup(env, monkeypatch):
+    import services.twilio_lookup_service as tls
+    monkeypatch.setattr(tls, "_service_singleton", None)
+    monkeypatch.delenv("TWILIO_LOOKUP_ENABLED", raising=False)
+    assert tls.get_twilio_lookup_service() is None
+    assert "TWILIO_LOOKUP_ENABLED" in (tls.twilio_lookup_config_error() or "")
