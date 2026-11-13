@@ -22,6 +22,9 @@ CRON_SECRET_HEADER = "x-cron-secret"
 STREAM_QUERY_PARAM = "access_key"
 
 OPEN_PATHS = frozenset({"/api/health", "/api/health/deep"})
+# Twilio cannot send the app password. These POST routes skip it and check
+# X-Twilio-Signature (signed with TWILIO_AUTH_TOKEN) themselves instead.
+TWILIO_SIGNED_PATHS = frozenset({"/api/twilio/voice/missed-call"})
 
 PASSWORD_NOT_CONFIGURED = {
     "ok": False,
@@ -118,3 +121,7 @@ def cron_failure(supplied: Optional[str]) -> Optional[dict]:
 
 def is_open_path(path: str) -> bool:
     return path.rstrip("/") in OPEN_PATHS
+
+
+def is_twilio_signed_path(path: str) -> bool:
+    return path.rstrip("/") in TWILIO_SIGNED_PATHS

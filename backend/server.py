@@ -2873,6 +2873,50 @@ async def send_email_now(opp_id: str, request: Request):
     return {"ok": True, "sent": sent, "opportunity": updated}
 
 
+# ============================================================================
+# Missed-call text — POST /api/twilio/voice/missed-call
+# Ryan's cell forwards unanswered calls to a Twilio number; Twilio posts the
+# call here. Twilio cannot send the app password, so the password middleware
+# lets this one path through and THIS route refuses anything without a valid
+# X-Twilio-Signature. TwiML goes back at once; the lead match, the capped
+# one-shot research, and the single SMS to Ryan run after the response.
+# ============================================================================
+@api_router.post("/twilio/voice/missed-call")
+async def twilio_missed_call(request: Request, background: BackgroundTasks):
+    from urllib.parse import parse_qsl
+    from fastapi.responses import Response
+    from services import missed_call_service as mcs
+    from services.perplexity_service import research_async as _pplx_caller_research
+
+    if mcs.config_error():
+        logger.warning("Missed-call webhook hit but not configured: %s", mcs.config_error())
+        return JSONResponse(status_code=503, content={"ok": False, "error": "missed_call_not_configured"})
+    raw = (await request.body()).decode("utf-8", "replace")
+    params = dict(parse_qsl(raw, keep_blank_values=True))
+    url = mcs.webhook_url(str(request.url), request.headers)
+    if not mcs.signature_valid(url, params, request.headers.get("x-twilio-signature", "")):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+
+    if mcs.first_time_seen(params.get("CallSid", "")):
+        async def _load_leads():
+            osvc = get_opportunity_service()
+            return await _bg(osvc.all) if hasattr(osvc, "all") else []
+
+        async def _job():
+            try:
+                outcome = await mcs.handle_missed_call(
+                    params, load_leads=_load_leads, research=_pplx_caller_research,
+                )
+                logger.info("Missed call handled: outcome=%s matched=%s researched=%s sms=%s",
+                            outcome.get("outcome"), outcome.get("matched"),
+                            outcome.get("researched"), bool(outcome.get("sms_sid")))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Missed-call job failed: %s", str(e)[:200])
+
+        background.add_task(_job)
+    return Response(content=mcs.twiml_response(), media_type="application/xml")
+
+
 # Registered last: include_router copies api_router's routes at call time,
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).
@@ -2892,7 +2936,10 @@ async def require_app_password(request: Request, call_next):
     path = request.url.path
     if not path.startswith("/api/") or path.rstrip("/") in ("/api/health", "/api/health/deep"):
         return await call_next(request)
-    from services.access_control import password_failure, presented_app_password
+    from services.access_control import is_twilio_signed_path, password_failure, presented_app_password
+    if request.method == "POST" and is_twilio_signed_path(path):
+        # The route itself rejects a missing or wrong X-Twilio-Signature.
+        return await call_next(request)
     supplied = presented_app_password(request.headers, request.query_params, path)
     failure = password_failure(supplied)
     if failure:
