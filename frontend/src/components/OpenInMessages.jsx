@@ -7,6 +7,13 @@ import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import { looksLikeAIPrompt } from "@/lib/draftSafety";
 import { api } from "@/lib/api";
 import { pickEmail } from "@/lib/contact";
+import {
+  softenDraftClaims,
+  mentionsListingPressure,
+  isListingAgentLead,
+  buildListingAgentBody,
+  recentWorkLine,
+} from "@/lib/outreachTemplates";
 
 export { pickEmail };
 
@@ -47,16 +54,18 @@ export const withSignature = (body, senderName, senderPhone) => {
   return base ? `${base}${signature}` : signature.trimStart();
 };
 
-const buildFirstDraft = (opp, sender) => {
+export const buildFirstDraft = (opp, sender) => {
   const lane = (opp?.lane || "").toLowerCase();
   const isPartner = lane === "partner";
   const isLandlord = lane === "landlord";
   const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
   const generic = isPartner ? "team" : "there";
   // Pass ONLY person-name fields — never opp.name (record/project name).
+  // The email check drops a name that doesn't fit the inbox (flora@ vs
+  // "Janet") back to the generic greeting.
   const salutation = buildSalutation(
     [opp?.decision_maker, opp?.contact_name],
-    { verb: "Hi", generic },
+    { verb: "Hi", generic, email: pickEmail(opp) },
   );
   const partnerFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across ${opp?.name || "your team"} while looking at the kind of work being done around the area.`,
@@ -68,7 +77,7 @@ const buildFirstDraft = (opp, sender) => {
   const landlordFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I saw you own ${opp?.project_address || "properties around the area"} and wanted to reach out.`,
     "",
-    "I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, goes over existing tile. If a unit between tenants needs that kind of finish, text me a photo and I'll tell you straight whether it's my kind of job and when I can be there.",
+    "I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, and it often goes over existing tile once I've checked it's solid. If a unit between tenants needs that kind of finish, text me a photo and I'll tell you straight whether it's my kind of job and when I can be there.",
   ].join("\n");
   const projectFallback = [
     `I'm ${senderName} with The Shirtless Handyman. I came across your ${opp?.project_type || "project"} and wanted to reach out.`,
@@ -99,8 +108,16 @@ const buildFirstDraft = (opp, sender) => {
     null;
   const airtableCheck = airtableBody ? looksLikeAIPrompt(airtableBody) : { trip: true, reason: "empty" };
   const usedFallback = airtableCheck.trip;
-  const rawBody = usedFallback ? fallbackBody : airtableBody;
-  const cleanBody = stripLeadingGreeting(rawBody);
+  // Listing agents get the buyer-side pitch, never a stored draft that
+  // points at the seller's price cuts or days on market.
+  const listingAgent = isListingAgentLead(opp);
+  const listingPressure = listingAgent && (usedFallback || mentionsListingPressure(airtableBody));
+  const rawBody = listingPressure
+    ? buildListingAgentBody(opp)
+    : usedFallback
+      ? fallbackBody
+      : airtableBody;
+  const cleanBody = softenDraftClaims(stripLeadingGreeting(rawBody));
   const body = [salutation, "", cleanBody].filter(Boolean).join("\n");
   return {
     subject,
@@ -128,12 +145,25 @@ const buildFirstDraft = (opp, sender) => {
  * `current_recommendation` is Claude's ADVICE TO RYAN — never customer-facing
  * outreach copy (2026-02-19 bug). Nothing AI-authored is piped in.
  */
-const buildFollowUpDraft = (opp, sender) => {
+// A staged Draft Outreach Body is only a follow-up when it was written
+// AFTER the last logged send. Otherwise it's the first message he already
+// sent, and texting it again would repeat himself.
+const stagedIsFresh = (opp) => {
+  const sent = Date.parse(opp?.message_sent_date || "");
+  if (!Number.isFinite(sent)) return true;
+  const made = Date.parse(opp?.draft_outreach_generated_at || "");
+  return Number.isFinite(made) && made > sent;
+};
+
+export const buildFollowUpDraft = (opp, sender) => {
   const isLandlord = (opp?.lane || "").toLowerCase() === "landlord";
   const salutation = buildSalutation(
     [opp?.decision_maker, opp?.contact_name],
-    { verb: "Hi", generic: "there" },
+    { verb: "Hi", generic: "there", email: pickEmail(opp) },
   );
+  // "Hi Jeff," → "Hi Jeff" for the inline "Hi Jeff — Ryan here" text form.
+  const inlineHello = salutation.replace(/,\s*$/, "");
+  const workLine = recentWorkLine(sender?.recent_job_area);
   const senderName = (sender?.sender_name || DEFAULT_SENDER_NAME).trim();
   const senderPhone = (sender?.sender_phone || DEFAULT_SENDER_PHONE).trim();
   const project = opp?.project_type || opp?.name || "your project";
@@ -145,12 +175,20 @@ const buildFollowUpDraft = (opp, sender) => {
     // Prefer the staged draft if one exists (from this morning's staging or
     // the transparent outreach generator).
     const staged = (opp?.draft_outreach_body || "").trim();
-    if (staged) {
-      return { kind: "text", subject: "", body: staged, airtable_rejected: false, airtable_reject_reason: null };
+    if (
+      staged &&
+      stagedIsFresh(opp) &&
+      !looksLikeAIPrompt(staged).trip &&
+      !mentionsListingPressure(staged)
+    ) {
+      // Re-greet with the checked salutation so a stored "Hey Janet —"
+      // can't reach flora@.
+      const body = `${inlineHello} — ${softenDraftClaims(stripLeadingGreeting(staged))}`;
+      return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
     }
     const body = isLandlord
-      ? `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling about ${address}. Between tenants, if a unit's shower or wet area needs a seamless, waterproof finish — zero grout to scrub — text me a photo and I'll tell you straight whether it's my kind of job and when I can be there. Worth two minutes this week? — ${senderName} ${senderPhone}`
-      : `${salutation} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling. I do seamless microcement and Venetian plaster for showers and wet areas — zero grout to scrub, fully waterproof, goes over existing tile. Open to a quick chat this week? — ${senderName} ${senderPhone}`;
+      ? `${inlineHello} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling about ${address}. Between tenants, if a unit's shower or wet area needs a seamless, waterproof finish — zero grout to scrub — text me a photo and I'll tell you straight whether it's my kind of job and when I can be there. Worth two minutes this week? — ${senderName} ${senderPhone}`
+      : `${inlineHello} — ${senderName}, the Shirtless Handyman here in New Orleans. Just tried calling. ${workLine} — ${senderName} ${senderPhone}`;
     return { kind: "text", subject: "", body, airtable_rejected: false, airtable_reject_reason: null };
   }
 
@@ -178,7 +216,7 @@ const buildFollowUpDraft = (opp, sender) => {
     : `Quick thought · ${project}`;
   const rec = isLandlord
     ? "Quick check-in — anything need attention between tenants? Text me a photo and I'll tell you straight what I can do and when I can be there."
-    : `Sent a note last week and figured I'd try once more with something concrete: I do seamless microcement and Venetian plaster for showers and wet areas — zero grout, fully waterproof, goes right over existing tile. If a project ever calls for that spa look without the tile upkeep, I'd love to be the call. Happy to bring samples by.`;
+    : `${workLine} Zero grout, fully waterproof, and it often goes over existing tile once I've checked it's solid.`;
   const body = [salutation, "", rec].filter(Boolean).join("\n");
   return {
     kind: "email",
@@ -215,6 +253,7 @@ export const OpenInMessages = ({ opportunity, variant = "panel" }) => {
   const senderIdentity = {
     sender_name: settings?.sender_name,
     sender_phone: settings?.sender_phone,
+    recent_job_area: settings?.recent_job_area,
   };
 
   const mode = outreachAllowed(opportunity);

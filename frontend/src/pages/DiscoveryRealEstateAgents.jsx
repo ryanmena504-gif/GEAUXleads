@@ -57,7 +57,7 @@ const buildPitchBody = ({ agent_name, brokerage, sender_name = "Ryan" }) => {
     "",
     `I'm ${sender_name} with The Shirtless Handyman. ${brokerageLine}`,
     "",
-    `When a bathroom's the reason a listing lingers, I can turn it around in 3–5 days — seamless microcement over the existing tub surround, feature wall, or full wet zone. No demo dust, no grout lines in the photos, and it holds up long after closing. It photographs like a boutique hotel.`,
+    `When a bathroom's holding a listing back, I can usually turn it around in 3–5 days — seamless microcement on the tub surround, a feature wall, or the full wet zone, often right over the existing tile once I've checked it's solid. No grout lines in the photos, and it holds up long after closing.`,
     "",
     `If you have a listing coming up where the bathroom is holding it back, send me a photo. I'll tell you what it'll cost and when I can be in and out — usually before your photographer arrives.`,
     "",

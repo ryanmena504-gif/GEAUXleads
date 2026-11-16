@@ -16,9 +16,29 @@ def test_not_interested_becomes_disqualified():
     assert _derive_status({"outreach_status": "Not interested"}) == "Disqualified"
 
 
-def test_sent_does_not_auto_advance_status():
-    # Falls through to New when nothing else is set.
-    assert _derive_status({"outreach_status": "Sent"}) == "New"
+def test_sent_counts_as_conversation_started():
+    # 2026-11-16: a sent message means the conversation has started.
+    assert _derive_status({"outreach_status": "Sent"}) == "Conversation started"
+    assert _derive_status({"outreach_status": "Sent by Ryan", "status_raw": "New"}) == "Conversation started"
+    assert _derive_status({"outreach_status": "Sent", "enrichment_status": "Needs research"}) == "Conversation started"
+
+
+def test_sent_never_pulls_back_a_later_or_closed_stage():
+    assert _derive_status({"outreach_status": "Sent", "flag_estimate": True}) == "Estimate sent"
+    assert _derive_status({"outreach_status": "Sent", "status_raw": "Disqualified"}) == "Disqualified"
+    assert _derive_status({"outreach_status": "Sent", "status_raw": "Lost"}) == "Lost"
+    assert _derive_status({"outreach_status": "Sent", "flag_won": True}) == "Won"
+
+
+def test_status_after_contact_only_lifts_pre_conversation_stages():
+    from services.airtable_service import status_after_contact
+    assert status_after_contact("New") == "Conversation started"
+    assert status_after_contact("") == "Conversation started"
+    assert status_after_contact(None) == "Conversation started"
+    assert status_after_contact("Needs research") == "Conversation started"
+    assert status_after_contact("Estimate requested") is None
+    assert status_after_contact("Conversation started") is None
+    assert status_after_contact("Disqualified") is None
 
 
 def test_no_response_does_not_auto_advance_status():

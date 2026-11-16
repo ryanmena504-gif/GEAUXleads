@@ -570,13 +570,45 @@ PIPELINE_STATUSES = [
 # ContactResults buttons write to it. If it's set to one of the terminal
 # manual values we honor it BEFORE re-deriving from signal flags, otherwise
 # the read path would silently override what the write path just stored.
-# "Sent" / "No response" intentionally do NOT auto-advance the pipeline stage.
+# A lead Ryan has messaged ("Sent", "Sent by Ryan") or who wrote back
+# ("Replied") is at least "Conversation started" (2026-11-16: 24 leads were
+# marked Sent but still read as New). Later stages (Estimate requested /
+# Estimate sent) and closed states are never pulled back.
 # Won / Lost flags still win over outreach (a closed deal is closed).
 # Rejection reason values that are placeholders, not a decision.
 _NON_DECISION_OUTCOMES = {"pending"}
 
 
+# Stages that "Conversation started" outranks. Anything else (Estimate
+# requested, Estimate sent, Won, Lost, Disqualified) is left alone.
+_PRE_CONVERSATION_STAGES = {"New", "Needs research", "Ready", ""}
+
+
+def outreach_started(outreach_status: Any) -> bool:
+    """True when Outreach status says Ryan sent a message or got a reply."""
+    if not isinstance(outreach_status, str):
+        return False
+    ol = outreach_status.strip().lower()
+    return ol.startswith("sent") or ol in ("replied", "reply received") or "reply received" in ol
+
+
+def status_after_contact(raw_status: Any) -> Optional[str]:
+    """The Status to write when a message is logged as sent or replied.
+
+    Returns "Conversation started" when the current Status is still a
+    pre-conversation stage, else None (leave Status alone)."""
+    raw = raw_status.strip() if isinstance(raw_status, str) else ""
+    return "Conversation started" if raw in _PRE_CONVERSATION_STAGES else None
+
+
 def _derive_status(opp: Dict[str, Any]) -> str:
+    derived = _derive_status_base(opp)
+    if derived in _PRE_CONVERSATION_STAGES and outreach_started(opp.get("outreach_status")):
+        return "Conversation started"
+    return derived
+
+
+def _derive_status_base(opp: Dict[str, Any]) -> str:
     if opp.get("flag_won"):
         return "Won"
     raw_status = opp.get("status_raw") if isinstance(opp.get("status_raw"), str) else ""
@@ -598,7 +630,8 @@ def _derive_status(opp: Dict[str, Any]) -> str:
             return "Estimate requested"
         if ol in ("replied", "reply received") or "reply received" in ol:
             return "Conversation started"
-        # "sent", "no response", "not sent", "sms draft" — fall through
+        # "sent" is lifted to Conversation started by _derive_status;
+        # "no response", "not sent", "sms draft" fall through.
 
     reply = opp.get("reply_classification")
     if isinstance(reply, str) and reply.strip():

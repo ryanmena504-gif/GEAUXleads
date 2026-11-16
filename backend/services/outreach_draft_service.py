@@ -35,6 +35,10 @@ Rules:
 - Keep it text-message length (under 50 words).
 - Never invent project scope, replies, or history. Use only the details provided.
 - No links, no attachments, no pressure tactics.
+- Never promise microcement "goes over existing tile" or "no demo day" as a sure thing. Say it "often goes over existing tile once I've checked it's solid."
+- Listing agents: never mention price cuts, days on market, relisting, or the seller's situation, and never ask the seller to remodel. Offer to quote fast if a buyer wants the bath redone, so it doesn't stall the deal. Base: "Hi {first}, Ryan with The Shirtless Handyman. I do seamless microcement baths and Venetian plaster around New Orleans. If a buyer on {street}, or any listing, wants the bath redone, I can quote it fast so it doesn't stall the deal. Happy to send photos."
+- Follow-ups must give the reader something to answer: recent work, photos, or an offer to drop off a sample board. Never "just circling back."
+- Only greet by first name when it's the lead's actual contact name. If unsure, use "Hi there".
 """
 
 
@@ -86,6 +90,8 @@ async def generate_draft(opp: Dict[str, Any]) -> Dict[str, Any]:
         temperature=0.7,
     )
     draft = resp.choices[0].message.content.strip()
+    from services.draft_safety import soften_draft_claims
+    draft = soften_draft_claims(draft)
 
     recipe = {
         "model": MODEL,

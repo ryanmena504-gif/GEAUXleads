@@ -21,6 +21,7 @@ const SenderIdentitySection = () => {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [mailingAddress, setMailingAddress] = useState("");
+  const [recentArea, setRecentArea] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -31,6 +32,7 @@ const SenderIdentitySection = () => {
       setName(s.sender_name || "");
       setPhone(s.sender_phone || "");
       setMailingAddress(s.sender_mailing_address || "");
+      setRecentArea(s.recent_job_area || "");
       setLoaded(true);
     });
   }, []);
@@ -48,6 +50,7 @@ const SenderIdentitySection = () => {
         sender_name: name.trim(),
         sender_phone: phone.trim(),
         sender_mailing_address: mailingAddress.trim(),
+        recent_job_area: recentArea.trim(),
       });
       toast.success("Sender identity saved");
     } catch (err) {
@@ -136,6 +139,24 @@ const SenderIdentitySection = () => {
             Printed on landlord letters as the return address block. One line
             per address line. Leave blank to fall back to &ldquo;The Shirtless
             Handyman · New Orleans, LA&rdquo;.
+          </p>
+        </div>
+        <div>
+          <div className="mono text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+            Where was your last finished shower?
+          </div>
+          <input
+            value={recentArea}
+            onChange={(e) => setRecentArea(e.target.value)}
+            data-testid="settings-recent-job-area"
+            placeholder="Metairie"
+            disabled={!loaded}
+            className="w-full bg-transparent border bh-hairline rounded h-10 px-3 text-sm text-[var(--bh-ink)] focus:border-[var(--bh-brass)]/60 outline-none disabled:opacity-50"
+          />
+          <p className="text-[11px] text-neutral-500 mt-1.5 leading-snug">
+            Follow-up drafts say &ldquo;Finished a seamless microcement shower in
+            this area last week.&rdquo; Leave it blank when there isn&rsquo;t a
+            recent one and the draft won&rsquo;t claim one.
           </p>
         </div>
         <div className="flex items-center justify-end">

@@ -73,3 +73,67 @@ def looks_like_ai_prompt(text: Optional[str]) -> Tuple[bool, Optional[str]]:
         if pat.search(s):
             return True, "structural_marker"
     return False, None
+
+
+# ---------------------------------------------------------------------------
+# Outreach-claim softening (2026-11-16 review). Mirrors `softenDraftClaims`
+# in frontend/src/lib/draftSafety.js — keep the two in sync.
+#
+# Ryan can't promise microcement "goes over existing tile, no demo day"
+# before he has inspected the tile. Every stored or generated draft runs
+# through this before it is shown or sent, so the promise always reads as
+# conditional.
+# ---------------------------------------------------------------------------
+TILE_CONDITIONAL = "often goes over existing tile once I've checked it's solid"
+
+_TILE_CLAIMS = [
+    # "goes right over existing tile, no demo day" / "goes over existing tile"
+    re.compile(
+        r"\b(?:it\s+)?goes\s+(?:right\s+)?over\s+(?:the\s+|your\s+)?existing\s+tile"
+        r"(?:\s*(?:,|—|-|–)\s*(?:so\s+)?no\s+demo(?:\s+day)?)?",
+        re.I,
+    ),
+    # "right over your existing tile" without "goes"
+    re.compile(r"\bright\s+over\s+(?:the\s+|your\s+)?existing\s+tile", re.I),
+]
+_ALREADY_CONDITIONAL = re.compile(r"once i['’]ve checked it['’]s solid", re.I)
+_LEFTOVER_NO_DEMO = re.compile(r"\s*(?:,|—|-|–)\s*no\s+demo\s+day\b", re.I)
+
+
+def soften_draft_claims(text: Optional[str]) -> str:
+    """Rewrite unconditional "over existing tile / no demo day" promises.
+    Idempotent; safe on empty input."""
+    if not text:
+        return text or ""
+    s = str(text)
+    # Already conditional ("…once I've checked it's solid") → leave it alone.
+    if _ALREADY_CONDITIONAL.search(s):
+        return _LEFTOVER_NO_DEMO.sub("", s)
+    for pat in _TILE_CLAIMS:
+        s = pat.sub(TILE_CONDITIONAL, s, count=1) if pat.search(s) else s
+        if TILE_CONDITIONAL in s:
+            break
+    return _LEFTOVER_NO_DEMO.sub("", s)
+
+
+# Listing-agent drafts must not point at a seller's price cuts, days on
+# market or motivation (2026-11-16 review: "Saw your Cohn listing, a 1939
+# home cut $50,000 since September..."). A stored draft that does is not
+# shown; the safe listing-agent template is used instead.
+_LISTING_PRESSURE = [
+    re.compile(r"\$\s?\d[\d,]*k?\s+(?:in\s+)?cuts?\b", re.I),
+    re.compile(r"\bcut\s+\$\s?\d", re.I),
+    re.compile(r"\bprice\s+(?:cut|drop|reduction)s?\b", re.I),
+    re.compile(r"\bcut\s+(?:\w+\s+)?(?:times|twice)\b", re.I),
+    re.compile(r"\bsitting\s+\d+\s+days\b", re.I),
+    re.compile(r"\b(?:on the market|on zillow|on redfin)\s+\d+\s+days\b", re.I),
+    re.compile(r"\bmotivated\s+seller\b", re.I),
+    re.compile(r"\brelisted\b|\bsecond run\b|\brough tenant\b", re.I),
+]
+
+
+def mentions_listing_pressure(text: Optional[str]) -> bool:
+    """True when a draft points at a listing's price cuts / days on market."""
+    if not text:
+        return False
+    return any(p.search(str(text)) for p in _LISTING_PRESSURE)

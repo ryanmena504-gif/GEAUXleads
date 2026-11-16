@@ -13,6 +13,7 @@ import {
   Bug,
   Sliders,
   Search,
+  DoorOpen,
 } from "lucide-react";
 import {
   Sheet,
@@ -58,6 +59,7 @@ const moreSections = [
   {
     heading: "Tools",
     items: [
+      { to: "/door-hangers", label: "Door-hanger route", icon: DoorOpen },
       { to: "/scoreboard/warming", label: "Warm-up Scoreboard", icon: TrendingUp },
       { to: "/lookup", label: "Phone Lookup", icon: Search },
       { to: "/debug", label: "Debug Panel", icon: Bug },
