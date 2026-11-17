@@ -75,6 +75,14 @@ let webpackConfig = {
       },
     },
   },
+  // Tests resolve the same "@/…" imports the app build does.
+  jest: {
+    configure: {
+      moduleNameMapper: {
+        "^@/(.*)$": "<rootDir>/src/$1",
+      },
+    },
+  },
   webpack: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

@@ -24,6 +24,8 @@ import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
 import { buildSalutation } from "@/lib/greeting";
 import { pickEmail } from "@/lib/contact";
+import { isReachable, isRepliedLead, repliedQueue, telHref, smsHref, mailHref } from "@/lib/today";
+import { isDoorHangerLead } from "@/lib/doorHangers";
 import {
   Check,
   ChevronRight,
@@ -31,7 +33,10 @@ import {
   ExternalLink,
   Gift,
   Loader2,
+  Mail,
   MapPin,
+  MessageSquare,
+  Phone,
   Zap,
 } from "lucide-react";
 
@@ -598,6 +603,53 @@ const WaitingRow = ({ opp }) => {
   );
 };
 
+/**
+ * RepliedRow — a lead that wrote back. Call / text / email links open
+ * Ryan's own phone or mail app with nothing pre-written; nothing sends
+ * from here.
+ */
+const RepliedRow = ({ opp }) => {
+  const tel = telHref(opp);
+  const sms = smsHref(opp);
+  const mail = mailHref(opp);
+  const since = opp.date_replied || (opp.message_sent_date || "").slice(0, 10);
+  const linkCls =
+    "inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)] hover:bg-white/[0.03] transition-colors";
+  return (
+    <article data-testid={`replied-row-${opp.id}`} className="bh-ticket p-4">
+      <Link to={`/opportunities/${opp.id}`} className="block group">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[16px] font-semibold text-[var(--bh-ink)] group-hover:underline">{opp.name}</span>
+          {since && <span className="text-[11.5px] text-[var(--bh-ink-mute)] whitespace-nowrap">replied {since}</span>}
+        </div>
+        <div className="mt-1 text-[13px] text-[var(--bh-ink-2)]">
+          {opp.reply_summary && opp.reply_summary !== "Reply received" ? opp.reply_summary : "They wrote back. Your move."}
+        </div>
+        {opp.next_best_action && (
+          <div className="mt-1 text-[12.5px] text-[var(--bh-ink-mute)]">Next: {opp.next_best_action}</div>
+        )}
+      </Link>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {tel && (
+          <a href={tel} className={linkCls} data-testid={`replied-call-${opp.id}`}>
+            <Phone size={13} /> Call
+          </a>
+        )}
+        {sms && (
+          <a href={sms} className={linkCls} data-testid={`replied-text-${opp.id}`}>
+            <MessageSquare size={13} /> Text
+          </a>
+        )}
+        {mail && (
+          <a href={mail} className={linkCls} data-testid={`replied-email-${opp.id}`}>
+            <Mail size={13} /> Email
+          </a>
+        )}
+      </div>
+    </article>
+  );
+};
+
 const Disclosure = ({ testId, title, count, hint, open, onToggle, children }) => (
   <section data-testid={testId} className="border-t bh-hairline pt-4">
     <button
@@ -765,7 +817,10 @@ const CommandCenter = () => {
     const referrals = [];
     const parked = [];
     const enrichment = [];
+    // Leads that wrote back get their own section at the top.
+    const replied = repliedQueue(items).filter(isReachable);
     for (const opp of items) {
+      if (isRepliedLead(opp)) continue;
       // Won leads with the 5-day referral window elapsed get their own lane.
       if (opp.status === "Won" && opp.referral_prompt_ready) {
         referrals.push(opp);
@@ -775,9 +830,12 @@ const CommandCenter = () => {
       // away, even before the classifier re-files its Current Queue.
       const closed = ["Won", "Lost", "Disqualified"].includes(opp.status);
       const bucket = closed ? "all" : queueBucket(opp);
+      // Today only lists people Ryan can reach: a phone or an email on file.
       if (bucket === "ready") {
-        if (!sentToday(opp)) ready.push(opp);
-      } else if (bucket === "contacted") contacted.push(opp);
+        if (!sentToday(opp) && isReachable(opp)) ready.push(opp);
+      } else if (bucket === "contacted") {
+        if (isReachable(opp)) contacted.push(opp);
+      }
       else if (needsEnrichment(opp)) enrichment.push(opp);
       else parked.push(opp);
     }
@@ -785,6 +843,8 @@ const CommandCenter = () => {
     const waiting = sortForQueue(contacted.filter((o) => outreachAllowed(o) === "follow_up"));
     waiting.sort((a, b) => String(a.next_follow_up || "9999").localeCompare(String(b.next_follow_up || "9999")));
     return {
+      doorHangers: items.filter(isDoorHangerLead).length,
+      replied,
       ready: sortForQueue(ready),
       waiting,
       referrals: referrals.sort((a, b) => (a.days_since_won ?? 0) - (b.days_since_won ?? 0)),
@@ -820,7 +880,17 @@ const CommandCenter = () => {
           progress={progress}
         />
 
-        {nba?.lead && nba.lead.id !== hero?.id && (
+        {lists && lists.replied.length > 0 && (
+          <Chapter testId="section-replied" title="Replied, answer these" aside="Oldest reply first">
+            <div className="space-y-2">
+              {lists.replied.map((opp) => (
+                <RepliedRow key={opp.id} opp={opp} />
+              ))}
+            </div>
+          </Chapter>
+        )}
+
+        {nba?.lead && nba.lead.id !== hero?.id && isReachable(nba.lead) && !isRepliedLead(nba.lead) && (
           <section data-testid="section-next-best-action" className="space-y-2">
             <h2 className="font-display text-[22px] text-[var(--bh-ink)] tracking-tight">
               Next best action
@@ -897,6 +967,20 @@ const CommandCenter = () => {
               ))}
             </div>
           </Chapter>
+        )}
+
+        {lists && lists.doorHangers > 0 && (
+          <Link
+            to="/door-hangers"
+            data-testid="today-door-hanger-link"
+            className="flex items-center justify-between gap-3 bh-surface rounded-md p-4 hover:bg-white/[0.03]"
+          >
+            <span className="text-[14px] text-[var(--bh-ink-2)]">
+              {lists.doorHangers} permit {lists.doorHangers === 1 ? "address has" : "addresses have"} no phone or email.
+              They&rsquo;re on this week&rsquo;s door-hanger route.
+            </span>
+            <ChevronRight size={15} className="text-[var(--bh-ink-mute)] shrink-0" />
+          </Link>
         )}
 
         {lists && lists.referrals.length > 0 && (

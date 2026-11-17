@@ -613,8 +613,10 @@ async def record_result(opp_id: str, body: ResultUpdate):
 
     now = datetime.now(timezone.utc).isoformat()
     updates: Dict[str, Any] = {}
+    from services.airtable_service import status_after_contact as _status_after_contact
     if event == "sent":
-        # Pipeline status must NOT auto-advance on "I sent it".
+        # A sent message means the conversation has started: Status moves
+        # from New / Needs research / Ready to "Conversation started".
         if attempt >= 4:
             raise HTTPException(status_code=422, detail="All 4 outreach touches are used — the sequence is complete")
         touch = _advance_touch(attempt)
@@ -626,6 +628,9 @@ async def record_result(opp_id: str, body: ResultUpdate):
             "outreach_attempt": touch["outreach_attempt"],
             "next_follow_up": touch["next_follow_up"] or "",
         }
+        new_status = _status_after_contact(current.get("status_raw"))
+        if new_status:
+            updates["status"] = new_status
     elif event == "followup_sent":
         # Touches 2-4, logged from the Contacted follow-up panel.
         if attempt >= 4:
@@ -648,6 +653,9 @@ async def record_result(opp_id: str, body: ResultUpdate):
             "reply_summary": body.note or "Reply received",
             "date_replied": now,
         }
+        new_status = _status_after_contact(current.get("status_raw"))
+        if new_status:
+            updates["status"] = new_status
     elif event == "estimate_requested":
         updates = {
             "outreach_status": "Estimate requested",
@@ -2745,6 +2753,8 @@ async def create_gmail_draft(opp_id: str, request: Request):
     to_email = resolved_email(opp) or ""
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
+    from services.draft_safety import soften_draft_claims
+    body = soften_draft_claims(body)
     if not to_email:
         raise HTTPException(status_code=400, detail="No email address on this record")
 
@@ -2821,6 +2831,8 @@ async def send_email_now(opp_id: str, request: Request):
     to_email = resolved_email(opp) or ""
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
+    from services.draft_safety import soften_draft_claims
+    body = soften_draft_claims(body)
     if not to_email or not is_valid_email(to_email):
         raise HTTPException(status_code=400, detail="No email address on this record")
 
@@ -2848,6 +2860,10 @@ async def send_email_now(opp_id: str, request: Request):
     }
     if attempt == 0:
         updates["date_contacted"] = now
+    from services.airtable_service import status_after_contact as _status_after_contact
+    _new_status = _status_after_contact(opp.get("status_raw"))
+    if _new_status:
+        updates["status"] = _new_status
     if touch["closes_lead"]:
         updates["status"] = "Lost"
 

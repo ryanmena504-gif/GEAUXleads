@@ -10,6 +10,7 @@ import {
   Building2,
   Bug,
   Settings as SettingsIcon,
+  DoorOpen,
 } from "lucide-react";
 import GeauxLogo from "@/components/GeauxLogo";
 import LiveRefreshIndicator from "@/components/LiveRefreshIndicator";
@@ -22,6 +23,7 @@ const nav = [
   { to: "/", label: "Home", icon: LayoutDashboard, code: "CC" },
   { to: "/opportunities", label: "Opportunities", icon: Crosshair, code: "OP" },
   { to: "/missions", label: "Today's Missions", icon: Target, code: "MS" },
+  { to: "/door-hangers", label: "Door-hanger route", icon: DoorOpen, code: "DH" },
   { to: "/relationships", label: "Relationships", icon: Network, code: "RE", preview: true },
   { to: "/intelligence", label: "Intelligence", icon: Radar, code: "IN", preview: true },
   { to: "/discovery/property-managers", label: "Discovery", icon: Building2, code: "DI" },

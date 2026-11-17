@@ -77,6 +77,8 @@ export const personalFirstName = (name) => {
  * @param {object} [opts]
  * @param {"Hi"|"Hey"|"Hello"|"Dear"} [opts.verb="Hi"]
  * @param {string} [opts.generic="there"]
+ * @param {string} [opts.email] — the address the draft goes to. A personal
+ *   inbox that doesn't match the name (flora@ vs "Janet") → generic greeting.
  * @returns {string} e.g. "Hi John,"
  */
 export const buildSalutation = (candidates, opts = {}) => {
@@ -85,9 +87,53 @@ export const buildSalutation = (candidates, opts = {}) => {
   const list = Array.isArray(candidates) ? candidates : [candidates];
   for (const c of list) {
     const first = personalFirstName(c);
-    if (first) return `${verb} ${first},`;
+    if (first && nameMatchesEmail(c, opts.email)) return `${verb} ${first},`;
+    if (first) break; // a person's name that doesn't fit the inbox — don't guess
   }
   return `${verb} ${generic},`;
+};
+
+// Shared inboxes that say nothing about who reads them. A name can't
+// contradict these, so any person name is allowed with them.
+const ROLE_MAILBOXES = new Set([
+  "info", "office", "hello", "hi", "contact", "contactus", "admin", "sales",
+  "team", "support", "mail", "email", "inquiries", "inquiry", "general",
+  "design", "designer", "designs", "studio", "service", "services", "booking",
+  "bookings", "ask", "help", "leasing", "rentals", "marketing", "projects",
+  "estimates", "quotes", "quote", "home", "homes", "listings", "realestate",
+  "office1", "frontdesk", "reception", "manager", "management", "owner",
+  "build", "builder", "builders", "construction", "jobs", "work", "noreply",
+]);
+
+/**
+ * nameMatchesEmail — false only when the email is a PERSONAL inbox
+ * (e.g. flora@…) whose local part shares no part of the contact name
+ * (e.g. "Janet"). Then the name most likely belongs to someone else and
+ * the greeting falls back to "Hi there". (2026-11-16: the Decor by Flora
+ * draft said "Hey Janet" to flora@decoratingden.com.)
+ *
+ * No email, role inboxes (info@, office@, design@…) and short initials
+ * (jd@, jds@) never block the name.
+ */
+export const nameMatchesEmail = (name, email) => {
+  if (!email || typeof email !== "string" || !email.includes("@")) return true;
+  if (!name || typeof name !== "string") return true;
+  const local = email.split("@")[0].toLowerCase();
+  const letters = local.replace(/[^a-z]/g, "");
+  if (letters.length <= 3) return true;
+  const parts = local.split(/[._\-+0-9]+/).filter(Boolean);
+  if (parts.some((p) => ROLE_MAILBOXES.has(p)) || ROLE_MAILBOXES.has(letters)) return true;
+  const tokens = name
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter((t) => t.length >= 2);
+  if (tokens.length === 0) return true;
+  if (tokens.some((t) => letters.includes(t))) return true;
+  // jsmith@ / johns@ style: first initial + last name, or first name + initial.
+  const [first, ...rest] = tokens;
+  const last = rest[rest.length - 1];
+  if (last && (letters === first[0] + last || letters.startsWith(first[0] + last))) return true;
+  return false;
 };
 
 // Matches a single leading greeting line so we can strip it from a body

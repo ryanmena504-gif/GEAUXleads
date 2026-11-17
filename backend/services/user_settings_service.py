@@ -27,6 +27,10 @@ EDITABLE_KEYS = {
     "sender_mailing_address",
     "email_provider",
     "daily_outreach_target",
+    # Where Ryan's most recent finished shower was (e.g. "Metairie").
+    # Follow-up drafts mention it only when it's filled in, so a draft
+    # never claims a job that didn't happen.
+    "recent_job_area",
 }
 
 # Allowed email-provider modes for building compose URLs. Gmail's compose
@@ -47,6 +51,7 @@ DEFAULTS: Dict[str, Any] = {
     # Stored as a string because update() normalizes values to strings;
     # readers parse it with _daily_target().
     "daily_outreach_target": "10",
+    "recent_job_area": "",
 }
 
 
