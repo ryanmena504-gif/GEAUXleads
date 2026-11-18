@@ -260,3 +260,33 @@ def test_three_touches_used_still_eligible(approvable_lead):
 def test_no_attempt_recorded_still_eligible(approvable_lead):
     result = policy.evaluate(approvable_lead)
     assert result.eligible, codes(result)
+
+
+def test_permit_phone_without_consent_is_not_a_call(approvable_lead):
+    lead = {
+        **approvable_lead,
+        "source": "Permit",
+        "contact_email": None,
+        "email": None,
+        "sms_permission": "Unknown",
+    }
+    result = policy.evaluate(lead)
+    assert "phone_text_not_allowed" in codes(result)
+    assert not result.eligible
+    assert result.recipient.channel is None
+    assert result.recipient.phone is None
+
+
+def test_permit_with_email_and_no_consent_stays_email_only(approvable_lead):
+    lead = {**approvable_lead, "source": "Property Sale Record", "sms_permission": "No"}
+    result = policy.evaluate(lead)
+    assert result.eligible, codes(result)
+    assert result.recipient.channel == "email"
+    assert result.recipient.phone is None
+    assert "phone_text_not_allowed" in warning_codes(result)
+
+
+def test_a_reply_keeps_the_phone_channel(approvable_lead):
+    lead = {**approvable_lead, "source": "Permit Issued", "outreach_status": "Replied"}
+    result = policy.evaluate(lead)
+    assert result.recipient.channel == "phone"

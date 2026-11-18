@@ -85,6 +85,16 @@ Open Airtable → the workspace billing page.
 
 This update does not change Make. In the scenarios that run after a lead already exists, stop them from clearing contact name, phone, email, owner, mailing address, confidence, and the date the contact was checked. Keep the scenario that creates a new row. The clicks are in `docs/MAKE_FIXES.md`.
 
+## 10. Physical address on cold emails
+
+Cold email drafts add an unsubscribe line and a postal address. Set this on the **API** service (the send path reads it when the email goes out) and on the **website** service (mailto drafts are baked in at build time):
+
+- Name on the API: `BUSINESS_MAILING_ADDRESS`
+- Name on the website: `REACT_APP_BUSINESS_MAILING_ADDRESS`
+- Value: the real street address of the business, one line or several. Do not leave the placeholder from Settings in here.
+
+If either variable is missing, the draft shows `[physical address — set BUSINESS_MAILING_ADDRESS]` instead of inventing a street.
+
 ## If the morning email used to fire on its own
 
 The old schedule file from the previous host was not running on Render, and it has been removed. The morning-email address still exists (`POST /api/cron/morning-brief`). It now needs both headers:

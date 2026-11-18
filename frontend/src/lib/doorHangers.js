@@ -7,6 +7,7 @@
  * streets together, house numbers in order.
  */
 import { hasContactChannel } from "./contact";
+import { isMailDoorLead, isNoContactPass, staysPassed } from "./mailDoor";
 
 const CLOSED = new Set(["Won", "Lost", "Disqualified"]);
 
@@ -51,13 +52,24 @@ export const isPermitSource = (opp) => /^permit\b/i.test(String(opp?.source || "
 
 export const addressOf = (opp) => String(opp?.project_address || "").trim();
 
-/** Open permit lead with an address and no phone or email. */
-export const isDoorHangerLead = (opp) =>
-  Boolean(opp) &&
-  !CLOSED.has(opp.status) &&
-  isPermitSource(opp) &&
-  Boolean(addressOf(opp)) &&
-  !hasContactChannel(opp);
+/**
+ * A door on the walking list.
+ *
+ * Open permit leads with an address and no phone or email, plus mail-door
+ * leads that were passed only for "No usable contact" (a real interior
+ * job, a named person, a street address). Exterior-only permits and
+ * LLC-owned multi-family properties with no named person stay off the list.
+ */
+export const isDoorHangerLead = (opp) => {
+  if (!opp || opp.status === "Won" || opp.status === "Lost") return false;
+  if (!addressOf(opp) || hasContactChannel(opp)) return false;
+  if (staysPassed(opp)) return false;
+  if (opp.status === "Disqualified") {
+    return isNoContactPass(opp) && isMailDoorLead(opp);
+  }
+  if (isMailDoorLead(opp)) return true;
+  return !CLOSED.has(opp.status) && isPermitSource(opp);
+};
 
 export const zipOf = (address) => {
   const m = String(address || "").match(/\b(70\d{3})(?:-\d{4})?\b/);

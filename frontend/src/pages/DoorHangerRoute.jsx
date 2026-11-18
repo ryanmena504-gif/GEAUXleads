@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import TopHeader from "@/components/TopHeader";
 import { api } from "@/lib/api";
 import { buildDoorHangerRoute } from "@/lib/doorHangers";
+import { isMailDoorLead } from "@/lib/mailDoor";
 
 /**
  * DoorHangerRoute — the weekly walking list for permit leads nobody can
@@ -43,7 +44,7 @@ const DoorHangerRoute = () => {
   return (
     <>
       <div className="no-print">
-        <TopHeader pageTitle="Door-hanger route" subtitle="Permit addresses with no phone or email" />
+        <TopHeader pageTitle="Door-hanger route" subtitle="Mail, door hangers, and knocks — no calls or texts" />
       </div>
       <main className="door-route px-4 lg:px-8 py-6 pb-28 max-w-4xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -52,8 +53,8 @@ const DoorHangerRoute = () => {
               Week of {weekOf()}
             </h1>
             <p className="text-[13px] text-[var(--bh-ink-mute)] mt-0.5">
-              {route ? `${total} doors in ${route.length} areas.` : "Loading…"} A hanger only needs the
-              address. Leave it at the door; don&rsquo;t knock on job sites.
+              {route ? `${total} doors in ${route.length} areas.` : "Loading…"} A hanger or a postcard
+              only needs the address. No calls or texts from this list.
             </p>
           </div>
           <button
@@ -97,6 +98,9 @@ const DoorHangerRoute = () => {
                       </Link>
                       {permitLine(opp) && (
                         <div className="text-[12px] text-[var(--bh-ink-mute)]">{permitLine(opp)}</div>
+                      )}
+                      {isMailDoorLead(opp) && (
+                        <div className="text-[11px] uppercase tracking-wide text-[var(--bh-brass)]">Mail / door knock</div>
                       )}
                     </div>
                   </li>

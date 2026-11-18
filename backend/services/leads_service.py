@@ -99,6 +99,11 @@ LEADS_FIELD_MAP: Dict[str, str] = {
     "Risk flags": "risk_flags",
     "Missing information": "missing_information",
     "Permit number": "permit_number",
+    "Permit description": "permit_description",
+    "Owner": "owner",
+    "Applicant": "applicant",
+    "Contractor": "contractor",
+    "SMS Permission": "sms_permission",
     "Confidence score": "confidence_score",
 }
 

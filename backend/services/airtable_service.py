@@ -1024,9 +1024,12 @@ class AirtableOpportunityService:
         # from the fresh recommended action + channel hints.
         opp["daily_mission_raw"] = opp.get("recommended_action")
         _override = (opp.get("mission_override") or "").strip()
-        opp["daily_mission"] = (
-            _normalize_daily_mission(_override) if _override else _derive_daily_mission(opp)
-        )
+        _mission = _normalize_daily_mission(_override) if _override else _derive_daily_mission(opp)
+        # A pinned "Call Today" still cannot put an address-only lead, or a
+        # permit/sale lead with no consent, into a phone or text queue.
+        from services.mail_door import annotate_mail_door, guard_phone_text_mission
+        opp["daily_mission"] = guard_phone_text_mission(_mission, opp)
+        annotate_mail_door(opp)
         opp["daily_mission_code"] = None
 
         # `next_best_action` legacy DTO key — mirror fresh `recommended_action`

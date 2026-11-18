@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { MISSIONS } from "@/lib/constants";
 import { moneyDisplay } from "@/lib/formatters";
 import { queueBucket } from "@/lib/queue";
+import { phoneTextMission } from "@/lib/mailDoor";
 import { CheckCircle2, Clock } from "lucide-react";
 
 // Same closed set the backend mission grouping skips.
@@ -77,11 +78,12 @@ const Missions = () => {
           // Closed records and snoozed ones (mission = "Wait") never show.
           if (CLOSED.has(o.status) || o.daily_mission === "Wait") return;
           const bucket = queueBucket(o);
+          const mission = phoneTextMission(o);
           if (bucket === "ready") {
-            if (groups[o.daily_mission]) groups[o.daily_mission].push(o);
+            if (groups[mission]) groups[mission].push(o);
           } else if (bucket === "contacted" && followUpDue(o)) {
             // A due follow-up with no mission set still belongs under Follow Up.
-            groups[groups[o.daily_mission] ? o.daily_mission : "Follow Up"].push(o);
+            groups[groups[mission] ? mission : "Follow Up"].push(o);
           }
         });
         Object.values(groups).forEach((arr) =>

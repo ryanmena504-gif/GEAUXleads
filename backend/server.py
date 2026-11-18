@@ -789,6 +789,21 @@ async def leads_next_best_action():
     return {"lead": lead, "queue": await _bg(svc.queue_stats, )}
 
 
+@api_router.get("/leads/no-contact-review")
+async def no_contact_review():
+    """Preview which "No usable contact" passes would be restored.
+
+    Read-only. Does not write Airtable and does not call a paid lookup.
+    Applying the plan is backend/scripts/reevaluate_no_contact_passes.py,
+    and that script does nothing unless someone passes --apply.
+    """
+    from services.mail_door import review_no_contact_passes
+
+    svc = get_opportunity_service()
+    rows = await _bg(svc.all)
+    return review_no_contact_passes(rows)
+
+
 @api_router.get("/leads/duplicates")
 async def leads_duplicates():
     svc = _require_leads_service()
@@ -2754,7 +2769,8 @@ async def create_gmail_draft(opp_id: str, request: Request):
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
     from services.draft_safety import soften_draft_claims
-    body = soften_draft_claims(body)
+    from services.canspam import ensure_canspam
+    body = ensure_canspam(soften_draft_claims(body))
     if not to_email:
         raise HTTPException(status_code=400, detail="No email address on this record")
 
@@ -2832,7 +2848,8 @@ async def send_email_now(opp_id: str, request: Request):
     if not body:
         raise HTTPException(status_code=400, detail="No draft text available — generate one first")
     from services.draft_safety import soften_draft_claims
-    body = soften_draft_claims(body)
+    from services.canspam import ensure_canspam
+    body = ensure_canspam(soften_draft_claims(body))
     if not to_email or not is_valid_email(to_email):
         raise HTTPException(status_code=400, detail="No email address on this record")
 

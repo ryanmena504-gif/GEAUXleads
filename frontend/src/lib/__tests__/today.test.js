@@ -1,5 +1,6 @@
 import { isRepliedLead, repliedQueue, isReachable } from "../today.js";
 import { buildDoorHangerRoute, isDoorHangerLead, zipOf } from "../doorHangers.js";
+import { KEEP_MAIL_DOOR, disposition } from "../mailDoor.js";
 
 describe("Today lists", () => {
   test("replied leads", () => {
@@ -47,6 +48,23 @@ describe("door-hanger route", () => {
     expect(route.map((g) => g.zip)).toEqual(["70115", "70116", "70125", "No ZIP on the permit"]);
     expect(route[0].label).toBe("70115 · Uptown / Garden District");
     expect(route[0].stops.map((o) => o.id)).toEqual(["1", "3"]);
+  });
+
+  test("a no-contact interior job with a person is a stop even if it was passed", () => {
+    const kept = {
+      id: "kept",
+      status: "Disqualified",
+      outcome: "No usable contact",
+      source: "Permit",
+      project_address: "2100 Saint Charles Ave, New Orleans, LA 70130",
+      project_type: "bathroom_remodel_tub_to_shower",
+      contact_company: "Edward Rafidi",
+    };
+    expect(disposition(kept)).toBe(KEEP_MAIL_DOOR);
+    expect(isDoorHangerLead(kept)).toBe(true);
+    const route = buildDoorHangerRoute([...items, kept]);
+    const zips = route.map((g) => g.zip);
+    expect(zips).toContain("70130");
   });
 
   test("zipOf", () => {

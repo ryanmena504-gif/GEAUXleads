@@ -146,6 +146,10 @@ async def run_contact_finder(opp: Dict[str, Any]) -> Dict[str, Optional[str]]:
     parsed = parse_result(answer)
     if not parsed.get("contact_source"):
         parsed["contact_source"] = "homeowner" if residential else "business"
+    # Free public-record phone lookup is not wired. This returns None and
+    # does not call Perplexity or any paid vendor. See public_record_phone.py.
+    from services.public_record_phone import lookup_public_record_phone
+    parsed["public_record_phone"] = lookup_public_record_phone(opp)
     # The citation list is a fallback when the model omits source_url.
     if not parsed.get("source_url"):
         sources = result.get("sources") or []
