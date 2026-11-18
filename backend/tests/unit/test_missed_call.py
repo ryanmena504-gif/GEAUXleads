@@ -265,3 +265,62 @@ def test_twilio_keys_alone_do_not_turn_on_paid_lookup(env, monkeypatch):
     monkeypatch.delenv("TWILIO_LOOKUP_ENABLED", raising=False)
     assert tls.get_twilio_lookup_service() is None
     assert "TWILIO_LOOKUP_ENABLED" in (tls.twilio_lookup_config_error() or "")
+
+
+# ------------------------------------------------------------ credentials check
+class _FakeTwilio:
+    def __init__(self, fail=None, owns=True):
+        self.fail, self.owns = fail, owns
+        outer = self
+
+        class _Acct:
+            def fetch(self_inner):
+                if outer.fail:
+                    raise outer.fail
+                return object()
+
+        class _V2010:
+            def accounts(self_inner, sid):
+                return _Acct()
+
+        class _Api:
+            v2010 = _V2010()
+
+        class _Nums:
+            def list(self_inner, phone_number, limit):
+                return [object()] if outer.owns else []
+
+        self.api, self.incoming_phone_numbers = _Api(), _Nums()
+
+
+def _patch_client(monkeypatch, fake):
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", lambda *a, **k: fake)
+
+
+def test_credentials_check_ok_and_never_echoes_values(env, monkeypatch):
+    _patch_client(monkeypatch, _FakeTwilio())
+    out = mcs.credentials_check()
+    assert out["credentials_ok"] is True and out["from_number_on_account"] is True
+    assert TOKEN not in str(out) and "+15045559999" not in str(out)
+
+
+def test_credentials_check_names_a_mismatched_sid_token_pair(env, monkeypatch):
+    from twilio.base.exceptions import TwilioRestException
+    _patch_client(monkeypatch, _FakeTwilio(fail=TwilioRestException(401, "/x", "auth failed", 20003)))
+    out = mcs.credentials_check()
+    assert out["credentials_ok"] is False
+    assert "not a pair" in out["error"]
+
+
+def test_credentials_check_flags_number_on_another_account(env, monkeypatch):
+    _patch_client(monkeypatch, _FakeTwilio(owns=False))
+    assert mcs.credentials_check()["from_number_on_account"] is False
+
+
+def test_status_route_is_behind_the_app_password(client, monkeypatch):
+    _patch_client(monkeypatch, _FakeTwilio())
+    assert client.get("/api/twilio/missed-call/status").status_code == 401
+    r = client.get("/api/twilio/missed-call/status", headers={"Authorization": "Bearer pw"})
+    assert r.status_code == 200, r.text
+    assert r.json()["credentials_ok"] is True
