@@ -2950,6 +2950,13 @@ async def twilio_missed_call(request: Request, background: BackgroundTasks):
     return Response(content=mcs.twiml_response(), media_type="application/xml")
 
 
+@api_router.get("/twilio/missed-call/status")
+async def twilio_missed_call_status():
+    """Behind the app password. Free Twilio account read; sends no text."""
+    from services import missed_call_service as mcs
+    return await _bg(mcs.credentials_check)
+
+
 # Registered last: include_router copies api_router's routes at call time,
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).

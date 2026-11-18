@@ -106,6 +106,47 @@ def config_error() -> Optional[str]:
     return None
 
 
+def credentials_check() -> Dict[str, Any]:
+    """Free, read-only Twilio check that the SID/token pair works and owns the
+    from-number. Sends nothing and never echoes a value.
+
+    Webhook signatures only prove TWILIO_AUTH_TOKEN; the SMS also needs
+    TWILIO_ACCOUNT_SID to belong to that same token. A mismatch lets calls in
+    (200) but every text fails with Twilio 401 / 20003.
+    """
+    names = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN",
+             "MISSED_CALL_FROM_NUMBER", "MISSED_CALL_NOTIFY_NUMBER", "MISSED_CALL_WEBHOOK_URL")
+    out: Dict[str, Any] = {
+        "env_present": {n: bool(_env(n)) for n in names},
+        "credentials_ok": None, "from_number_on_account": None, "error": None,
+    }
+    if config_error():
+        out["error"] = config_error()
+        return out
+    try:
+        from twilio.http.http_client import TwilioHttpClient  # type: ignore
+        from twilio.rest import Client  # type: ignore
+
+        client = Client(_env("TWILIO_ACCOUNT_SID"), _env("TWILIO_AUTH_TOKEN"),
+                        http_client=TwilioHttpClient(timeout=15, max_retries=0))
+        client.api.v2010.accounts(_env("TWILIO_ACCOUNT_SID")).fetch()
+        out["credentials_ok"] = True
+        numbers = client.incoming_phone_numbers.list(
+            phone_number=_env("MISSED_CALL_FROM_NUMBER"), limit=1)
+        out["from_number_on_account"] = bool(numbers)
+    except Exception as e:  # noqa: BLE001
+        code = getattr(e, "code", None)
+        status = getattr(e, "status", None)
+        if out["credentials_ok"] is None:
+            out["credentials_ok"] = False
+        out["error"] = f"{type(e).__name__} status={status} code={code}"
+        if status == 401 or code == 20003:
+            out["error"] += (": TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are not a pair. "
+                             "Copy both from the same Twilio Console account page "
+                             "(the account that owns the missed-call number).")
+    return out
+
+
 # ---------------------------------------------------------------- signature
 def webhook_url(request_url: str, headers: Any) -> str:
     """The URL Twilio signed.
