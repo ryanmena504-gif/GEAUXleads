@@ -976,8 +976,8 @@ const CommandCenter = () => {
             className="flex items-center justify-between gap-3 bh-surface rounded-md p-4 hover:bg-white/[0.03]"
           >
             <span className="text-[14px] text-[var(--bh-ink-2)]">
-              {lists.doorHangers} permit {lists.doorHangers === 1 ? "address has" : "addresses have"} no phone or email.
-              They&rsquo;re on this week&rsquo;s door-hanger route.
+              {lists.doorHangers} {lists.doorHangers === 1 ? "address has" : "addresses have"} no phone or email.
+              They&rsquo;re on this week&rsquo;s door-hanger route for mail or a knock, not a call or a text.
             </span>
             <ChevronRight size={15} className="text-[var(--bh-ink-mute)] shrink-0" />
           </Link>

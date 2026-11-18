@@ -7,6 +7,7 @@ import { buildSalutation, stripLeadingGreeting } from "@/lib/greeting";
 import { looksLikeAIPrompt } from "@/lib/draftSafety";
 import { api } from "@/lib/api";
 import { pickEmail } from "@/lib/contact";
+import { withCanSpam } from "@/lib/canspam";
 import {
   softenDraftClaims,
   mentionsListingPressure,
@@ -51,7 +52,8 @@ export const withSignature = (body, senderName, senderPhone) => {
   const lines = [name, "The Shirtless Handyman"];
   if (phone) lines.push(phone);
   const signature = `\n\n${lines.join("\n")}`;
-  return base ? `${base}${signature}` : signature.trimStart();
+  const signed = base ? `${base}${signature}` : signature.trimStart();
+  return withCanSpam(signed);
 };
 
 export const buildFirstDraft = (opp, sender) => {

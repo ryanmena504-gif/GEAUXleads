@@ -187,7 +187,11 @@ def test_send_still_sends_when_ryan_taps_and_the_lead_is_not_banned(client, monk
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert sent["to"] == "pat@geauxmail.net"
-    assert sent["body"] == "Hello from the screen"
+    # The screen copy is kept, and a cold send picks up the opt-out line
+    # and the postal-address placeholder when the client did not include them.
+    assert sent["body"].startswith("Hello from the screen")
+    assert 'reply "unsubscribe"' in sent["body"]
+    assert "Magazine" not in sent["body"]
 
 
 def test_send_uses_contact_email_when_the_email_column_is_a_different_address(client, monkeypatch):

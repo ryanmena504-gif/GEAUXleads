@@ -566,11 +566,37 @@ def evaluate(
         ))
 
     channel = "phone" if phone_ok else "email" if email_ok else None
+    # Address-only leads have no phone, so they never reach this branch.
+    # A permit or sale record with a phone still must not be approved for a
+    # cold call or text unless SMS Permission (or a reply) says yes.
+    from services.mail_door import phone_text_block_reason
+    phone_block = phone_text_block_reason(record) if channel == "phone" else None
+    if phone_block:
+        if email_ok:
+            channel = "email"
+            findings.append(Finding(
+                code="phone_text_not_allowed",
+                severity=WARNING,
+                field="Contact phone",
+                message=("This lead is from a permit or sale record and has not consented "
+                         "to a call or text. Email is the only channel."),
+                remediation="Leave the call and text queues alone. Send email only, with an unsubscribe line.",
+            ))
+        else:
+            channel = None
+            findings.append(Finding(
+                code="phone_text_not_allowed",
+                severity=BLOCKER,
+                field="Contact phone",
+                message=("No cold call or text. This number came from a permit or sale record "
+                         "and there is no consent on the lead."),
+                remediation="Get a yes on SMS Permission, or reach them by mail or a door hanger.",
+            ))
     recipient = Recipient(
         display_name=resolve(record, "display_name"),
         counterparty=person or org,
         channel=channel,
-        phone=format_phone(phone_raw) if phone_ok else None,
+        phone=format_phone(phone_raw) if channel == "phone" else None,
         email=normalize_email(email_raw) if email_ok else None,
         address=resolve(record, "address"),
         category=category,

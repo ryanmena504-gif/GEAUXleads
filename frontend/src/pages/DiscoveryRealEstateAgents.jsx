@@ -19,6 +19,7 @@ import DaysOnTable from "@/components/DaysOnTable";
 import DiscoverySortToggle, { sortByDays } from "@/components/DiscoverySortToggle";
 import ResearchPanel from "@/components/ResearchPanel";
 import { buildSalutation } from "@/lib/greeting";
+import { withCanSpam } from "@/lib/canspam";
 import { extractContact } from "@/lib/contactExtract";
 import { toast } from "sonner";
 
@@ -52,7 +53,7 @@ const buildPitchBody = ({ agent_name, brokerage, sender_name = "Ryan" }) => {
   const brokerageLine = brokerage
     ? `I saw you're with ${brokerage} and wanted to reach out about something the top NOLA agents keep asking me for.`
     : `Wanted to reach out about something the top NOLA agents keep asking me for.`;
-  return [
+  const body = [
     salutation,
     "",
     `I'm ${sender_name} with The Shirtless Handyman. ${brokerageLine}`,
@@ -63,6 +64,7 @@ const buildPitchBody = ({ agent_name, brokerage, sender_name = "Ryan" }) => {
     "",
     `— ${sender_name}`,
   ].join("\n");
+  return withCanSpam(body);
 };
 
 const GateChip = ({ ready, gate }) => {
