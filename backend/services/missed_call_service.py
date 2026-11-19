@@ -31,7 +31,14 @@ Settings (Render > API service > Environment):
                                 callers (default 5, 0 turns research off)
     MISSED_CALL_TWIML_MODE      "say" (default: short message, then hang up)
                                 or "reject" (busy signal, Twilio bills $0)
-    MISSED_CALL_GREETING        words for "say" mode
+    MISSED_CALL_GREETING        words for "say" mode (first 400 characters)
+    MISSED_CALL_VOICE           <Say> voice. Default Polly.Joanna-Generative
+                                (Amazon Polly Generative, language en-US):
+                                a warm conversational US English voice.
+                                Quotes or other characters that would break
+                                the TwiML fall back to that default.
+    MISSED_CALL_VOICE_LANGUAGE  <Say> language. Default en-US. A value that
+                                is not a language tag falls back to en-US.
     MISSED_CALL_WEBHOOK_URL     exact public URL Twilio calls; set it so the
                                 signature check matches behind Render's proxy
     MISSED_CALL_APP_URL         frontend base for the lookup link
@@ -57,9 +64,15 @@ WEBHOOK_PATH = "/api/twilio/voice/missed-call"
 NEW_ORLEANS = ZoneInfo("America/Chicago")
 DEFAULT_APP_URL = "https://geauxleads-1.onrender.com"
 DEFAULT_GREETING = (
-    "Sorry I missed you. This is Ryan with The Shirtless Handyman. "
-    "I got your number and will call you back shortly."
+    "Hey there, thanks for calling The Shirtless Handyman! This is Ryan's assistant. "
+    "Ryan's probably up to his elbows in a shower right now, so he couldn't grab the phone. "
+    "I've got your number, and he'll call you back real soon. Talk to you in a bit!"
 )
+# Twilio <Say> voice is "{Provider}.{Voice}". Joanna-Generative is the
+# en-US Amazon Polly Generative voice Twilio documents for <Say>
+# (https://www.twilio.com/docs/voice/twiml/say/text-speech).
+DEFAULT_VOICE = "Polly.Joanna-Generative"
+DEFAULT_VOICE_LANGUAGE = "en-US"
 SMS_MAX_CHARS = 306  # two GSM-7 segments (153 each); keeps each text at <= 2 billed segments
 
 _PHONE_KEYS = ("contact_phone", "phone", "phone_number", "phone_alt")
@@ -69,6 +82,13 @@ _UNKNOWN_CALLER = {"unknown", "none", "n/a", "not found", "none found"}
 _ASCII_SWAP = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
                              "\u2013": "-", "\u2014": "-", "\u00b7": "|", "\u2026": "..."})
 _WITHHELD = ("anonymous", "unknown", "restricted", "private", "unavailable")
+# man/woman, or Provider.Voice (Polly.Joanna-Generative,
+# Google.en-US-Chirp3-HD-Aoede). No quotes, brackets, or whitespace.
+_SAY_VOICE_RE = re.compile(
+    r"^(?:man|woman|[A-Za-z][A-Za-z0-9]{0,32}\.[A-Za-z0-9][A-Za-z0-9._-]{0,80})$"
+)
+_SAY_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){1,3}$")
+_XML_ATTR = {'"': "&quot;", "'": "&apos;"}
 
 
 # ---------------------------------------------------------------- settings
@@ -87,6 +107,16 @@ def research_daily_cap() -> int:
 
 def twiml_mode() -> str:
     return "reject" if _env("MISSED_CALL_TWIML_MODE").lower() == "reject" else "say"
+
+
+def _say_setting(name: str, default: str, pattern: re.Pattern) -> str:
+    """Env value when it is safe to put in a TwiML attribute, else default."""
+    raw = _env(name, default)
+    if pattern.fullmatch(raw):
+        return raw
+    log.warning("Missed-call %s=%r is not a usable Twilio value; using %s",
+                name, raw[:60], default)
+    return default
 
 
 def config_error() -> Optional[str]:
@@ -182,9 +212,14 @@ def twiml_response() -> str:
         # Twilio does not answer or bill a call whose first verb is Reject.
         return '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>'
     greeting = escape(_env("MISSED_CALL_GREETING", DEFAULT_GREETING)[:400])
+    voice = escape(_say_setting("MISSED_CALL_VOICE", DEFAULT_VOICE, _SAY_VOICE_RE), _XML_ATTR)
+    language = escape(
+        _say_setting("MISSED_CALL_VOICE_LANGUAGE", DEFAULT_VOICE_LANGUAGE, _SAY_LANGUAGE_RE),
+        _XML_ATTR,
+    )
     return (
         '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        f"<Say>{greeting}</Say><Hangup/></Response>"
+        f'<Say language="{language}" voice="{voice}">{greeting}</Say><Hangup/></Response>'
     )
 
 

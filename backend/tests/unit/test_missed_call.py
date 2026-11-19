@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -34,6 +35,9 @@ def env(monkeypatch):
     monkeypatch.setenv("MISSED_CALL_WEBHOOK_URL", URL)
     monkeypatch.delenv("MISSED_CALL_TWIML_MODE", raising=False)
     monkeypatch.delenv("MISSED_CALL_RESEARCH_DAILY_CAP", raising=False)
+    monkeypatch.delenv("MISSED_CALL_GREETING", raising=False)
+    monkeypatch.delenv("MISSED_CALL_VOICE", raising=False)
+    monkeypatch.delenv("MISSED_CALL_VOICE_LANGUAGE", raising=False)
 
 
 def _run(params, *, research=None, leads=LEADS, budget=None):
@@ -73,12 +77,64 @@ def test_parse_caller_line():
 
 
 def test_twiml_say_by_default_and_reject_when_asked(env, monkeypatch):
-    assert "<Say>" in mcs.twiml_response() and "<Hangup/>" in mcs.twiml_response()
+    assert mcs.DEFAULT_GREETING == (
+        "Hey there, thanks for calling The Shirtless Handyman! This is Ryan's assistant. "
+        "Ryan's probably up to his elbows in a shower right now, so he couldn't grab the phone. "
+        "I've got your number, and he'll call you back real soon. Talk to you in a bit!"
+    )
+    assert len(mcs.DEFAULT_GREETING) <= 400
+    say = ElementTree.fromstring(mcs.twiml_response()).find("Say")
+    assert say is not None and say.get("voice") == "Polly.Joanna-Generative"
+    assert say.get("language") == "en-US"
+    assert say.text == mcs.DEFAULT_GREETING
+    assert "<Hangup/>" in mcs.twiml_response()
+
     monkeypatch.setenv("MISSED_CALL_TWIML_MODE", "reject")
-    assert mcs.twiml_response().count("<Reject") == 1
+    monkeypatch.setenv("MISSED_CALL_VOICE", '"><Hangup/>')
+    rejected = mcs.twiml_response()
+    assert rejected == (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Response><Reject reason="busy"/></Response>'
+    )
+    assert "<Say" not in rejected and "voice=" not in rejected
+
     monkeypatch.setenv("MISSED_CALL_TWIML_MODE", "say")
     monkeypatch.setenv("MISSED_CALL_GREETING", "Tom & Jerry <hi>")
     assert "Tom &amp; Jerry &lt;hi&gt;" in mcs.twiml_response()
+    monkeypatch.setenv("MISSED_CALL_GREETING", ("B" * 401) + "<tag>")
+    capped = ElementTree.fromstring(mcs.twiml_response()).find("Say")
+    assert capped is not None and capped.text == "B" * 400
+
+
+def test_twiml_voice_override_and_invalid_fallback(env, monkeypatch):
+    monkeypatch.setenv("MISSED_CALL_VOICE", "Polly.Ruth-Generative")
+    monkeypatch.setenv("MISSED_CALL_VOICE_LANGUAGE", "en-GB")
+    say = ElementTree.fromstring(mcs.twiml_response()).find("Say")
+    assert say is not None
+    assert say.get("voice") == "Polly.Ruth-Generative"
+    assert say.get("language") == "en-GB"
+
+    monkeypatch.setenv("MISSED_CALL_VOICE", "Google.en-US-Chirp3-HD-Aoede")
+    monkeypatch.setenv("MISSED_CALL_VOICE_LANGUAGE", "en-US")
+    say = ElementTree.fromstring(mcs.twiml_response()).find("Say")
+    assert say is not None and say.get("voice") == "Google.en-US-Chirp3-HD-Aoede"
+
+    monkeypatch.setenv("MISSED_CALL_VOICE", 'Polly.Joanna"><Hangup/><Say voice="x')
+    monkeypatch.setenv("MISSED_CALL_VOICE_LANGUAGE", 'en-US"><Say')
+    root = ElementTree.fromstring(mcs.twiml_response())
+    say = root.find("Say")
+    assert say is not None
+    assert say.get("voice") == mcs.DEFAULT_VOICE
+    assert say.get("language") == mcs.DEFAULT_VOICE_LANGUAGE
+    assert root.find("Hangup") is not None and root.find("Reject") is None
+    assert len(root.findall("Say")) == 1
+
+    monkeypatch.setenv("MISSED_CALL_VOICE", "   ")
+    monkeypatch.setenv("MISSED_CALL_VOICE_LANGUAGE", "not a language")
+    say = ElementTree.fromstring(mcs.twiml_response()).find("Say")
+    assert say is not None
+    assert say.get("voice") == "Polly.Joanna-Generative"
+    assert say.get("language") == "en-US"
 
 
 # ------------------------------------------------------------ the job
@@ -230,7 +286,8 @@ def test_route_needs_no_password_but_a_valid_twilio_signature(client, monkeypatc
                      headers={"X-Twilio-Signature": _signed(params)})
     assert ok.status_code == 200
     assert ok.headers["content-type"].startswith("application/xml")
-    assert "<Say>" in ok.text
+    assert 'voice="Polly.Joanna-Generative"' in ok.text
+    assert "Ryan's assistant" in ok.text
     assert len(sent) == 1 and "(504) 555-7777" in sent[0]
 
     # Twilio re-sending the same call does not text twice.
