@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Dict, List
+from typing import Any, Dict, List
 
 
 def _print_plan(plan: Dict[str, Any]) -> None:
