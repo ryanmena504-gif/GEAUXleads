@@ -10,8 +10,20 @@ import asyncio
 import threading
 import time
 
+import pytest
+
 from services.airtable_lists import _slot, key_for, reset_for_tests
 from services.discovery_service import DiscoveryReader as Reader
+
+
+@pytest.fixture(autouse=True)
+def _clear_shared_list_cache():
+    # A reader with no base id is cached under id(table). CPython reuses that
+    # id after the fake table is collected, so a later test can be served the
+    # old rows and never call .all(). Drop the process cache around each test.
+    reset_for_tests()
+    yield
+    reset_for_tests()
 
 
 class SlowTable:
