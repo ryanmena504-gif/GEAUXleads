@@ -16,7 +16,6 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
-from services.field_norm import resolved_phone
 from services.contact_research import (
     build_failure_updates,
     build_research_updates,
@@ -27,6 +26,8 @@ from services.contact_research import (
     today_iso,
 )
 from services.draft_safety import looks_like_ai_prompt
+from services.enrichment_attempts import SKIP_EXHAUSTED, drop_field_updates
+from services.field_norm import resolved_phone
 
 log = logging.getLogger("bloodhound.enrichment")
 
@@ -82,6 +83,7 @@ def select_enrichment_candidates(
     seen = seen or set()
     chosen = []
     skipped = []
+    drop = []
     seen_ids = set(seen)
     ordered = sorted(leads, key=_sort_key)
     for opp in ordered:
@@ -93,6 +95,10 @@ def select_enrichment_candidates(
         )
         if reason:
             skipped.append({"id": oid, "reason": reason})
+            # Two failed lookups are already on the lead. Drop it from the
+            # contact queue without spending another credit.
+            if reason == SKIP_EXHAUSTED:
+                drop.append(opp)
             continue
         seen_ids.add(oid)
         chosen.append(opp)
@@ -107,6 +113,7 @@ def select_enrichment_candidates(
         ],
         "candidate_leads": chosen,
         "skipped_sample": skipped[:20],
+        "drop_leads": drop,
     }
 
 
@@ -119,7 +126,10 @@ async def _persist(update: UpdateFn, opp_id: str, updates: Dict[str, Any]) -> No
     selects = {}
     rest = {}
     for key, value in updates.items():
-        if key in {"enrichment_status", "contact_readiness", "contact_confidence", "first_contact_channel"}:
+        if key in {
+            "enrichment_status", "contact_readiness", "contact_confidence",
+            "first_contact_channel", "status", "outcome",
+        }:
             selects[key] = value
         else:
             rest[key] = value
@@ -179,11 +189,24 @@ async def run_enrichment_batch(
         "drafts_unconfigured": False,
         "stopped_early": False,
         "stop_reason": None,
+        "dropped_no_contact": 0,
+        "pending_no_contact_drops": len(plan.get("drop_leads") or []),
         "results": [],
     }
     if dry_run:
         summary["results"] = plan["candidates"]
         return summary
+
+    for opp in plan.get("drop_leads") or []:
+        fields = drop_field_updates(opp)
+        if not fields:
+            continue
+        oid = str(opp.get("id") or "")
+        try:
+            await _persist(update, oid, fields)
+            summary["dropped_no_contact"] += 1
+        except Exception:
+            log.exception("no-contact drop write failed for %s", oid)
 
     streak = 0
     drafts_off = False
@@ -446,5 +469,3 @@ async def run_for_service(
             dry_run=dry_run,
             seen=seen,
         )
-
-

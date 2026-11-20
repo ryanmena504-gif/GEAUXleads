@@ -5,9 +5,14 @@ script is scheduled every hour and does nothing unless the local hour
 in America/Chicago is 7. A restart of the website cannot start a second
 run: the website no longer has its own timer.
 
-Nothing in this file calls Perplexity or OpenAI. It only asks the API,
-which already caps the day at ENRICHMENT_DAILY_CAP (default 10) and
-does not retry a failed paid call.
+Nothing in this file calls Perplexity or OpenAI. It only asks the API.
+The API researches leads that are missing a phone and an email and have
+fewer than two recorded enrichment attempts. It caps the day at
+ENRICHMENT_DAILY_CAP (default 10), does not retry a failed paid call
+inside that run, and does not research a lead again inside
+ENRICHMENT_RECHECK_DAYS. A lead is dropped for no contact only after
+two attempts are on the record and both failed. Exterior-only permits
+are out of lane and are not researched.
 """
 from __future__ import annotations
 

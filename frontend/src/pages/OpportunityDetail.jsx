@@ -122,6 +122,51 @@ const SectionHeading = ({ title, hint }) => (
   </div>
 );
 
+const attemptResultLabel = (result) => {
+  if (result === "found") return "found";
+  if (result === "failed") return "failed";
+  return "not found";
+};
+
+const attemptFoundText = (found) => {
+  const bits = [
+    found?.name && `name ${found.name}`,
+    found?.phone && `phone ${found.phone}`,
+    found?.email && `email ${found.email}`,
+    found?.mailing_address && `mailing address ${found.mailing_address}`,
+  ].filter(Boolean);
+  return bits.join(", ");
+};
+
+const EnrichmentAttempts = ({ opp }) => {
+  const attempts = Array.isArray(opp?.enrichment_attempts) ? opp.enrichment_attempts : [];
+  return (
+    <div className="mt-4" data-testid={`enrichment-attempts-${opp?.id || "lead"}`}>
+      <div className="bh-eyebrow mb-2">Enrichment attempts</div>
+      {attempts.length === 0 ? (
+        <p className="text-sm text-[var(--bh-ink-mute)]">No enrichment attempts recorded yet.</p>
+      ) : (
+        <ol className="space-y-3">
+          {attempts.map((attempt, i) => {
+            const found = attemptFoundText(attempt?.found);
+            return (
+              <li key={`${attempt?.timestamp || "attempt"}-${i}`} className="text-sm text-[var(--bh-ink-2)]">
+                <div className="mono text-[10px] uppercase tracking-widest text-[var(--bh-ink-mute)]">
+                  {fmtDateTime(attempt?.timestamp)}
+                </div>
+                <div>
+                  {attempt?.source || "unknown method"} — {attemptResultLabel(attempt?.result)}
+                  {found ? ` (${found})` : attempt?.result === "found" ? "" : " (nothing found)"}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+};
+
 const KV = ({ label, value, mono, testId }) => (
   <div className="py-2 border-b bh-hairline last:border-b-0" data-testid={testId}>
     <div className="bh-eyebrow">
@@ -661,7 +706,7 @@ const OpportunityDetail = () => {
                 <AgentRunButton
                   opp={opp}
                   trigger={api.findContact}
-                  watchFields={["phone", "email", "notes", "decision_maker", "owner", "owner_mailing_address", "enrichment_status", "contact_readiness"]}
+                  watchFields={["phone", "email", "notes", "decision_maker", "owner", "owner_mailing_address", "enrichment_status", "contact_readiness", "enrichment_attempts"]}
                   label={pickPhone(opp) || pickEmail(opp) ? "Find contact again" : "Find contact"}
                   icon={UserSearch}
                   doneMessage="Contact finder finished — contact details updated."
@@ -669,6 +714,7 @@ const OpportunityDetail = () => {
                   testId="find-contact-btn"
                 />
               </div>
+              <EnrichmentAttempts opp={opp} />
               <div className="mt-4">
                 <ResearchPanel
                   researchType="decision_maker"

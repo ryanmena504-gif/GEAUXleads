@@ -118,14 +118,20 @@ class SampleOpportunityService:
         return self.cache_status()
 
     # ---------- reads ----------
+    def _with_attempts(self, rec: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if rec is None:
+            return None
+        from services.enrichment_attempts import annotate_enrichment_attempts
+        return annotate_enrichment_attempts(rec)
+
     def all(self) -> List[Dict[str, Any]]:
-        return list(self._data.values())
+        return [self._with_attempts(rec) for rec in self._data.values()]
 
     def count(self) -> int:
         return len(self._data)
 
     def get(self, opp_id: str) -> Optional[Dict[str, Any]]:
-        return self._data.get(opp_id)
+        return self._with_attempts(self._data.get(opp_id))
 
     def list(self, source=None, status=None, priority_band=None,
              daily_mission=None, project_type=None, min_score=None,
@@ -225,7 +231,7 @@ class SampleOpportunityService:
                 self.update_status(opp_id, value)
             else:
                 opp[key] = value
-        return opp
+        return self._with_attempts(opp)
 
     def _append_activity(self, opp: Dict[str, Any], type_: str, note: Optional[str]):
         timeline = opp.setdefault("activity_timeline", [])

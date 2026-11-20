@@ -56,9 +56,9 @@ export const addressOf = (opp) => String(opp?.project_address || "").trim();
  * A door on the walking list.
  *
  * Open permit leads with an address and no phone or email, plus mail-door
- * leads that were passed only for "No usable contact" (a real interior
- * job, a named person, a street address). Exterior-only permits and
- * LLC-owned multi-family properties with no named person stay off the list.
+ * leads that were passed only for "No usable contact" (interior work at
+ * a street address). Exterior-only permits stay off the list. A missing
+ * name does not. Address-only leads keep this route after enrichment.
  */
 export const isDoorHangerLead = (opp) => {
   if (!opp || opp.status === "Won" || opp.status === "Lost") return false;

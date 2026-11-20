@@ -1,11 +1,17 @@
-"""Keep a real interior job that has a person and a street address.
+"""Keep interior work. A missing name, phone, or email is not a pass.
 
-A missing phone and email is not a reason to pass that lead. It is a
-mail / door-knock lead (`mail-door`): a hanger, a postcard, or a knock.
-Two cases stay passes:
+The only intake pass is a lead that is not our lane. Our lane is interior
+work: showers, baths, kitchens, microcement, Venetian plaster, and the
+same kind of work. An exterior-only permit (roof, siding, fence, gutter)
+is out of lane.
 
-- the permit is exterior-only (roof, siding, fence, gutter, …)
-- the property is an LLC-owned multi-family and no person is named
+A missing owner name is not a pass, including an LLC-owned multi-family
+with nobody's name on the permit. Those leads stay and go to enrichment.
+An address with no phone and no email is still a mail / door-knock lead
+(`mail-door`): a hanger, a postcard, or a knock. Dropping a lead because
+no contact was found happens only after two enrichment attempts are on
+the record and both failed. That decision lives with the attempt log;
+this module only decides the lane.
 
 Address-only leads never land in a call or text queue. A lead that came
 from a permit or a sale record does not get a cold call or a cold text
@@ -19,12 +25,14 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from services.enrichment_attempts import should_drop_for_no_contact
 from services.field_norm import clean_text, has_address, is_valid_email, is_valid_phone, resolved_email, resolved_phone
 
 MAIL_DOOR = "mail-door"
 NO_CONTACT_REASON = "no usable contact"
 
 PASS_EXTERIOR = "pass-exterior"
+# Historical label. disposition() does not return it: a missing name is not a pass.
 PASS_LLC_MULTIFAMILY = "pass-llc-multifamily"
 KEEP_MAIL_DOOR = "keep-mail-door"
 KEEP = "keep"
@@ -190,18 +198,22 @@ def has_phone_consent(record: Dict[str, Any]) -> bool:
 
 
 def disposition(record: Dict[str, Any]) -> str:
-    """What to do with this lead. Does not write anything."""
+    """What to do with this lead at intake. Does not write anything.
+
+    Exterior-only permits are out of lane. Everything else interior stays,
+    even with no owner name, phone, or email. An address and no phone or
+    email is tagged for a door hanger. A missing name on an LLC-owned
+    multi-family is not a pass.
+    """
     if not record:
         return SKIP
     if is_exterior_only(record):
         return PASS_EXTERIOR
-    if is_llc_owned(record) and is_multifamily(record) and not has_named_person(record):
-        return PASS_LLC_MULTIFAMILY
-    if is_interior_job(record) and has_named_person(record) and has_property_address(record):
-        if not has_phone(record) and not has_email(record):
-            return KEEP_MAIL_DOOR
-        return KEEP
-    return SKIP
+    if not is_interior_job(record):
+        return SKIP
+    if has_property_address(record) and not has_phone(record) and not has_email(record):
+        return KEEP_MAIL_DOOR
+    return KEEP
 
 
 def phone_text_block_reason(record: Dict[str, Any]) -> Optional[str]:
@@ -263,10 +275,11 @@ def review_no_contact_passes(opps: List[Dict[str, Any]]) -> Dict[str, Any]:
             "address": clean_text(opp.get("project_address") or opp.get("address")),
             "disposition": kind,
         }
-        if kind in (KEEP_MAIL_DOOR, KEEP):
+        if kind in (KEEP_MAIL_DOOR, KEEP) and not should_drop_for_no_contact(opp):
             row["updates"] = restore_updates(opp, kind)
             restore.append(row)
-        elif kind in (PASS_EXTERIOR, PASS_LLC_MULTIFAMILY):
+        elif kind in (KEEP_MAIL_DOOR, KEEP, PASS_EXTERIOR, PASS_LLC_MULTIFAMILY, SKIP):
+            # Out of lane, or two enrichment attempts already failed.
             keep_passed.append(row)
         else:
             leave.append(row)
