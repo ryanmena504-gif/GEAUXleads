@@ -151,6 +151,12 @@ export const api = {
     client
       .post(`/opportunities/${opp_id}/handoff`, payload)
       .then((r) => r.data),
+  // Shop-number call. Bridge rings Ryan first, then the lead.
+  callLead: (id, mode = "bridge") =>
+    client.post(`/opportunities/${id}/call`, { mode }).then((r) => r.data),
+  // Shop-number text. The server adds the STOP line if body omits it.
+  textLead: (id, body) =>
+    client.post(`/opportunities/${id}/text`, { body }).then((r) => r.data),
   listHandoffs: (opp_id, limit = 50) =>
     client
       .get(`/opportunities/${opp_id}/handoffs`, { params: { limit } })

@@ -21,6 +21,7 @@ import PortfolioCheckPanel from "@/components/PortfolioCheckPanel";
 import OutreachWriterButton from "@/components/OutreachWriterButton";
 import AgentRunButton from "@/components/AgentRunButton";
 import { ContactSourceChip, DncCheckFlag } from "@/components/DncCheckFlag";
+import LeadContactActions from "@/components/LeadContactActions";
 import PassSheet from "@/components/PassSheet";
 import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
@@ -696,7 +697,8 @@ const OpportunityDetail = () => {
                 <KV label="Owner" value={opp.owner} />
                 <KV label="Owner mailing address" value={opp.owner_mailing_address} testId="kv-owner-mailing" />
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <LeadContactActions opportunity={opp} />
                 <DncCheckFlag opp={opp} />
               </div>
               <div className="mt-4">

@@ -207,16 +207,23 @@ def signature_valid(url: str, params: Dict[str, str], signature: str) -> bool:
 
 
 # ---------------------------------------------------------------- TwiML
+def say_voice() -> str:
+    """<Say> voice for the greeting and for outbound calls. Same env, same fallback."""
+    return _say_setting("MISSED_CALL_VOICE", DEFAULT_VOICE, _SAY_VOICE_RE)
+
+
+def say_language() -> str:
+    """<Say> language. Joanna Generative is en-US; a bad tag falls back to en-US."""
+    return _say_setting("MISSED_CALL_VOICE_LANGUAGE", DEFAULT_VOICE_LANGUAGE, _SAY_LANGUAGE_RE)
+
+
 def twiml_response() -> str:
     if twiml_mode() == "reject":
         # Twilio does not answer or bill a call whose first verb is Reject.
         return '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>'
     greeting = escape(_env("MISSED_CALL_GREETING", DEFAULT_GREETING)[:400])
-    voice = escape(_say_setting("MISSED_CALL_VOICE", DEFAULT_VOICE, _SAY_VOICE_RE), _XML_ATTR)
-    language = escape(
-        _say_setting("MISSED_CALL_VOICE_LANGUAGE", DEFAULT_VOICE_LANGUAGE, _SAY_LANGUAGE_RE),
-        _XML_ATTR,
-    )
+    voice = escape(say_voice(), _XML_ATTR)
+    language = escape(say_language(), _XML_ATTR)
     return (
         '<?xml version="1.0" encoding="UTF-8"?><Response>'
         f'<Say language="{language}" voice="{voice}">{greeting}</Say><Hangup/></Response>'

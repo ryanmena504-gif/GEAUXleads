@@ -6,6 +6,7 @@ import LearningStrip from "@/components/LearningStrip";
 import FreshIntel from "@/components/FreshIntel";
 import Bench from "@/components/Bench";
 import OpenInMessages from "@/components/OpenInMessages";
+import LeadContactActions from "@/components/LeadContactActions";
 import { DncCheckFlag } from "@/components/DncCheckFlag";
 import PassSheet from "@/components/PassSheet";
 import { OnePhoneAway, WaitingOnYou } from "@/components/PipelineRescue";
@@ -24,7 +25,7 @@ import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
 import { buildSalutation } from "@/lib/greeting";
 import { pickEmail } from "@/lib/contact";
-import { isReachable, isRepliedLead, repliedQueue, telHref, smsHref, mailHref } from "@/lib/today";
+import { isReachable, isRepliedLead, repliedQueue, mailHref } from "@/lib/today";
 import { isDoorHangerLead } from "@/lib/doorHangers";
 import {
   Check,
@@ -35,8 +36,6 @@ import {
   Loader2,
   Mail,
   MapPin,
-  MessageSquare,
-  Phone,
   Zap,
 } from "lucide-react";
 
@@ -604,13 +603,11 @@ const WaitingRow = ({ opp }) => {
 };
 
 /**
- * RepliedRow — a lead that wrote back. Call / text / email links open
- * Ryan's own phone or mail app with nothing pre-written; nothing sends
- * from here.
+ * RepliedRow — a lead that wrote back. Call and Text go out through the
+ * shop number after a confirm. Open on phone is the Messages app. Email
+ * still opens the mail app.
  */
 const RepliedRow = ({ opp }) => {
-  const tel = telHref(opp);
-  const sms = smsHref(opp);
   const mail = mailHref(opp);
   const since = opp.date_replied || (opp.message_sent_date || "").slice(0, 10);
   const linkCls =
@@ -629,17 +626,13 @@ const RepliedRow = ({ opp }) => {
           <div className="mt-1 text-[12.5px] text-[var(--bh-ink-mute)]">Next: {opp.next_best_action}</div>
         )}
       </Link>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {tel && (
-          <a href={tel} className={linkCls} data-testid={`replied-call-${opp.id}`}>
-            <Phone size={13} /> Call
-          </a>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {opp.dnc_check_required && (
+          <div className="basis-full">
+            <DncCheckFlag opp={opp} />
+          </div>
         )}
-        {sms && (
-          <a href={sms} className={linkCls} data-testid={`replied-text-${opp.id}`}>
-            <MessageSquare size={13} /> Text
-          </a>
-        )}
+        <LeadContactActions opportunity={opp} />
         {mail && (
           <a href={mail} className={linkCls} data-testid={`replied-email-${opp.id}`}>
             <Mail size={13} /> Email
