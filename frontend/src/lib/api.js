@@ -97,6 +97,11 @@ export const api = {
   twilioLookupStatus: () =>
     client.get("/lookup/twilio/status").then((r) => r.data),
 
+  // Outbound voice. bridge rings Ryan's phone, then connects the lead.
+  // The button only uses bridge. message mode is for a consented lead.
+  callLead: (id, payload = { mode: "bridge" }) =>
+    client.post(`/opportunities/${id}/call`, payload).then((r) => r.data),
+
   // On-demand portfolio check (Make webhook; returns 503 when not configured)
   portfolioCheck: (id) =>
     client.post(`/opportunities/${id}/portfolio-check`).then((r) => r.data),

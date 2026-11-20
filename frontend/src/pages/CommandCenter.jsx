@@ -24,7 +24,8 @@ import useUserSettings from "@/hooks/useUserSettings";
 import DaysOnTable from "@/components/DaysOnTable";
 import { buildSalutation } from "@/lib/greeting";
 import { pickEmail } from "@/lib/contact";
-import { isReachable, isRepliedLead, repliedQueue, telHref, smsHref, mailHref } from "@/lib/today";
+import { isReachable, isRepliedLead, repliedQueue, smsHref, mailHref } from "@/lib/today";
+import CallLeadButton from "@/components/CallLeadButton";
 import { isDoorHangerLead } from "@/lib/doorHangers";
 import {
   Check,
@@ -36,7 +37,6 @@ import {
   Mail,
   MapPin,
   MessageSquare,
-  Phone,
   Zap,
 } from "lucide-react";
 
@@ -609,7 +609,6 @@ const WaitingRow = ({ opp }) => {
  * from here.
  */
 const RepliedRow = ({ opp }) => {
-  const tel = telHref(opp);
   const sms = smsHref(opp);
   const mail = mailHref(opp);
   const since = opp.date_replied || (opp.message_sent_date || "").slice(0, 10);
@@ -630,11 +629,7 @@ const RepliedRow = ({ opp }) => {
         )}
       </Link>
       <div className="mt-3 flex flex-wrap gap-2">
-        {tel && (
-          <a href={tel} className={linkCls} data-testid={`replied-call-${opp.id}`}>
-            <Phone size={13} /> Call
-          </a>
-        )}
+        <CallLeadButton opportunity={opp} className={linkCls} />
         {sms && (
           <a href={sms} className={linkCls} data-testid={`replied-text-${opp.id}`}>
             <MessageSquare size={13} /> Text

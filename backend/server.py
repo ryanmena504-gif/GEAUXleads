@@ -2957,6 +2957,119 @@ async def twilio_missed_call_status():
     return await _bg(mcs.credentials_check)
 
 
+# ============================================================================
+# Outbound voice — POST /api/opportunities/{id}/call
+# Password-protected. bridge rings Ryan, then the lead. message plays the
+# greeting voice to the lead and can connect them if they press 1.
+# Twilio's TwiML and status callbacks are signed, same as missed-call.
+# ============================================================================
+class OutboundCallBody(BaseModel):
+    mode: str = "bridge"
+
+
+def _twilio_form(request: Request, raw: str) -> Dict[str, str]:
+    from urllib.parse import parse_qsl
+    return dict(parse_qsl(raw, keep_blank_values=True))
+
+
+def _outbound_signature_ok(request: Request, params: Dict[str, str]) -> bool:
+    from services import missed_call_service as mcs
+    from services.outbound_call_service import signed_request_url
+    url = signed_request_url(request.url.path, request.url.query)
+    if not url:
+        return False
+    return mcs.signature_valid(url, params, request.headers.get("x-twilio-signature", ""))
+
+
+@api_router.post("/opportunities/{opp_id}/call")
+async def place_lead_call(opp_id: str, body: OutboundCallBody):
+    """Place one call. bridge is the default. Nothing is scheduled."""
+    from services.outbound_call_service import (
+        CallBlocked, CallFailed, missing_settings, place_call,
+    )
+
+    missing = missing_settings()
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail="Missing on the API service: " + ", ".join(missing),
+        )
+    svc = get_opportunity_service()
+    opp = await _bg(svc.get, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    try:
+        return await _bg(place_call, opp, body.mode, svc)
+    except CallBlocked as blocked:
+        raise HTTPException(status_code=blocked.status_code, detail=blocked.detail)
+    except CallFailed as failed:
+        raise HTTPException(status_code=502, detail=failed.detail)
+
+
+@api_router.post("/twilio/voice/outbound-connect")
+async def twilio_outbound_connect(request: Request):
+    """TwiML when the first leg answers. Signature required, not the password."""
+    from fastapi.responses import Response
+    from services.outbound_call_service import clean_lead_id, connect_twiml
+
+    raw = (await request.body()).decode("utf-8", "replace")
+    params = _twilio_form(request, raw)
+    if not _outbound_signature_ok(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    lead_id = clean_lead_id(request.query_params.get("lead_id"))
+    mode = (request.query_params.get("mode") or "").strip().lower()
+    opp = None
+    if lead_id:
+        svc = get_opportunity_service()
+        opp = await _bg(svc.get, lead_id)
+    xml = connect_twiml(opp, mode, params.get("AnsweredBy", ""))
+    return Response(content=xml, media_type="application/xml")
+
+
+@api_router.post("/twilio/voice/outbound-gather")
+async def twilio_outbound_gather(request: Request):
+    """Press 1 on a message-mode call. Signature required."""
+    from fastapi.responses import Response
+    from services.outbound_call_service import clean_lead_id, gather_twiml
+
+    raw = (await request.body()).decode("utf-8", "replace")
+    params = _twilio_form(request, raw)
+    if not _outbound_signature_ok(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    lead_id = clean_lead_id(request.query_params.get("lead_id"))
+    opp = None
+    if lead_id:
+        svc = get_opportunity_service()
+        opp = await _bg(svc.get, lead_id)
+    xml = gather_twiml(opp, params.get("Digits", ""))
+    return Response(content=xml, media_type="application/xml")
+
+
+@api_router.post("/twilio/voice/outbound-status")
+async def twilio_outbound_status(request: Request):
+    """Status and duration, written to the lead's Activity Log."""
+    from fastapi.responses import Response
+    from services.outbound_call_service import clean_lead_id, record_status
+
+    raw = (await request.body()).decode("utf-8", "replace")
+    params = _twilio_form(request, raw)
+    if not _outbound_signature_ok(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    lead_id = clean_lead_id(request.query_params.get("lead_id")) or ""
+    mode = (request.query_params.get("mode") or "").strip().lower()
+    svc = get_opportunity_service()
+    try:
+        outcome = await _bg(record_status, svc, lead_id, mode, params)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Call status log failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="Could not save the call status")
+    if outcome.get("missing"):
+        return Response(status_code=204)
+    if not outcome.get("logged") and outcome.get("ok"):
+        raise HTTPException(status_code=500, detail="Could not save the call status")
+    return Response(status_code=204)
+
+
 # Registered last: include_router copies api_router's routes at call time,
 # so any @api_router route defined below an earlier call was never served
 # (outreach queue, fresh-intel, portfolio-check, outreach-write all 404'd).

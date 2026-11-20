@@ -26,12 +26,15 @@ import { api } from "@/lib/api";
 import { fmtMoney, fmtMoneyFull, fmtDate, fmtDateTime, fmtMoneyOrStatus, moneyDisplay, sourceLabel } from "@/lib/formatters";
 import { needsConfirmation } from "@/lib/priority";
 import { pickEmail, pickPhone } from "@/lib/contact";
+import { smsHref } from "@/lib/today";
+import CallLeadButton from "@/components/CallLeadButton";
 import { queueBucket, outreachAllowed } from "@/lib/queue";
 import {
   ArrowLeft,
   MapPin,
   Phone,
   Mail,
+  MessageSquare,
   FileText,
   ShieldAlert,
   Info,
@@ -699,6 +702,23 @@ const OpportunityDetail = () => {
               <div className="mt-3">
                 <DncCheckFlag opp={opp} />
               </div>
+              {pickPhone(opp) && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <CallLeadButton
+                    opportunity={opp}
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)] hover:bg-white/[0.03] transition-colors"
+                  />
+                  {smsHref(opp) && (
+                    <a
+                      href={smsHref(opp)}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[12.5px] font-medium border bh-hairline text-[var(--bh-ink-2)] hover:text-[var(--bh-ink)] hover:bg-white/[0.03] transition-colors"
+                      data-testid={`lead-text-${opp.id}`}
+                    >
+                      <MessageSquare size={13} /> Text
+                    </a>
+                  )}
+                </div>
+              )}
               <div className="mt-4">
                 {/* Contact Finder — fills Contact name, phone, email, and
                     for a house, the assessor owner and mailing address.

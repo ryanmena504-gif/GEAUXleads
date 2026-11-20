@@ -95,6 +95,21 @@ Cold email drafts add an unsubscribe line and a postal address. Set this on the 
 
 If either variable is missing, the draft shows `[physical address — set BUSINESS_MAILING_ADDRESS]` instead of inventing a street.
 
+## 11. Outbound calls
+
+Calling a lead uses the Twilio account already on the API. No new vendor.
+
+On the **API** service, Environment:
+
+- `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` — already used by missed-call text and lookup. Leave them.
+- `TWILIO_FROM_NUMBER` — the business line, `+15042300550`. If this is unset, the call uses `MISSED_CALL_FROM_NUMBER` instead, so set this when that number is a different Twilio line.
+- `OWNER_PHONE` — Ryan's cell, the phone that rings first in bridge mode. If this is unset, the call uses `LEAD_NOTIFICATION_PHONE`, then `MISSED_CALL_NOTIFY_NUMBER`.
+- `PUBLIC_BACKEND_URL` — `https://geauxleads.onrender.com`, already required. Twilio posts call status there.
+
+The spoken message uses the same voice as the missed-call greeting (`MISSED_CALL_VOICE`, default `Polly.Joanna-Generative`). Leave that unset unless you want a different Twilio voice.
+
+In the Twilio console, the business number needs Voice enabled. You do not point its inbound webhook at the new routes. Outbound calls pass their own TwiML address. The missed-call webhook stays as it is.
+
 ## If the morning email used to fire on its own
 
 The old schedule file from the previous host was not running on Render, and it has been removed. The morning-email address still exists (`POST /api/cron/morning-brief`). It now needs both headers:

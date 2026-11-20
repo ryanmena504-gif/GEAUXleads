@@ -119,6 +119,16 @@ def _say_setting(name: str, default: str, pattern: re.Pattern) -> str:
     return default
 
 
+def say_voice() -> str:
+    """Twilio <Say> voice. Outbound calls use this same setting."""
+    return _say_setting("MISSED_CALL_VOICE", DEFAULT_VOICE, _SAY_VOICE_RE)
+
+
+def say_language() -> str:
+    """Twilio <Say> language. Outbound calls use this same setting."""
+    return _say_setting("MISSED_CALL_VOICE_LANGUAGE", DEFAULT_VOICE_LANGUAGE, _SAY_LANGUAGE_RE)
+
+
 def config_error() -> Optional[str]:
     """None when everything needed to text Ryan is set. Never echoes values."""
     missing = [
@@ -212,11 +222,8 @@ def twiml_response() -> str:
         # Twilio does not answer or bill a call whose first verb is Reject.
         return '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>'
     greeting = escape(_env("MISSED_CALL_GREETING", DEFAULT_GREETING)[:400])
-    voice = escape(_say_setting("MISSED_CALL_VOICE", DEFAULT_VOICE, _SAY_VOICE_RE), _XML_ATTR)
-    language = escape(
-        _say_setting("MISSED_CALL_VOICE_LANGUAGE", DEFAULT_VOICE_LANGUAGE, _SAY_LANGUAGE_RE),
-        _XML_ATTR,
-    )
+    voice = escape(say_voice(), _XML_ATTR)
+    language = escape(say_language(), _XML_ATTR)
     return (
         '<?xml version="1.0" encoding="UTF-8"?><Response>'
         f'<Say language="{language}" voice="{voice}">{greeting}</Say><Hangup/></Response>'
