@@ -24,7 +24,20 @@ STREAM_QUERY_PARAM = "access_key"
 OPEN_PATHS = frozenset({"/api/health", "/api/health/deep"})
 # Twilio cannot send the app password. These POST routes skip it and check
 # X-Twilio-Signature (signed with TWILIO_AUTH_TOKEN) themselves instead.
-TWILIO_SIGNED_PATHS = frozenset({"/api/twilio/voice/missed-call"})
+TWILIO_SIGNED_PATHS = frozenset({
+    "/api/twilio/voice/missed-call",
+    # Outbound calling. Twilio cannot send the app password; each route
+    # checks X-Twilio-Signature itself. The button that places a call stays
+    # behind the password.
+    "/api/twilio/voice/outbound/bridge",
+    "/api/twilio/voice/outbound/message",
+    "/api/twilio/voice/outbound/gather",
+    "/api/twilio/voice/outbound/whisper",
+    "/api/twilio/voice/outbound/status",
+    # Inbound STOP / delivery status. Same signature check, no app password.
+    "/api/twilio/sms/inbound",
+    "/api/twilio/sms/status",
+})
 
 PASSWORD_NOT_CONFIGURED = {
     "ok": False,

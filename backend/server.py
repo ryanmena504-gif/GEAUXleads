@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, BackgroundTasks, Header
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -1238,11 +1238,9 @@ async def delete_draft(draft_id: str):
 
 
 # --------------------------------------------------------------------------
-# Reserved: previously hosted a POST /opportunities/{id}/sms-draft that wrote
-# an SMS draft into Airtable's Notes field. Removed 2026-02-06 in favor of a
-# pure client-side iPhone handoff (OpenInMessages) — no backend write, no
-# messaging API, no automation. If you're looking for send-anything logic in
-# this file, stop looking. There isn't any.
+# Outbound call and text live further down (POST /opportunities/{id}/call
+# and /text). Both require the app password. Twilio's own webhooks are
+# signed and do not use that password. Nothing sends on a timer.
 # --------------------------------------------------------------------------
 
 
@@ -2955,6 +2953,273 @@ async def twilio_missed_call_status():
     """Behind the app password. Free Twilio account read; sends no text."""
     from services import missed_call_service as mcs
     return await _bg(mcs.credentials_check)
+
+
+# ============================================================================
+# Outbound call + text. The button and a script both POST here with
+# x-app-password. Twilio's callbacks cannot send that password; they are
+# listed in TWILIO_SIGNED_PATHS and checked with X-Twilio-Signature.
+# ============================================================================
+class OutboundCallBody(BaseModel):
+    mode: str = "bridge"
+
+
+class OutboundTextBody(BaseModel):
+    body: str = ""
+
+
+_REFUSED_STATUS = {
+    "bad_mode": 422,
+    "empty_body": 422,
+    "unsafe_body": 422,
+    "too_long": 422,
+}
+
+
+def _raise_refused(exc) -> None:
+    raise HTTPException(
+        status_code=_REFUSED_STATUS.get(exc.code, 403),
+        detail={"ok": False, "error": exc.code, "message": exc.message},
+    )
+
+
+async def _twilio_form(request: Request) -> Dict[str, str]:
+    from urllib.parse import parse_qsl
+    raw = (await request.body()).decode("utf-8", "replace")
+    return dict(parse_qsl(raw, keep_blank_values=True))
+
+
+def _twilio_authorized(request: Request, params: Dict[str, str]) -> bool:
+    from services.outbound_contact import public_url, signature_ok
+    url = public_url(request.url.path, request.url.query)
+    if not url:
+        return False
+    return signature_ok(url, params, request.headers.get("x-twilio-signature", ""))
+
+
+def _xml(body: str) -> Response:
+    return Response(content=body, media_type="application/xml")
+
+
+async def _load_lead(opp_id: str):
+    svc = get_opportunity_service()
+    try:
+        opp = await _bg(svc.get, opp_id) if hasattr(svc, "get") else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Lead read failed for %s: %s", opp_id, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Couldn't load that lead.")
+    return svc, opp
+
+
+@api_router.post("/opportunities/{opp_id}/call")
+async def place_outbound_call(opp_id: str, body: OutboundCallBody):
+    """Call a lead. Default mode is bridge: Ryan's phone rings first."""
+    from services import outbound_call_service as calls
+    from services.outbound_contact import (
+        ContactRefused, ProviderError, assert_call_allowed, call_note, config_error, remember, safe_sid,
+    )
+
+    err = config_error(need_owner=True)
+    if err:
+        raise HTTPException(status_code=503, detail={"ok": False, "error": "not_configured", "message": err})
+    svc, opp = await _load_lead(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    mode = (body.mode or "bridge").strip().lower()
+    try:
+        assert_call_allowed(opp, mode)
+    except ContactRefused as exc:
+        _raise_refused(exc)
+    try:
+        placed = await _bg(calls.place_call, opp, mode)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail={"ok": False, "error": "call_failed", "message": exc.message})
+    note = call_note(mode=placed["mode"], sid=placed["sid"], status=placed["status"])
+    status_token = note.split("status=", 1)[-1].split()[0]
+    logged = await _bg(
+        remember, svc, opp_id, "call", note,
+        f"sid={safe_sid(placed['sid'])} status={status_token}",
+    )
+    return {
+        "ok": True,
+        "mode": placed["mode"],
+        "call_sid": placed["sid"],
+        "status": placed["status"],
+        "activity_logged": logged,
+    }
+
+
+@api_router.post("/opportunities/{opp_id}/text")
+async def place_outbound_text(opp_id: str, body: OutboundTextBody):
+    """Text a lead from the shop number. A script sends x-app-password and JSON {"body": "..."}."""
+    from services import outbound_sms_service as texts
+    from services.outbound_contact import (
+        ContactRefused, ProviderError, assert_text_allowed, config_error, remember, safe_sid, text_note,
+    )
+
+    err = config_error(need_owner=False)
+    if err:
+        raise HTTPException(status_code=503, detail={"ok": False, "error": "not_configured", "message": err})
+    svc, opp = await _load_lead(opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    try:
+        assert_text_allowed(opp)
+    except ContactRefused as exc:
+        _raise_refused(exc)
+    try:
+        sent = await _bg(texts.send_text, opp, body.body)
+    except ContactRefused as exc:
+        _raise_refused(exc)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail={"ok": False, "error": "text_failed", "message": exc.message})
+    note = text_note(sid=sent["sid"], status=sent["status"], body=sent["body"])
+    status_token = note.split("status=", 1)[-1].split()[0]
+    logged = await _bg(
+        remember, svc, opp_id, "text", note,
+        f"sid={safe_sid(sent['sid'])} status={status_token}",
+    )
+    return {
+        "ok": True,
+        "message_sid": sent["sid"],
+        "status": sent["status"],
+        "body": sent["body"],
+        "activity_logged": logged,
+    }
+
+
+def _query_lead(request: Request):
+    from services.outbound_contact import safe_id
+    return safe_id(request.query_params.get("lead_id", ""))
+
+
+@api_router.post("/twilio/voice/outbound/bridge")
+async def twilio_outbound_bridge(request: Request):
+    from services import outbound_call_service as calls
+    from services.outbound_contact import call_note, remember, safe_sid
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    svc = get_opportunity_service()
+    lead_id = _query_lead(request)
+    opp = await _bg(svc.get, lead_id) if lead_id and hasattr(svc, "get") else None
+    if not opp:
+        return _xml(calls.bridge_twiml({}, "human"))
+    answered = params.get("AnsweredBy") or ""
+    if answered.lower().startswith("machine") or answered.lower() == "fax":
+        note = call_note(
+            mode="bridge", sid=params.get("CallSid") or "", status="owner_voicemail",
+        )
+        await _bg(remember, svc, lead_id, "call", note, f"sid={safe_sid(params.get('CallSid') or '')} status=owner_voicemail")
+    return _xml(calls.bridge_twiml(opp, answered))
+
+
+@api_router.post("/twilio/voice/outbound/message")
+async def twilio_outbound_message(request: Request):
+    from services import outbound_call_service as calls
+    from services.outbound_contact import call_note, remember, safe_sid
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    svc = get_opportunity_service()
+    lead_id = _query_lead(request)
+    opp = await _bg(svc.get, lead_id) if lead_id and hasattr(svc, "get") else None
+    if not opp:
+        return _xml('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>')
+    answered = params.get("AnsweredBy") or ""
+    if answered.lower().startswith("machine") or answered.lower() == "fax":
+        note = call_note(mode="message", sid=params.get("CallSid") or "", status="voicemail")
+        await _bg(remember, svc, lead_id, "call", note, f"sid={safe_sid(params.get('CallSid') or '')} status=voicemail")
+    return _xml(calls.message_twiml(opp, answered))
+
+
+@api_router.post("/twilio/voice/outbound/gather")
+async def twilio_outbound_gather(request: Request):
+    from services import outbound_call_service as calls
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    svc = get_opportunity_service()
+    lead_id = _query_lead(request)
+    opp = await _bg(svc.get, lead_id) if lead_id and hasattr(svc, "get") else None
+    return _xml(calls.gather_twiml(opp or {}, params.get("Digits") or ""))
+
+
+@api_router.post("/twilio/voice/outbound/whisper")
+async def twilio_outbound_whisper(request: Request):
+    from services import outbound_call_service as calls
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    svc = get_opportunity_service()
+    lead_id = _query_lead(request)
+    opp = await _bg(svc.get, lead_id) if lead_id and hasattr(svc, "get") else None
+    return _xml(calls.whisper_twiml(opp or {}))
+
+
+@api_router.post("/twilio/voice/outbound/status")
+async def twilio_outbound_call_status(request: Request):
+    from services.outbound_contact import call_note, remember, safe_sid
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    lead_id = _query_lead(request)
+    mode = (request.query_params.get("mode") or "bridge").strip().lower()
+    if mode not in ("bridge", "message"):
+        mode = "bridge"
+    svc = get_opportunity_service()
+    note = call_note(
+        mode=mode,
+        sid=params.get("CallSid") or "",
+        status=params.get("CallStatus") or "",
+        duration=params.get("CallDuration"),
+    )
+    status_token = note.split("status=", 1)[-1].split()[0]
+    logged = False
+    if lead_id and hasattr(svc, "add_activity"):
+        logged = await _bg(
+            remember, svc, lead_id, "call", note,
+            f"sid={safe_sid(params.get('CallSid') or '')} status={status_token}",
+        )
+    return {"ok": True, "logged": logged}
+
+
+@api_router.post("/twilio/sms/status")
+async def twilio_outbound_sms_status(request: Request):
+    from services.outbound_contact import remember, safe_sid, text_note
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    lead_id = _query_lead(request)
+    svc = get_opportunity_service()
+    note = text_note(sid=params.get("MessageSid") or params.get("SmsSid") or "", status=params.get("MessageStatus") or "")
+    status_token = note.split("status=", 1)[-1].split()[0]
+    logged = False
+    if lead_id and hasattr(svc, "add_activity"):
+        logged = await _bg(
+            remember, svc, lead_id, "text", note,
+            f"sid={safe_sid(params.get('MessageSid') or params.get('SmsSid') or '')} status={status_token}",
+        )
+    return {"ok": True, "logged": logged}
+
+
+@api_router.post("/twilio/sms/inbound")
+async def twilio_sms_inbound(request: Request):
+    from services import outbound_sms_service as texts
+
+    params = await _twilio_form(request)
+    if not _twilio_authorized(request, params):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "bad_signature"})
+    svc = get_opportunity_service()
+    leads = await _bg(svc.all) if hasattr(svc, "all") else []
+    await _bg(texts.handle_inbound, params, leads, svc)
+    return _xml(texts.EMPTY_TWIML)
 
 
 # Registered last: include_router copies api_router's routes at call time,
