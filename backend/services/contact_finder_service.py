@@ -126,19 +126,25 @@ def parse_result(answer: str) -> Dict[str, Optional[str]]:
 async def run_contact_finder(opp: Dict[str, Any]) -> Dict[str, Optional[str]]:
     """Run owner-contact research for one opportunity.
 
-    Residential permit leads use the homeowner lookup (assessor owner,
-    mailing address, public phone/email). Everything else uses the
-    business contact finder. One call either way — a failure is raised
-    and not retried here.
+    A house starts with the assessor / owner lookup. Anything else starts
+    with the web and business-registry finder. The next attempt uses
+    whichever of those two is not already on the lead. When both are
+    already recorded, this returns methods_exhausted and does not call
+    Perplexity. A failure is raised and not retried here.
 
     Returns owner_name, phone, email, mailing_address, contact_source,
     source_url, confidence, and entity_context. Missing pieces are None.
     """
-    from services.contact_research import is_residential_permit
+    from services.contact_research import is_residential_permit, next_enrichment_method, research_type_of
     from services.perplexity_service import research_async
 
     residential = is_residential_permit(opp)
-    research_type = "homeowner_lookup" if residential else "contact_finder"
+    method = next_enrichment_method(opp)
+    if method is None:
+        # Every angle has been tried. Do not spend another credit, and do
+        # not hand back a result that would be logged as a new attempt.
+        return {"methods_exhausted": True, "enrichment_method": None}
+    research_type = research_type_of(method)
     query = build_query(opp)
     log.info("Contact Finder: %s %s", research_type, query.split("\n")[0][:80])
     result = await research_async(research_type, query)
@@ -146,6 +152,7 @@ async def run_contact_finder(opp: Dict[str, Any]) -> Dict[str, Optional[str]]:
     parsed = parse_result(answer)
     if not parsed.get("contact_source"):
         parsed["contact_source"] = "homeowner" if residential else "business"
+    parsed["enrichment_method"] = method
     # Free public-record phone lookup is not wired. This returns None and
     # does not call Perplexity or any paid vendor. See public_record_phone.py.
     from services.public_record_phone import lookup_public_record_phone

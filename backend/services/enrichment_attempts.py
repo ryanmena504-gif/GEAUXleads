@@ -18,7 +18,8 @@ here deletes a lead.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
 
 ATTEMPT_TYPE = "enrichment_attempt"
 ATTEMPT_LIMIT = 2
@@ -30,6 +31,10 @@ RESULT_FAILED = "failed"
 # Returned by enrichment_skip_reason. The morning batch drops a lead on
 # this reason without spending another credit.
 SKIP_EXHAUSTED = "attempts exhausted"
+# Every supported method is already on the lead. Log it, and do not
+# spend a credit or add another attempt line.
+SKIP_METHODS = "all methods tried"
+SKIPPED_TYPE = "enrichment_skipped"
 
 _FOUND_KEYS = ("name", "phone", "email", "mailing_address")
 _FAILED_RESULTS = {RESULT_NOT_FOUND, RESULT_FAILED}
@@ -114,21 +119,36 @@ def append_attempt(existing: Any, attempt: Dict[str, Any]) -> str:
     return f"{current}\n{line}" if current else line
 
 
+def counted_attempts(attempts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One attempt per method. A repeated method is not a new attempt."""
+    seen = set()
+    counted: List[Dict[str, Any]] = []
+    for attempt in attempts:
+        source = str(attempt.get("source") or "")
+        if source in seen:
+            continue
+        seen.add(source)
+        counted.append(attempt)
+    return counted
+
+
 def failed_attempt_count(attempts: List[Dict[str, Any]]) -> int:
-    return sum(1 for attempt in attempts if attempt.get("result") in _FAILED_RESULTS)
+    counted = counted_attempts(attempts)
+    return sum(1 for attempt in counted if attempt.get("result") in _FAILED_RESULTS)
 
 
 def should_drop_for_no_contact(
     opp: Dict[str, Any],
     attempts: Optional[List[Dict[str, Any]]] = None,
 ) -> bool:
-    """True only when two attempts are recorded and both failed to find a phone or email.
+    """True only when two different methods failed to find a phone or email.
 
-    Fewer than two failed attempts is not a drop, even when Enrichment
-    status already says no contact was found. A phone or email on the
-    lead is not a drop either.
+    A second run of a method already on the lead does not count. Fewer
+    than two failed attempts is not a drop, even when Enrichment status
+    already says no contact was found. A phone or email on the lead is
+    not a drop either.
     """
-    history = attempts if attempts is not None else attempts_of(opp)
+    history = counted_attempts(attempts if attempts is not None else attempts_of(opp))
     if len(history) < ATTEMPT_LIMIT or failed_attempt_count(history) < ATTEMPT_LIMIT:
         return False
     from services.field_norm import is_valid_email, is_valid_phone, resolved_email, resolved_phone
@@ -196,3 +216,37 @@ def annotate_enrichment_attempts(opp: Dict[str, Any]) -> Dict[str, Any]:
     """Attach `enrichment_attempts` for the API. Missing history is []."""
     opp["enrichment_attempts"] = attempts_of(opp)
     return opp
+
+
+def methods_exhausted_message(methods: Sequence[str]) -> str:
+    listed = ", ".join(methods) if methods else "the available lookups"
+    return (
+        f"Every enrichment method has already been tried ({listed}). "
+        "This was not counted as a new attempt."
+    )
+
+
+def skipped_attempt_fields(
+    opp: Dict[str, Any],
+    methods: Sequence[str],
+    *,
+    today: str,
+    attempted_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Journal line for a refused repeat. Empty when that line is already there.
+
+    The line is not an enrichment attempt, so it does not move the lead
+    closer to the two-attempt drop.
+    """
+    message = methods_exhausted_message(methods)
+    log = current_log(opp)
+    if message in log:
+        return {}
+    stamp = attempted_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    line = f"{stamp} | {SKIPPED_TYPE} | {message}"
+    new_log = f"{log}\n{line}" if log else line
+    prior = opp.get("notes")
+    prior_text = prior.strip() if isinstance(prior, str) else ""
+    note = f"Contact Finder ({(today or '')[:10]}): {message}"
+    notes = f"{prior_text}\n\n{note}" if prior_text else note
+    return {"activity_log": new_log, "notes": notes}

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from services.enrichment_attempts import (
     ATTEMPT_LIMIT,
@@ -26,11 +26,14 @@ from services.enrichment_attempts import (
     RESULT_FOUND,
     RESULT_NOT_FOUND,
     SKIP_EXHAUSTED,
+    SKIP_METHODS,
     append_attempt,
     attempts_of,
+    counted_attempts,
     current_log,
     drop_field_updates,
     failed_attempt_count,
+    skipped_attempt_fields,
 )
 from services.field_norm import (
     clean_text,
@@ -235,10 +238,38 @@ def _closed(opp: Dict[str, Any]) -> bool:
     return False
 
 
+# Two lookups the contact finder can actually run. They are different
+# angles: assessor / owner-of-record, then web and business-registry
+# search, or the reverse for a business lead. A second attempt uses the
+# one that is not already on the lead.
+METHOD_ASSESSOR = "perplexity:homeowner_lookup"
+METHOD_WEB = "perplexity:contact_finder"
+
+
+def enrichment_method_ids(opp: Dict[str, Any]) -> List[str]:
+    """Methods still worth trying, in the order the first attempt prefers."""
+    if is_residential_permit(opp):
+        return [METHOD_ASSESSOR, METHOD_WEB]
+    return [METHOD_WEB, METHOD_ASSESSOR]
+
+
+def next_enrichment_method(opp: Dict[str, Any]) -> Optional[str]:
+    """The next unused method, or None when every method has been tried."""
+    tried = {str(attempt.get("source") or "") for attempt in attempts_of(opp)}
+    for method in enrichment_method_ids(opp):
+        if method not in tried:
+            return method
+    return None
+
+
+def research_type_of(method: str) -> str:
+    """Perplexity research_type for a stored method id."""
+    return method.split(":", 1)[-1]
+
+
 def research_method(opp: Dict[str, Any]) -> str:
-    """Which lookup the batch runs. Recorded on the attempt."""
-    kind = "homeowner_lookup" if is_residential_permit(opp) else "contact_finder"
-    return f"perplexity:{kind}"
+    """Which lookup the next attempt runs. Recorded on the attempt."""
+    return next_enrichment_method(opp) or enrichment_method_ids(opp)[0]
 
 
 def enrichment_skip_reason(
@@ -256,9 +287,12 @@ def enrichment_skip_reason(
 
     A missing name, phone, or email is not a skip. The morning batch
     researches a lead that has no phone and no email while fewer than
-    two attempts are recorded. Exterior-only permits are out of lane and
-    are not researched. Two recorded failures stop the credits; the
-    caller drops that lead without another lookup.
+    two attempts are recorded. The second attempt uses a method the lead
+    has not tried yet. Exterior-only permits are out of lane and are not
+    researched. Two recorded failures on different methods stop the
+    credits; the caller drops that lead without another lookup. When
+    every method is already on the lead, the caller logs that and does
+    not count a repeat.
     """
     if not (clean_text(opp.get("project_address")) or clean_text(opp.get("name")) or clean_text(opp.get("company"))):
         return "nothing to research"
@@ -269,6 +303,13 @@ def enrichment_skip_reason(
         return "paused"
     if not force and opp.get("duplicate_of"):
         return "duplicate"
+    if next_enrichment_method(opp) is None:
+        if not force and _has_reachable(opp):
+            return "already has contact"
+        history = counted_attempts(attempts_of(opp))
+        if not force and failed_attempt_count(history) >= ATTEMPT_LIMIT:
+            return SKIP_EXHAUSTED
+        return SKIP_METHODS
     if force:
         return None
     readiness = (opp.get("contact_readiness") or "").strip()
@@ -280,7 +321,7 @@ def enrichment_skip_reason(
         return "out of lane"
     if _has_reachable(opp):
         return "already has contact"
-    history = attempts_of(opp)
+    history = counted_attempts(attempts_of(opp))
     if len(history) >= ATTEMPT_LIMIT:
         if failed_attempt_count(history) >= ATTEMPT_LIMIT:
             return SKIP_EXHAUSTED
@@ -300,8 +341,13 @@ def _stamp_attempt(
     attempted_at: Optional[str] = None,
 ) -> None:
     """Append this lookup to the journal and drop the lead when both attempts failed."""
+    method = next_enrichment_method(opp)
+    if method is None:
+        updates.update(skipped_attempt_fields(
+            opp, enrichment_method_ids(opp), today=today, attempted_at=attempted_at,
+        ))
+        return
     stamp = attempted_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    method = research_method(opp)
     attempt = {
         "timestamp": stamp,
         "source": method,
@@ -399,6 +445,16 @@ def build_research_updates(
     Existing phone, email, name, owner, mailing address, and source URL
     are left alone unless `force` is set (the manual button).
     """
+    if next_enrichment_method(opp) is None:
+        fields = skipped_attempt_fields(
+            opp, enrichment_method_ids(opp), today=today, attempted_at=attempted_at,
+        )
+        return {
+            "updates": {k: v for k, v in fields.items() if k in PERSISTED_KEYS},
+            "became_contact_ready": False,
+            "contact_source": extract_contact_source(opp),
+            "outcome": "methods_exhausted",
+        }
     source = _contact_source(parsed.get("contact_source"), opp)
     name = _person_or_text(parsed.get("owner_name"))
     mailing = _person_or_text(parsed.get("mailing_address"), max_len=200)
@@ -489,6 +545,16 @@ def build_failure_updates(
     attempted_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     """One failed paid call. Status records the failure; nothing is retried."""
+    if next_enrichment_method(opp) is None:
+        fields = skipped_attempt_fields(
+            opp, enrichment_method_ids(opp), today=today, attempted_at=attempted_at,
+        )
+        return {
+            "updates": {k: v for k, v in fields.items() if k in PERSISTED_KEYS},
+            "became_contact_ready": False,
+            "contact_source": extract_contact_source(opp),
+            "outcome": "methods_exhausted",
+        }
     safe_reason = (reason or "unknown error").strip().replace("\n", " ")[:400]
     note = (
         f"Contact Finder ({today[:10]}): research failed — {safe_reason} "

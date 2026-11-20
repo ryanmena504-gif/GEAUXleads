@@ -62,10 +62,10 @@ def _found(**overrides):
     return base
 
 
-def _attempt(stamp, result="not_found", **found):
+def _attempt(stamp, result="not_found", source="perplexity:homeowner_lookup", **found):
     return append_attempt("", {
         "timestamp": stamp,
-        "source": "perplexity:homeowner_lookup",
+        "source": source,
         "result": result,
         "found": found,
     })
@@ -125,7 +125,11 @@ def test_two_failed_attempts_are_exhausted_and_one_is_not_a_drop():
     one = _lead(activity_log_raw=_attempt("2026-10-01T15:00:00+00:00"), contact_verified_date="2026-10-01")
     assert should_drop_for_no_contact(one) is False
     assert enrichment_skip_reason(one, today=TODAY, recheck_days=14) is None
-    two = _attempt("2026-10-01T15:00:00+00:00") + "\n" + _attempt("2026-11-01T15:00:00+00:00", result="failed")
+    two = (
+        _attempt("2026-10-01T15:00:00+00:00")
+        + "\n"
+        + _attempt("2026-11-01T15:00:00+00:00", result="failed", source="perplexity:contact_finder")
+    )
     exhausted = _lead(activity_log_raw=two, contact_verified_date=TODAY, enrichment_status="No contact found")
     assert should_drop_for_no_contact(exhausted) is True
     assert enrichment_skip_reason(exhausted, today=TODAY, recheck_days=14) == "attempts exhausted"
@@ -159,7 +163,12 @@ def test_the_first_miss_is_logged_and_the_second_miss_drops_without_deleting():
     )["updates"]
     assert second["status"] == "Disqualified"
     assert second["outcome"] == "No usable contact"
-    assert len(parse_attempts(second["activity_log"])) == 2
+    history = parse_attempts(second["activity_log"])
+    assert [row["source"] for row in history] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
+    assert len(history) == 2
 
 
 def test_a_found_phone_is_logged_and_does_not_drop_the_lead():
@@ -174,6 +183,10 @@ def test_a_found_phone_is_logged_and_does_not_drop_the_lead():
     assert "status" not in updates
     history = parse_attempts(updates["activity_log"])
     assert [row["result"] for row in history] == ["not_found", "found"]
+    assert [row["source"] for row in history] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
     assert history[1]["found"]["email"] == "marie@example.net"
 
 
@@ -190,7 +203,11 @@ def test_a_paid_call_failure_is_an_attempt_and_the_second_one_drops():
         attempted_at="2026-11-12T15:04:00+00:00",
     )
     assert second["updates"]["status"] == "Disqualified"
-    assert len(parse_attempts(second["updates"]["activity_log"])) == 2
+    history = parse_attempts(second["updates"]["activity_log"])
+    assert [row["source"] for row in history] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
 
 
 def _run(leads, research):
@@ -233,7 +250,11 @@ def test_the_morning_batch_attempts_a_lead_with_no_contact_and_fewer_than_two_tr
     )
     done = _lead(
         id="done",
-        activity_log_raw=_attempt("2026-10-01T15:00:00+00:00") + "\n" + _attempt("2026-11-01T15:00:00+00:00"),
+        activity_log_raw=(
+            _attempt("2026-10-01T15:00:00+00:00")
+            + "\n"
+            + _attempt("2026-11-01T15:00:00+00:00", source="perplexity:contact_finder")
+        ),
         enrichment_status="No contact found",
         contact_readiness="",
         contact_verified_date="2026-10-01",
@@ -253,6 +274,10 @@ def test_api_response_includes_attempt_history_and_the_detail_timeline_is_readab
     assert sample.get(sample.all()[0]["id"])["enrichment_attempts"] == []
     logged = sample.get("opp_002")
     assert [row["result"] for row in logged["enrichment_attempts"]] == ["not_found", "found"]
+    assert [row["source"] for row in logged["enrichment_attempts"]] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
     assert logged["enrichment_attempts"][1]["found"]["name"] == "Elena Boudreaux"
 
     svc = AirtableOpportunityService.__new__(AirtableOpportunityService)
@@ -287,3 +312,112 @@ def test_api_response_includes_attempt_history_and_the_detail_timeline_is_readab
     assert "not found" in notes[0]
     assert "{" not in notes[0]
     assert disposition(opp) == KEEP_MAIL_DOOR
+
+
+def _both_methods():
+    return (
+        _attempt("2026-10-01T15:00:00+00:00")
+        + "\n"
+        + _attempt(
+            "2026-11-01T15:00:00+00:00",
+            source="perplexity:contact_finder",
+        )
+    )
+
+
+def test_the_second_attempt_uses_a_method_the_lead_has_not_tried():
+    from services.contact_research import next_enrichment_method
+
+    fresh = _lead()
+    assert next_enrichment_method(fresh) == "perplexity:homeowner_lookup"
+    once = _lead(activity_log_raw=_attempt("2026-10-01T15:00:00+00:00"))
+    assert next_enrichment_method(once) == "perplexity:contact_finder"
+    business = _lead(project_type="commercial renovation", company="Lee Builds LLC")
+    assert next_enrichment_method(business) == "perplexity:contact_finder"
+    business_once = {
+        **business,
+        "activity_log_raw": _attempt(
+            "2026-10-01T15:00:00+00:00",
+            source="perplexity:contact_finder",
+        ),
+    }
+    assert next_enrichment_method(business_once) == "perplexity:homeowner_lookup"
+    assert next_enrichment_method(_lead(activity_log_raw=_both_methods())) is None
+
+
+def test_a_repeat_of_the_same_method_is_not_a_second_attempt():
+    repeated = _attempt("2026-10-01T15:00:00+00:00") + "\n" + _attempt("2026-11-01T15:00:00+00:00")
+    lead = _lead(activity_log_raw=repeated, contact_verified_date="2026-10-01")
+    assert should_drop_for_no_contact(lead) is False
+    assert enrichment_skip_reason(lead, today=TODAY, recheck_days=14) is None
+    updates = build_research_updates(
+        lead,
+        _found(phone=None, email=None, owner_name=None, mailing_address=None),
+        today=TODAY,
+        attempted_at=WHEN,
+    )["updates"]
+    from services.enrichment_attempts import counted_attempts
+    parsed = parse_attempts(updates["activity_log"])
+    assert [row["source"] for row in counted_attempts(parsed)] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
+    assert parsed[-1]["source"] == "perplexity:contact_finder"
+    assert updates["status"] == "Disqualified"
+
+
+def test_the_live_lookup_switches_angle_and_refuses_a_repeat(monkeypatch):
+    import services.perplexity_service as pplx
+    from services.contact_finder_service import run_contact_finder
+
+    seen = []
+
+    async def fake(research_type, query):
+        seen.append(research_type)
+        return {"answer": "{}", "sources": []}
+
+    monkeypatch.setattr(pplx, "research_async", fake)
+    once = _lead(activity_log_raw=_attempt("2026-10-01T15:00:00+00:00"))
+    parsed = asyncio.run(run_contact_finder(once))
+    assert seen == ["contact_finder"]
+    assert parsed["enrichment_method"] == "perplexity:contact_finder"
+
+    seen.clear()
+    exhausted = _lead(activity_log_raw=_both_methods())
+    parsed = asyncio.run(run_contact_finder(exhausted))
+    assert seen == []
+    assert parsed["methods_exhausted"] is True
+
+
+def test_find_contact_logs_when_every_method_was_tried_and_does_not_call_again():
+    from services.enrichment_batch import enrich_and_persist
+
+    class Svc:
+        def __init__(self):
+            self.writes = []
+
+        def update_fields(self, opp_id, fields):
+            self.writes.append(dict(fields))
+
+    lead = _lead(activity_log_raw=_both_methods())
+
+    async def research(opp):
+        raise AssertionError("a used method must not be run again")
+
+    svc = Svc()
+    result = asyncio.run(enrich_and_persist(svc, lead, force=True, research=research))
+    assert result["outcome"] == "skipped"
+    assert result["reason"] == "all methods tried"
+    assert len(svc.writes) == 1
+    note = svc.writes[0]["activity_log"]
+    assert "not counted as a new attempt" in note
+    assert "perplexity:homeowner_lookup" in note
+    assert "perplexity:contact_finder" in note
+    assert [row["source"] for row in parse_attempts(note)] == [
+        "perplexity:homeowner_lookup",
+        "perplexity:contact_finder",
+    ]
+    logged = {**lead, "activity_log_raw": note, "notes": svc.writes[0]["notes"]}
+    again = asyncio.run(enrich_and_persist(svc, logged, force=True, research=research))
+    assert again["reason"] == "all methods tried"
+    assert len(svc.writes) == 1

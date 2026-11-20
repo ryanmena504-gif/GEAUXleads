@@ -187,12 +187,16 @@ def test_restore_does_not_invent_a_select_option_when_notes_already_tag_it():
     assert disposition({"name": "Mystery", "source": "Website"}) == SKIP
 
 
-def _failed_log(*stamps):
+def _failed_log(*rows):
     text = ""
-    for stamp in stamps:
+    for row in rows:
+        if isinstance(row, tuple):
+            stamp, source = row
+        else:
+            stamp, source = row, "perplexity:homeowner_lookup"
         text = append_attempt(text, {
             "timestamp": stamp,
-            "source": "perplexity:homeowner_lookup",
+            "source": source,
             "result": "not_found",
             "found": {},
         })
@@ -208,9 +212,21 @@ def test_one_failed_attempt_does_not_keep_a_no_contact_pass_closed():
 def test_two_failed_attempts_stay_passed_and_the_address_stays_mail_door():
     tub = _lead(
         id="tub",
-        activity_log_raw=_failed_log("2026-11-01T15:00:00+00:00", "2026-11-18T15:00:00+00:00"),
+        activity_log_raw=_failed_log(
+            ("2026-11-01T15:00:00+00:00", "perplexity:homeowner_lookup"),
+            ("2026-11-18T15:00:00+00:00", "perplexity:contact_finder"),
+        ),
     )
     assert disposition(tub) == KEEP_MAIL_DOOR
     plan = review_no_contact_passes([tub])
     assert plan["restore"] == []
     assert [row["id"] for row in plan["keep_passed"]] == ["tub"]
+
+
+def test_repeating_the_same_method_does_not_count_as_a_second_failure():
+    tub = _lead(
+        id="tub",
+        activity_log_raw=_failed_log("2026-11-01T15:00:00+00:00", "2026-11-18T15:00:00+00:00"),
+    )
+    plan = review_no_contact_passes([tub])
+    assert [row["id"] for row in plan["restore"]] == ["tub"]

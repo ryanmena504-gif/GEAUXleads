@@ -7,7 +7,9 @@ run: the website no longer has its own timer.
 
 Nothing in this file calls Perplexity or OpenAI. It only asks the API.
 The API researches leads that are missing a phone and an email and have
-fewer than two recorded enrichment attempts. It caps the day at
+fewer than two recorded enrichment attempts. The second attempt uses a
+different method than the first (assessor records, or the web and
+business-registry search). It caps the day at
 ENRICHMENT_DAILY_CAP (default 10), does not retry a failed paid call
 inside that run, and does not research a lead again inside
 ENRICHMENT_RECHECK_DAYS. A lead is dropped for no contact only after

@@ -85,7 +85,7 @@ SAMPLE_OPPORTUNITIES = [
             '{"found":{},"result":"not_found","source":"perplexity:homeowner_lookup"}\n'
             '2026-11-18T16:10:00+00:00 | enrichment_attempt | '
             '{"found":{"email":"elena@example.com","name":"Elena Boudreaux","phone":"(504) 555-0187"},'
-            '"result":"found","source":"perplexity:homeowner_lookup"}'
+            '"result":"found","source":"perplexity:contact_finder"}'
         ),
         "email": "elena.b@example.com",
         "priority_score": 88,
