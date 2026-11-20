@@ -2571,30 +2571,30 @@ async def _trigger_record_agent(opp_id: str, env_name: str, label: str,
     return {"ok": True, "status": "triggered", "message": f"{label} running."}
 
 
-@api_router.post("/enrichment/run")
-async def run_enrichment(
-    dry_run: bool = False,
-    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
-):
-    """Research leads that are Ready for research or Needs Public Contact.
+async def _run_enrichment_batch(svc, dry_run: bool = False):
+    """Run one enrichment batch and audit-log the result.
 
-    The morning cron is the caller. It must send the phone password and
-    X-Cron-Secret. One Perplexity call per lead, up to ENRICHMENT_DAILY_CAP
-    per day (default 10). A failed call is not retried; three failures in
-    a row stop the run. `dry_run=true` lists who would be researched and
-    spends nothing. Drafts a first message when a lead becomes Contact
-    Ready. Nothing is sent. The 25-lead Fresh Intel scan is not on this
-    schedule.
+    Runs in the background for real runs, inline for dry runs. Returns the
+    batch stats; on an unexpected failure it audit-logs the error and
+    returns an error dict instead of raising, because a background task
+    has no caller to receive an HTTP error.
     """
-    _cron_guard(x_cron_secret)
     from services.enrichment_batch import run_for_service
 
-    svc = get_opportunity_service()
     try:
         stats = await run_for_service(svc, dry_run=dry_run)
     except Exception as e:  # noqa: BLE001
         logger.exception("enrichment batch failed")
-        raise HTTPException(status_code=502, detail=f"Enrichment batch failed: {e}")
+        try:
+            get_audit_log().record(
+                action="enrichment_batch",
+                entity_id="system",
+                outcome="error",
+                reason=f"Enrichment dry_run={dry_run} failed: {e}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": str(e)}
     try:
         get_audit_log().record(
             action="enrichment_batch",
@@ -2609,6 +2609,36 @@ async def run_enrichment(
     except Exception:  # noqa: BLE001
         pass
     return stats
+
+
+@api_router.post("/enrichment/run")
+async def run_enrichment(
+    background_tasks: BackgroundTasks,
+    dry_run: bool = False,
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+):
+    """Research leads that are Ready for research or Needs Public Contact.
+
+    The morning cron is the caller. It must send the phone password and
+    X-Cron-Secret. One Perplexity call per lead, up to ENRICHMENT_DAILY_CAP
+    per day (default 10). A failed call is not retried; three failures in
+    a row stop the run. `dry_run=true` lists who would be researched and
+    spends nothing, and answers inline. A real run answers immediately
+    with {"status": "triggered"} and researches in the background, because
+    the full batch (up to 10 leads at ~90s of research each) takes longer
+    than the cron's 600s wait. Drafts a first message when a lead becomes
+    Contact Ready. Nothing is sent. The 25-lead Fresh Intel scan is not on
+    this schedule.
+    """
+    _cron_guard(x_cron_secret)
+    svc = get_opportunity_service()
+    if dry_run:
+        stats = await _run_enrichment_batch(svc, dry_run=True)
+        if not stats.get("ok", True):
+            raise HTTPException(status_code=502, detail=f"Enrichment batch failed: {stats.get('error')}")
+        return stats
+    background_tasks.add_task(_run_enrichment_batch, svc, False)
+    return {"ok": True, "status": "triggered", "message": "Enrichment batch running."}
 
 
 @api_router.post("/opportunities/{opp_id}/find-contact")
