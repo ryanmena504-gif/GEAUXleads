@@ -78,6 +78,15 @@ SAMPLE_OPPORTUNITIES = [
         "estimated_value": 110000,
         "decision_maker": "Elena Boudreaux",
         "phone": "504-555-0187",
+        # Sample attempt history so the detail page can show the log.
+        # Live leads start with no lines and read as an empty history.
+        "activity_log_raw": (
+            '2026-11-01T15:04:00+00:00 | enrichment_attempt | '
+            '{"found":{},"result":"not_found","source":"perplexity:homeowner_lookup"}\n'
+            '2026-11-18T16:10:00+00:00 | enrichment_attempt | '
+            '{"found":{"email":"elena@example.com","name":"Elena Boudreaux","phone":"(504) 555-0187"},'
+            '"result":"found","source":"perplexity:contact_finder"}'
+        ),
         "email": "elena.b@example.com",
         "priority_score": 88,
         "priority_band": "A",

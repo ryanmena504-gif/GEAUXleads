@@ -1,10 +1,11 @@
 /**
  * Mail / door-knock leads. Mirror of backend/services/mail_door.py.
  *
- * A real interior job with a named person and a street address stays,
- * even with no phone or email. It is tagged mail-door and belongs on
- * the door-hanger route. Exterior-only permits, and LLC-owned
- * multi-family properties with no named person, stay passes.
+ * Interior work stays: showers, baths, kitchens, microcement, Venetian
+ * plaster, and the same kind of work. A missing owner name, phone, or
+ * email is not a pass — including an LLC-owned multi-family with no
+ * person named. An address with no phone or email is tagged mail-door
+ * and belongs on the door-hanger route. Exterior-only permits stay passes.
  *
  * Keep this file in sync with the Python module.
  */
@@ -79,12 +80,9 @@ export const SKIP = "skip";
 export const disposition = (opp) => {
   if (!opp) return SKIP;
   if (isExteriorOnly(opp)) return PASS_EXTERIOR;
-  if (isLlcOwned(opp) && isMultifamily(opp) && !hasNamedPerson(opp)) return PASS_LLC_MULTIFAMILY;
-  if (isInteriorJob(opp) && hasNamedPerson(opp) && hasPropertyAddress(opp) && !hasContactChannel(opp)) {
-    return KEEP_MAIL_DOOR;
-  }
-  if (isInteriorJob(opp) && hasNamedPerson(opp) && hasPropertyAddress(opp)) return KEEP;
-  return SKIP;
+  if (!isInteriorJob(opp)) return SKIP;
+  if (hasPropertyAddress(opp) && !hasContactChannel(opp)) return KEEP_MAIL_DOOR;
+  return KEEP;
 };
 
 export const isMailDoorLead = (opp) =>
@@ -97,11 +95,8 @@ export const isNoContactPass = (opp) => {
   return log.includes("no contact, stale");
 };
 
-/** Exterior-only, or an LLC multi-family with nobody's name on it. */
-export const staysPassed = (opp) => {
-  const kind = disposition(opp);
-  return kind === PASS_EXTERIOR || kind === PASS_LLC_MULTIFAMILY;
-};
+/** Exterior-only. A missing name is not a pass. */
+export const staysPassed = (opp) => disposition(opp) === PASS_EXTERIOR;
 
 const consentValue = (opp) => text(opp?.sms_permission || opp?.contact_consent || opp?.call_consent).toLowerCase();
 

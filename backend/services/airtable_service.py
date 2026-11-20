@@ -1117,7 +1117,9 @@ class AirtableOpportunityService:
         # Homeowner vs business, and the Do Not Call reminder. Derived
         # from the contact-source line research writes. Not a dialer.
         from services.contact_research import annotate_contact_flags
+        from services.enrichment_attempts import annotate_enrichment_attempts
         annotate_contact_flags(opp)
+        annotate_enrichment_attempts(opp)
         return opp
 
     def _synthesize_activity(self, opp: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1160,7 +1162,9 @@ class AirtableOpportunityService:
                 "timestamp": opp["last_reviewed"],
             })
         # Ryan's journal — one "ISO_TIMESTAMP | type | note" entry per line.
-        # Malformed lines are skipped, never fatal.
+        # Malformed lines are skipped, never fatal. Enrichment attempts are
+        # stored as JSON on that line and shown as a sentence here.
+        from services.enrichment_attempts import ATTEMPT_TYPE, describe_attempt_note
         for line in (opp.get("activity_log_raw") or "").splitlines():
             parts = line.split("|", 2)
             if len(parts) != 3:
@@ -1168,6 +1172,8 @@ class AirtableOpportunityService:
             ts, type_, note = (p.strip() for p in parts)
             if not ts:
                 continue
+            if type_ == ATTEMPT_TYPE:
+                note = describe_attempt_note(note)
             timeline.append({"type": type_ or "note", "note": note, "timestamp": ts})
         # newest first
         timeline.sort(key=lambda x: x.get("timestamp") or "", reverse=True)

@@ -1,9 +1,9 @@
-"""Interior jobs with a name and an address stay. Missing phone is not a pass."""
+"""Interior jobs stay. A missing name or phone is not a pass."""
+from services.enrichment_attempts import append_attempt
 from services.mail_door import (
     KEEP,
     KEEP_MAIL_DOOR,
     PASS_EXTERIOR,
-    PASS_LLC_MULTIFAMILY,
     SKIP,
     disposition,
     guard_phone_text_mission,
@@ -69,7 +69,7 @@ def test_interior_plus_exterior_is_not_exterior_only():
     assert disposition(lead) == KEEP_MAIL_DOOR
 
 
-def test_llc_multifamily_with_no_person_stays_a_pass():
+def test_llc_multifamily_with_no_person_stays_for_enrichment():
     lead = _lead(
         name="CLS Properties 12 LLC (2514 S Tonti St -Apt 2B)",
         project_address="2514 S Tonti St -Apt 2B",
@@ -80,7 +80,20 @@ def test_llc_multifamily_with_no_person_stays_a_pass():
         contact_company=None,
         applicant="Feelgood Construction Company LLC",
     )
-    assert disposition(lead) == PASS_LLC_MULTIFAMILY
+    assert disposition(lead) == KEEP_MAIL_DOOR
+
+
+def test_interior_job_with_no_name_and_no_phone_is_kept():
+    lead = _lead(contact_company=None, contact_name=None, owner=None, decision_maker=None)
+    assert disposition(lead) == KEEP_MAIL_DOOR
+    nameless = _lead(
+        contact_company=None,
+        contact_name=None,
+        owner=None,
+        project_address=None,
+        project_type="venetian plaster shower",
+    )
+    assert disposition(nameless) == KEEP
 
 
 def test_llc_multifamily_with_a_named_applicant_is_kept():
@@ -155,8 +168,8 @@ def test_review_restores_mail_door_and_leaves_the_passes():
     other = _lead(id="other", outcome="Wrong trade")
     plan = review_no_contact_passes([tub, roof, llc, other])
     assert plan["writes"] is False
-    assert [row["id"] for row in plan["restore"]] == ["tub"]
-    assert {row["id"] for row in plan["keep_passed"]} == {"roof", "llc"}
+    assert [row["id"] for row in plan["restore"]] == ["tub", "llc"]
+    assert {row["id"] for row in plan["keep_passed"]} == {"roof"}
     assert plan["leave"] == []
     updates = plan["restore"][0]["updates"]
     assert updates["status"] == "Needs research"
@@ -172,3 +185,48 @@ def test_restore_does_not_invent_a_select_option_when_notes_already_tag_it():
     assert "status" not in updates
     assert updates["outcome"] == ""
     assert disposition({"name": "Mystery", "source": "Website"}) == SKIP
+
+
+def _failed_log(*rows):
+    text = ""
+    for row in rows:
+        if isinstance(row, tuple):
+            stamp, source = row
+        else:
+            stamp, source = row, "perplexity:homeowner_lookup"
+        text = append_attempt(text, {
+            "timestamp": stamp,
+            "source": source,
+            "result": "not_found",
+            "found": {},
+        })
+    return text
+
+
+def test_one_failed_attempt_does_not_keep_a_no_contact_pass_closed():
+    tub = _lead(id="tub", activity_log_raw=_failed_log("2026-11-01T15:00:00+00:00"))
+    plan = review_no_contact_passes([tub])
+    assert [row["id"] for row in plan["restore"]] == ["tub"]
+
+
+def test_two_failed_attempts_stay_passed_and_the_address_stays_mail_door():
+    tub = _lead(
+        id="tub",
+        activity_log_raw=_failed_log(
+            ("2026-11-01T15:00:00+00:00", "perplexity:homeowner_lookup"),
+            ("2026-11-18T15:00:00+00:00", "perplexity:contact_finder"),
+        ),
+    )
+    assert disposition(tub) == KEEP_MAIL_DOOR
+    plan = review_no_contact_passes([tub])
+    assert plan["restore"] == []
+    assert [row["id"] for row in plan["keep_passed"]] == ["tub"]
+
+
+def test_repeating_the_same_method_does_not_count_as_a_second_failure():
+    tub = _lead(
+        id="tub",
+        activity_log_raw=_failed_log("2026-11-01T15:00:00+00:00", "2026-11-18T15:00:00+00:00"),
+    )
+    plan = review_no_contact_passes([tub])
+    assert [row["id"] for row in plan["restore"]] == ["tub"]

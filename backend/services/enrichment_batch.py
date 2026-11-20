@@ -16,17 +16,24 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
-from services.field_norm import resolved_phone
 from services.contact_research import (
     build_failure_updates,
     build_research_updates,
     checked_today,
     draft_field_updates,
+    enrichment_method_ids,
     enrichment_skip_reason,
     has_draft,
     today_iso,
 )
 from services.draft_safety import looks_like_ai_prompt
+from services.enrichment_attempts import (
+    SKIP_EXHAUSTED,
+    SKIP_METHODS,
+    drop_field_updates,
+    skipped_attempt_fields,
+)
+from services.field_norm import resolved_phone
 
 log = logging.getLogger("bloodhound.enrichment")
 
@@ -82,6 +89,8 @@ def select_enrichment_candidates(
     seen = seen or set()
     chosen = []
     skipped = []
+    drop = []
+    note = []
     seen_ids = set(seen)
     ordered = sorted(leads, key=_sort_key)
     for opp in ordered:
@@ -93,6 +102,12 @@ def select_enrichment_candidates(
         )
         if reason:
             skipped.append({"id": oid, "reason": reason})
+            # Two failed lookups are already on the lead. Drop it from the
+            # contact queue without spending another credit.
+            if reason == SKIP_EXHAUSTED:
+                drop.append(opp)
+            elif reason == SKIP_METHODS:
+                note.append(opp)
             continue
         seen_ids.add(oid)
         chosen.append(opp)
@@ -107,6 +122,8 @@ def select_enrichment_candidates(
         ],
         "candidate_leads": chosen,
         "skipped_sample": skipped[:20],
+        "drop_leads": drop,
+        "methods_exhausted_leads": note,
     }
 
 
@@ -119,7 +136,10 @@ async def _persist(update: UpdateFn, opp_id: str, updates: Dict[str, Any]) -> No
     selects = {}
     rest = {}
     for key, value in updates.items():
-        if key in {"enrichment_status", "contact_readiness", "contact_confidence", "first_contact_channel"}:
+        if key in {
+            "enrichment_status", "contact_readiness", "contact_confidence",
+            "first_contact_channel", "status", "outcome",
+        }:
             selects[key] = value
         else:
             rest[key] = value
@@ -179,11 +199,38 @@ async def run_enrichment_batch(
         "drafts_unconfigured": False,
         "stopped_early": False,
         "stop_reason": None,
+        "dropped_no_contact": 0,
+        "pending_no_contact_drops": len(plan.get("drop_leads") or []),
+        "methods_exhausted": 0,
         "results": [],
     }
     if dry_run:
         summary["results"] = plan["candidates"]
         return summary
+
+    for opp in plan.get("drop_leads") or []:
+        fields = drop_field_updates(opp)
+        if not fields:
+            continue
+        oid = str(opp.get("id") or "")
+        try:
+            await _persist(update, oid, fields)
+            summary["dropped_no_contact"] += 1
+        except Exception:
+            log.exception("no-contact drop write failed for %s", oid)
+
+    for opp in plan.get("methods_exhausted_leads") or []:
+        fields = skipped_attempt_fields(
+            opp, enrichment_method_ids(opp), today=today,
+        )
+        if not fields:
+            continue
+        oid = str(opp.get("id") or "")
+        try:
+            await _persist(update, oid, fields)
+            summary["methods_exhausted"] += 1
+        except Exception:
+            log.exception("methods-exhausted note failed for %s", oid)
 
     streak = 0
     drafts_off = False
@@ -213,6 +260,22 @@ async def run_enrichment_batch(
                 "error": str(exc)[:240],
             })
             log.warning("contact research failed for %s (%s)", oid, type(exc).__name__)
+            continue
+
+        if (parsed or {}).get("methods_exhausted"):
+            fields = skipped_attempt_fields(opp, enrichment_method_ids(opp), today=today)
+            if fields:
+                try:
+                    await _persist(update, oid, fields)
+                    summary["methods_exhausted"] += 1
+                except Exception:
+                    log.exception("methods-exhausted note failed for %s", oid)
+            summary["results"].append({
+                "id": oid,
+                "name": opp.get("name"),
+                "outcome": "skipped",
+                "reason": SKIP_METHODS,
+            })
             continue
 
         built = build_research_updates(opp, parsed or {}, today=today, force=False)
@@ -325,6 +388,11 @@ async def enrich_and_persist(
     reason = enrichment_skip_reason(
         opp, today=today, recheck_days=recheck_days(), force=force
     )
+    if reason == SKIP_METHODS:
+        fields = skipped_attempt_fields(opp, enrichment_method_ids(opp), today=today)
+        if fields:
+            await _persist(_svc_update(svc), oid, fields)
+        return {"outcome": "skipped", "reason": reason}
     if reason:
         if seen is not None and not force:
             seen.add(oid)
@@ -344,6 +412,12 @@ async def enrich_and_persist(
             await _persist(_svc_update(svc), oid, built["updates"])
             log.warning("contact research failed for %s (%s)", oid, type(exc).__name__)
             return {"outcome": "failed", "error": str(exc)[:240], "id": oid}
+
+        if (parsed or {}).get("methods_exhausted"):
+            fields = skipped_attempt_fields(opp, enrichment_method_ids(opp), today=today)
+            if fields:
+                await _persist(_svc_update(svc), oid, fields)
+            return {"outcome": "skipped", "reason": SKIP_METHODS, "id": oid}
 
         built = build_research_updates(opp, parsed or {}, today=today, force=force)
         await _persist(_svc_update(svc), oid, built["updates"])
@@ -446,5 +520,3 @@ async def run_for_service(
             dry_run=dry_run,
             seen=seen,
         )
-
-

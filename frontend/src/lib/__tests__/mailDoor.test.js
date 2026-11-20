@@ -1,4 +1,4 @@
-import { disposition, KEEP_MAIL_DOOR, PASS_EXTERIOR, PASS_LLC_MULTIFAMILY, phoneTextMission } from "../mailDoor";
+import { disposition, KEEP, KEEP_MAIL_DOOR, PASS_EXTERIOR, phoneTextMission } from "../mailDoor";
 import { isDoorHangerLead } from "../doorHangers";
 
 const tub = {
@@ -17,7 +17,7 @@ test("a disqualified tub-to-shower with a person is on the door-hanger route", (
   expect(isDoorHangerLead(tub)).toBe(true);
 });
 
-test("exterior-only and unnamed LLC multi-family stay off the route", () => {
+test("exterior-only stays off the route", () => {
   const roof = {
     ...tub,
     id: "roof",
@@ -28,6 +28,11 @@ test("exterior-only and unnamed LLC multi-family stay off the route", () => {
     contact_name: "Ada Lovelace",
     contact_company: "",
   };
+  expect(disposition(roof)).toBe(PASS_EXTERIOR);
+  expect(isDoorHangerLead(roof)).toBe(false);
+});
+
+test("an unnamed LLC multi-family interior job stays on the route", () => {
   const llc = {
     ...tub,
     id: "llc",
@@ -38,10 +43,15 @@ test("exterior-only and unnamed LLC multi-family stay off the route", () => {
     contact_company: "",
     applicant: "Feelgood Construction Company LLC",
   };
-  expect(disposition(roof)).toBe(PASS_EXTERIOR);
-  expect(disposition(llc)).toBe(PASS_LLC_MULTIFAMILY);
-  expect(isDoorHangerLead(roof)).toBe(false);
-  expect(isDoorHangerLead(llc)).toBe(false);
+  expect(disposition(llc)).toBe(KEEP_MAIL_DOOR);
+  expect(isDoorHangerLead(llc)).toBe(true);
+});
+
+test("a shower with no name and no address is kept for enrichment", () => {
+  expect(disposition({
+    project_type: "venetian plaster shower",
+    permit_description: "microcement shower walls",
+  })).toBe(KEEP);
 });
 
 test("a wrong-trade pass is not pulled back onto the route", () => {

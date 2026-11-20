@@ -1,8 +1,9 @@
-"""Re-open leads that were passed only because they had no phone or email.
+"""Re-open leads that were passed only because they had no phone, email, or name.
 
-A real interior job with a named person and a street address is restored
-and tagged mail-door. Exterior-only permits, and LLC-owned multi-family
-properties with no named person, stay passed.
+An interior job is restored. A missing name is not a reason to stay
+passed, including an LLC-owned multi-family. Exterior-only permits stay
+passed. Address-only interior jobs are tagged mail-door. A lead with two
+failed enrichment attempts stays passed. Nothing here deletes a lead.
 
 This script does not connect to Airtable unless you pass --dry-run or
 --apply. --dry-run only prints the plan. --apply writes. Do not pass
@@ -61,9 +62,9 @@ def apply_plan(svc, plan: Dict[str, Any]) -> int:
             continue
         svc.update_fields(row["id"], updates)
         if row.get("disposition") == "keep-mail-door":
-            note = "Restored. Interior job with a name and a street address, no phone or email. Contact channel: mail-door."
+            note = "Restored. Interior job with a street address and no phone or email. Contact channel: mail-door."
         else:
-            note = "Restored. Passed earlier for no contact; a phone or email is on the record now."
+            note = "Restored. Passed earlier for no contact. It is interior work and still needs enrichment, or a phone or email is already on the record."
         try:
             svc.add_activity(row["id"], "restored", note)
         except Exception as exc:  # noqa: BLE001
