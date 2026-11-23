@@ -1,8 +1,10 @@
 """Wake the research batch once a day, when the Render cron fires.
 
 Render's clock is UTC. The cron schedule is 0 13 * * *, which is 7:00 AM
-Central in winter (CST) and 8:00 AM Central in summer (CDT). This script
-runs whenever it is invoked. A restart of the website cannot start a
+Central in winter (CST) and 8:00 AM Central in summer (CDT). As a guard
+(the live cron may still be hourly), the script calls the API only when
+the America/Chicago hour is 7 or the UTC hour is 13. Any other time it
+exits 0 without spending anything. A restart of the website cannot start a
 second run: the website no longer has its own timer.
 
 Nothing in this file calls Perplexity or OpenAI. It only asks the API.
@@ -26,6 +28,15 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 CHICAGO = ZoneInfo("America/Chicago")
+UTC = ZoneInfo("UTC")
+MORNING_HOUR = 7
+CRON_UTC_HOUR = 13
+
+
+def should_run(now: datetime) -> bool:
+    """True at 7am Chicago or 13:00 UTC, so an hourly cron cannot overspend."""
+    local = now.astimezone(CHICAGO) if now.tzinfo else now.replace(tzinfo=CHICAGO)
+    return local.hour == MORNING_HOUR or local.astimezone(UTC).hour == CRON_UTC_HOUR
 
 
 def _require(name: str) -> str:
@@ -37,13 +48,16 @@ def _require(name: str) -> str:
 
 
 def trigger(now: datetime | None = None) -> int:
-    """POST the locked research route.
+    """POST the locked research route, or exit 0 outside the run hour.
 
     Returns the HTTP status. Exits the process on a missing setting or a
     non-2xx response so Render can mark the run failed.
     """
     moment = now or datetime.now(CHICAGO)
     local = moment.astimezone(CHICAGO) if moment.tzinfo else moment.replace(tzinfo=CHICAGO)
+    if not should_run(local):
+        print(f"morning research: skipped at {local.isoformat()}, not 7am Chicago or 13:00 UTC.")
+        return 0
     print(f"morning research: running at {local.isoformat()}.")
 
     base = _require("PUBLIC_BACKEND_URL").rstrip("/")
