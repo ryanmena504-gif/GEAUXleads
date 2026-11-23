@@ -6,17 +6,16 @@
 # and create the cron by hand instead. The click path is in
 # docs/RENDER_SETUP.md.
 #
-# The schedule is hourly on purpose. Render's clock is UTC. The script
-# exits immediately unless it is 7am in America/Chicago, so daylight
-# saving time does not move the run to 8am. Outside that hour it does
-# not call the API and does not spend research money.
+# Render's clock is UTC. 0 13 * * * is 7:00 AM Central in CST (winter)
+# and 8:00 AM Central in CDT (summer). The script runs whenever the cron
+# fires, so a daylight-saving shift does not skip the batch.
 
 services:
   - type: cron
     name: geauxleads-morning-research
     runtime: python
     plan: starter
-    schedule: "0 * * * *"
+    schedule: "0 13 * * *"
     buildCommand: python --version
     startCommand: python backend/scripts/morning_enrichment.py
     envVars:
