@@ -12,11 +12,10 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.morning_enrichment import should_run
+from scripts.morning_enrichment import trigger
 from services.outreach_policy import do_not_contact_message
 
 
-CHICAGO = ZoneInfo("America/Chicago")
 UTC = ZoneInfo("UTC")
 
 
@@ -104,13 +103,28 @@ def test_website_process_does_not_start_a_research_timer():
     assert "enrichment_scheduler" not in inspect.getsource(lifespan)
 
 
-def test_morning_script_runs_at_7am_chicago_in_winter_and_summer():
-    assert should_run(datetime(2026, 1, 15, 7, 30, tzinfo=CHICAGO))
-    assert should_run(datetime(2026, 1, 15, 13, 5, tzinfo=UTC))
-    assert not should_run(datetime(2026, 1, 15, 12, 5, tzinfo=UTC))
-    assert should_run(datetime(2026, 7, 15, 7, 0, tzinfo=CHICAGO))
-    assert should_run(datetime(2026, 7, 15, 12, 5, tzinfo=UTC))
-    assert not should_run(datetime(2026, 7, 15, 13, 5, tzinfo=UTC))
+def test_morning_script_runs_when_the_daily_cron_fires_in_winter_and_summer(monkeypatch):
+    # Cron is 0 13 * * * UTC: 7am CST in winter, 8am CDT in summer.
+    import urllib.request
+
+    class FakeResp:
+        status = 200
+
+        def read(self, _n):
+            return b"ok"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setenv("PUBLIC_BACKEND_URL", "https://geauxleads.onrender.com")
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    monkeypatch.setenv("WEBHOOK_CRON_SECRET", "sec")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: FakeResp())
+    assert trigger(datetime(2026, 1, 15, 13, 0, tzinfo=UTC)) == 200
+    assert trigger(datetime(2026, 7, 15, 13, 0, tzinfo=UTC)) == 200
 
 
 def test_do_not_contact_blocks_send_words_approve_uses():

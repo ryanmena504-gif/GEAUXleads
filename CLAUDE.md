@@ -99,8 +99,8 @@ on the same failure, and it is not allowed to send anything.
 - Deleting live records is not part of research. Don't delete them from a batch.
 
 Automatic research is `POST /api/enrichment/run`. A Render cron runs
-`backend/scripts/morning_enrichment.py` every hour, and that script calls
-the route only when it is 7am in America/Chicago. The website process does
+`backend/scripts/morning_enrichment.py` once a day at 13:00 UTC (7:00 AM
+Central in winter, 8:00 AM Central in summer). The website process does
 not start research on its own. `ENRICHMENT_AUTO_ENABLED` is no longer read.
 The route requires the phone password and `X-Cron-Secret`
 (`WEBHOOK_CRON_SECRET`). The daily cap is `ENRICHMENT_DAILY_CAP` (default 10).

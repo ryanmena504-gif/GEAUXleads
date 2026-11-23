@@ -1,9 +1,9 @@
-"""Wake the research batch once, at 7am in New Orleans.
+"""Wake the research batch once a day, when the Render cron fires.
 
-Render's clock is UTC and does not follow daylight saving time. This
-script is scheduled every hour and does nothing unless the local hour
-in America/Chicago is 7. A restart of the website cannot start a second
-run: the website no longer has its own timer.
+Render's clock is UTC. The cron schedule is 0 13 * * *, which is 7:00 AM
+Central in winter (CST) and 8:00 AM Central in summer (CDT). This script
+runs whenever it is invoked. A restart of the website cannot start a
+second run: the website no longer has its own timer.
 
 Nothing in this file calls Perplexity or OpenAI. It only asks the API.
 The API researches leads that are missing a phone and an email and have
@@ -26,13 +26,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 CHICAGO = ZoneInfo("America/Chicago")
-MORNING_HOUR = 7
-
-
-def should_run(now: datetime) -> bool:
-    """True during the 7 o'clock hour in Chicago, standard or daylight time."""
-    local = now.astimezone(CHICAGO) if now.tzinfo else now.replace(tzinfo=CHICAGO)
-    return local.hour == MORNING_HOUR
 
 
 def _require(name: str) -> str:
@@ -44,16 +37,14 @@ def _require(name: str) -> str:
 
 
 def trigger(now: datetime | None = None) -> int:
-    """POST the locked research route, or exit 0 outside the morning hour.
+    """POST the locked research route.
 
     Returns the HTTP status. Exits the process on a missing setting or a
     non-2xx response so Render can mark the run failed.
     """
     moment = now or datetime.now(CHICAGO)
-    if not should_run(moment):
-        local = moment.astimezone(CHICAGO)
-        print(f"morning research: skipped, Chicago hour is {local.hour}, not {MORNING_HOUR}.")
-        return 0
+    local = moment.astimezone(CHICAGO) if moment.tzinfo else moment.replace(tzinfo=CHICAGO)
+    print(f"morning research: running at {local.isoformat()}.")
 
     base = _require("PUBLIC_BACKEND_URL").rstrip("/")
     password = _require("APP_PASSWORD")

@@ -48,7 +48,7 @@ The website (static site) can stay on the free static plan.
 
 ## 6. Create the morning research job
 
-The job wakes every hour and does nothing unless it is 7am in New Orleans. That keeps daylight saving time from moving it. It researches at most 10 leads. It does not send email. A failed paid lookup is not retried.
+The job runs once a day at 13:00 UTC (7:00 AM Central in winter, 8:00 AM Central in summer). The script runs whenever the cron fires. It researches at most 10 leads. It does not send email. A failed paid lookup is not retried.
 
 Render → **New** → **Cron Job**:
 
@@ -57,7 +57,7 @@ Render → **New** → **Cron Job**:
 3. Runtime: Python
 4. Build command: `python --version`
 5. Start command: `python backend/scripts/morning_enrichment.py`
-6. Schedule: `0 * * * *`
+6. Schedule: `0 13 * * *`
 7. Instance: the smallest one. Render's minimum for a cron job is about $1 a month.
 8. Environment variables, same values as the API:
    - `APP_PASSWORD`
