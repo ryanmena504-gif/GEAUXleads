@@ -12,10 +12,11 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.morning_enrichment import trigger
+from scripts.morning_enrichment import should_run, trigger
 from services.outreach_policy import do_not_contact_message
 
 
+CHICAGO = ZoneInfo("America/Chicago")
 UTC = ZoneInfo("UTC")
 
 
@@ -125,6 +126,27 @@ def test_morning_script_runs_when_the_daily_cron_fires_in_winter_and_summer(monk
     monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: FakeResp())
     assert trigger(datetime(2026, 1, 15, 13, 0, tzinfo=UTC)) == 200
     assert trigger(datetime(2026, 7, 15, 13, 0, tzinfo=UTC)) == 200
+
+
+def test_morning_script_skips_off_hours_without_calling_the_api(monkeypatch):
+    import urllib.request
+
+    def boom(*args, **kwargs):
+        raise AssertionError("API must not be called off-hours")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert trigger(datetime(2026, 11, 23, 18, 0, tzinfo=UTC)) == 0
+    assert trigger(datetime(2026, 7, 15, 3, 0, tzinfo=UTC)) == 0
+
+
+def test_morning_guard_hours_winter_and_summer():
+    assert should_run(datetime(2026, 1, 15, 7, 30, tzinfo=CHICAGO))
+    assert should_run(datetime(2026, 1, 15, 13, 5, tzinfo=UTC))
+    assert not should_run(datetime(2026, 1, 15, 12, 5, tzinfo=UTC))
+    assert not should_run(datetime(2026, 1, 15, 18, 0, tzinfo=UTC))
+    assert should_run(datetime(2026, 7, 15, 12, 5, tzinfo=UTC))
+    assert should_run(datetime(2026, 7, 15, 13, 0, tzinfo=UTC))
+    assert not should_run(datetime(2026, 7, 15, 14, 0, tzinfo=UTC))
 
 
 def test_do_not_contact_blocks_send_words_approve_uses():
